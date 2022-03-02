@@ -1,0 +1,21 @@
+==================
+Function call
+==================
+
+fun x() i32 {
+  callFunction()
+  callFunction(argument1, argument2)
+}
+
+---
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameter_list)
+    (primitive_type)
+    (block
+      (function_call (identifier) (argument_list))
+      (function_call (identifier) (argument_list
+        (identifier) (identifier)))
+      )))

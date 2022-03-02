@@ -1,0 +1,40 @@
+==================
+Variable declarations
+==================
+
+fun x() i32 {
+  val test = 5
+  val test2 bool = true
+  val test3 mut = "test"
+  val test3 mut i32 = 34
+
+  val test4 mut i32 = 34
+  val test5 &mut i32 = 35
+  val test6 &i32 = 36
+
+  val test4? mut i32 = null
+  val test5? &mut i32 = null
+  val test6? &i32 = null
+}
+
+---
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameter_list)
+    (primitive_type)
+    (block
+      (var_declaration (identifier) (number))
+      (var_declaration (identifier) (primitive_type) (true))
+      (var_declaration (identifier) (interpreted_string_literal))
+      (var_declaration (identifier) (primitive_type) (number))
+      (var_declaration (identifier) (primitive_type) (number))
+      (var_declaration (identifier) (primitive_type) (number))
+      (var_declaration (identifier) (primitive_type) (number))
+      (var_declaration (identifier) (primitive_type) (null))
+      (var_declaration (identifier) (primitive_type) (null))
+      (var_declaration (identifier) (primitive_type) (null))
+    )
+  )
+)

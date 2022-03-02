@@ -1,0 +1,17 @@
+==================
+Return statements
+==================
+
+fun x() i32 {
+  return 1;
+}
+
+---
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameter_list)
+    (primitive_type)
+    (block
+      (return_statement (number)))))
