@@ -3,9 +3,10 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 use crate::ast::{
-    parse_file, print_err, Block, Expression, Function, FunctionCall, Package, Parameter,
-    Statement, Type, VarDeclaration,
+    print_err, ASTParser, Block, Expression, Function, FunctionCall, Package, Parameter, Statement,
+    Type, VarDeclaration,
 };
+use crate::buildin::Buildins;
 use crate::tree_sitter::parse;
 
 struct Writer<'a> {
@@ -87,7 +88,7 @@ fn transpile_expression(expression: &Expression) -> String {
         Expression::String(string) => {
             out += "\"";
             out += string;
-            out += "\"";
+            out += "\".to_string()";
         }
         Expression::Identifier(identifier) => out += &identifier,
         Expression::Null => out += "null",
@@ -96,7 +97,38 @@ fn transpile_expression(expression: &Expression) -> String {
     out
 }
 
-fn transpile_function_call(call: &FunctionCall, writer: &mut Writer) {
+fn transpile_buildin_function_call(
+    call: &FunctionCall,
+    writer: &mut Writer,
+    buildins: &Buildins,
+) -> bool {
+    let buildin = match buildins.functions.get(&call.name) {
+        Some(buildin) => buildin,
+        None => return false,
+    };
+
+    match buildin.name.as_str() {
+        "println" => {
+            writer.write("println!(\"{}\", ");
+            let args: Vec<String> = call
+                .arguments
+                .iter()
+                .map(|arg| transpile_expression(arg))
+                .collect();
+            writer.write(&args.join(", "));
+            writer.write(");");
+            return true;
+        }
+        _ => {}
+    }
+    return false;
+}
+
+fn transpile_function_call(call: &FunctionCall, writer: &mut Writer, buildins: &Buildins) {
+    if transpile_buildin_function_call(call, writer, buildins) {
+        return;
+    }
+
     writer.write(&call.name);
     writer.write("(");
     let args: Vec<String> = call
@@ -126,11 +158,11 @@ fn transpile_var_declaration(var_declaration: &VarDeclaration, writer: &mut Writ
     writer.write(";");
 }
 
-fn transpile_block(block: &Block, writer: &mut Writer) {
+fn transpile_block(block: &Block, writer: &mut Writer, buildins: &Buildins) {
     for statement in &block.statements {
         match statement {
             Statement::FunctionCall(call) => {
-                transpile_function_call(call, writer);
+                transpile_function_call(call, writer, buildins);
                 writer.new_line();
             }
             Statement::VarDeclaration(var) => {
@@ -141,13 +173,13 @@ fn transpile_block(block: &Block, writer: &mut Writer) {
     }
 }
 
-fn transpile_function(function: &Function, writer: &mut Writer) {
+fn transpile_function(function: &Function, writer: &mut Writer, buildins: &Buildins) {
     writer.write(&format!("fn {}", function.name));
     transpile_parameters(&function.parameters, writer);
     writer.write(" {");
     writer.new_line();
     writer.indented(|writer| {
-        transpile_block(&function.body, writer);
+        transpile_block(&function.body, writer, buildins);
     });
     writer.write("}");
 }
@@ -155,10 +187,11 @@ fn transpile_function(function: &Function, writer: &mut Writer) {
 pub fn transpile(package: &Package, outfile: &PathBuf) -> Result<(), io::Error> {
     let mut file = File::create(outfile)?;
 
+    let buildins = Buildins::new();
     let mut buffer = "".to_string();
     let mut writer = Writer::new(&mut buffer);
     for function in &package.functions {
-        transpile_function(function, &mut writer);
+        transpile_function(function, &mut writer, &buildins);
         writer.new_line();
         writer.new_line();
     }
@@ -182,10 +215,12 @@ pub fn transpile_project(project_dir: &Path) -> Result<(), anyhow::Error> {
     let tree = parse(&source_code);
     let root_node = tree.root_node();
     println!("Tree sitter {}", root_node.to_sexp());
-    let package = parse_file(root_node, &source_code);
+    let file_path = main_rust.clone().into_os_string().into_string().unwrap();
+    let parser = ASTParser::new(&file_path, &source_code);
+    let package = parser.parse_file(root_node);
     println!("AST: {:?}", package);
     for error in &package.errors {
-        print_err(&error, &source_code);
+        print_err(&error, &file_path, &source_code);
     }
 
     transpile(&package, &main_rust)?;
