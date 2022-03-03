@@ -23,7 +23,7 @@ pub fn parse(source_code: &str) -> Tree {
 #[cfg(test)]
 mod tests {
     use crate::{
-        ast::{parse_file, print_err},
+        ast::{print_err, ASTParser},
         tree_sitter::parse,
     };
 
@@ -34,10 +34,11 @@ mod tests {
         let root_node = tree.root_node();
         println!("Tree sitter {}", root_node.to_sexp());
 
-        let result = parse_file(root_node, source_code);
+        let file_path = "test";
+        let result = ASTParser::new(file_path, source_code).parse_file(root_node);
         println!("AST: {:?}", result);
         for error in &result.errors {
-            print_err(&error, &source_code);
+            print_err(&error, file_path, &source_code);
         }
     }
 }
