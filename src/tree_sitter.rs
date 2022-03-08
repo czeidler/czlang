@@ -34,11 +34,10 @@ mod tests {
         let root_node = tree.root_node();
         println!("Tree sitter {}", root_node.to_sexp());
 
-        let file_path = "test";
-        let result = ASTParser::new(file_path, source_code).parse_file(root_node);
+        let result = ASTParser::new("test", source_code).parse_file(root_node);
         println!("AST: {:?}", result);
         for error in &result.errors {
-            print_err(&error, file_path, &source_code);
+            print_err(&error, &source_code);
         }
     }
 }

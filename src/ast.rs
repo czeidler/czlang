@@ -52,11 +52,17 @@ impl ASTError {
 #[derive(Debug)]
 pub struct Parameter {
     pub name: String,
+    pub is_mutable: bool,
+    pub is_reference: bool,
+    pub is_nullable: bool,
     pub _type: Type,
+
+    pub origin: Option<SourceSpan>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Type {
+    Str,
     String,
     Bool,
     I32,
@@ -68,14 +74,19 @@ pub enum Type {
 pub enum Statement {
     FunctionCall(FunctionCall),
     VarDeclaration(VarDeclaration),
+    Return(Option<Expression>),
 }
 
 #[derive(Debug)]
 pub struct VarDeclaration {
     pub name: String,
-    pub mutable: bool,
-    pub var_type: Option<String>,
+    pub is_mutable: bool,
+    pub is_reference: bool,
+    pub is_nullable: bool,
+    pub var_type: Option<Type>,
     pub value: Expression,
+
+    pub origin: SourceSpan,
 }
 
 #[derive(Debug)]
@@ -176,6 +187,15 @@ impl<'a> ASTParser<'a> {
                     let statement = self.parse_var_declaration(&statement_node)?;
                     statements.push(Statement::VarDeclaration(statement));
                 }
+
+                "return_statement" => {
+                    let expression =
+                        match statement_node.child_by_field_name("expression".as_bytes()) {
+                            Some(expression) => Some(self.parse_expression(&expression)?),
+                            None => None,
+                        };
+                    statements.push(Statement::Return(expression));
+                }
                 _ => {}
             }
         }
@@ -183,12 +203,20 @@ impl<'a> ASTParser<'a> {
     }
 
     fn parse_parameter(&mut self, node: &Node) -> Option<Parameter> {
+        let is_mutable = node.child_by_field_name("mutable".as_bytes()).is_some();
+        let is_reference = node.child_by_field_name("reference".as_bytes()).is_some();
+        let is_nullable = node.child_by_field_name("nullable".as_bytes()).is_some();
         let name = child(node, "parameter name", 0, self)?;
         let _type = child(node, "parameter type", 1, self)?;
 
         Some(Parameter {
             name: node_text(&name, self)?,
+            is_mutable,
+            is_reference,
+            is_nullable,
             _type: self.parse_type(&_type)?,
+
+            origin: Some(SourceSpan::from_node(node)),
         })
     }
 
@@ -251,19 +279,26 @@ impl<'a> ASTParser<'a> {
     }
 
     fn parse_var_declaration(&mut self, node: &Node) -> Option<VarDeclaration> {
-        let var = child_by_field(node, "variable", self)?;
+        let is_mutable = node.child_by_field_name("mutable".as_bytes()).is_some();
+        let is_reference = node.child_by_field_name("reference".as_bytes()).is_some();
+        let is_nullable = node.child_by_field_name("nullable".as_bytes()).is_some();
+
         let name = child_by_field(node, "name", self)?;
         let var_type = match node.child_by_field_name("type") {
-            Some(var_type) => Some(node_text(&var_type, self)?),
+            Some(var_type) => Some(self.parse_type(&var_type)?),
             None => None,
         };
         let value_node = child_by_field(node, "value", self)?;
         let value = self.parse_expression(&value_node)?;
         Some(VarDeclaration {
             name: node_text(&name, self)?,
-            mutable: node_text(&var, self)? == "mut",
+            is_mutable,
+            is_reference,
+            is_nullable,
             var_type,
             value,
+
+            origin: SourceSpan::from_node(node),
         })
     }
 
@@ -358,7 +393,7 @@ fn collect_errors(node: Node, file_path: &str, errors: &mut Vec<ASTError>) {
     }
 }
 
-pub fn print_err(err: &ASTError, file_path: &str, source: &str) {
+pub fn print_err(err: &ASTError, source: &str) {
     let start = &err.span.start;
     let end = &err.span.end;
 
@@ -382,6 +417,6 @@ pub fn print_err(err: &ASTError, file_path: &str, source: &str) {
     println!("");
     println!(
         "Error in {} line {}, column {}: {}",
-        file_path, start.row, start.column, err.msg
+        err.file_path, start.row, start.column, err.msg
     );
 }

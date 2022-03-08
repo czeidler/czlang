@@ -60,6 +60,7 @@ fn transpile_type(t: &Type, writer: &mut Writer) {
         Type::I32 => "i32",
         Type::U32 => "u32",
         Type::Identifier(identifier) => identifier.as_str(),
+        Type::Str => "&str",
     };
     writer.write(text);
 }
@@ -142,19 +143,28 @@ fn transpile_function_call(call: &FunctionCall, writer: &mut Writer, buildins: &
 
 fn transpile_var_declaration(var_declaration: &VarDeclaration, writer: &mut Writer) {
     writer.write("let ");
-    if var_declaration.mutable {
+    if var_declaration.is_mutable {
         writer.write("mut ");
     }
     writer.write(&var_declaration.name);
     match &var_declaration.var_type {
         Some(t) => {
             writer.write(": ");
-            writer.write(&t);
+            transpile_type(&t, writer);
         }
         None => {}
     }
     writer.write(" = ");
     writer.write(&transpile_expression(&var_declaration.value));
+    writer.write(";");
+}
+
+fn transpile_return_statement(expression: &Option<Expression>, writer: &mut Writer) {
+    writer.write("return");
+    if let Some(expression) = expression {
+        writer.write(" ");
+        writer.write(&transpile_expression(expression));
+    }
     writer.write(";");
 }
 
@@ -167,6 +177,10 @@ fn transpile_block(block: &Block, writer: &mut Writer, buildins: &Buildins) {
             }
             Statement::VarDeclaration(var) => {
                 transpile_var_declaration(var, writer);
+                writer.new_line();
+            }
+            Statement::Return(expression) => {
+                transpile_return_statement(expression, writer);
                 writer.new_line();
             }
         }
@@ -215,12 +229,12 @@ pub fn transpile_project(project_dir: &Path) -> Result<(), anyhow::Error> {
     let tree = parse(&source_code);
     let root_node = tree.root_node();
     println!("Tree sitter {}", root_node.to_sexp());
-    let file_path = main_rust.clone().into_os_string().into_string().unwrap();
+    let file_path = main_rust.to_string_lossy();
     let parser = ASTParser::new(&file_path, &source_code);
     let package = parser.parse_file(root_node);
     println!("AST: {:?}", package);
     for error in &package.errors {
-        print_err(&error, &file_path, &source_code);
+        print_err(&error, &source_code);
     }
 
     transpile(&package, &main_rust)?;

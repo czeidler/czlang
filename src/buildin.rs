@@ -14,8 +14,13 @@ impl Buildins {
             Function {
                 name: "println".to_string(),
                 parameters: vec![Parameter {
-                    name: "arg".to_string(),
-                    _type: Type::String,
+                    name: "value".to_string(),
+                    _type: Type::Str,
+                    is_mutable: false,
+                    is_reference: false,
+                    is_nullable: false,
+
+                    origin: None,
                 }],
                 return_type: "".to_string(),
                 body: Block { statements: vec![] },
