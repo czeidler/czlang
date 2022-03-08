@@ -1,9 +1,29 @@
 ==================
-Return statements
+Return statement
+==================
+
+fun x() {
+  return
+}
+
+---
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameter_list)
+    (block
+      (return_statement)
+    )
+  )
+)
+
+==================
+Return statement + Expression
 ==================
 
 fun x() i32 {
-  return 1;
+  return 0
 }
 
 ---
@@ -14,4 +34,7 @@ fun x() i32 {
     (parameter_list)
     (primitive_type)
     (block
-      (return_statement (number)))))
+      (return_statement (number))
+    )
+  )
+)

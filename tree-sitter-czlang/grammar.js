@@ -30,7 +30,7 @@ unicodeValue = unicodeChar,
 letter = choice(unicodeLetter, '_'),
 
 newline = '\n',
-terminator = choice(newline, ';'),
+terminator = newline,
 
 hexDigit = /[0-9a-fA-F]/,
 octalDigit = /[0-7]/,
@@ -128,20 +128,32 @@ module.exports = grammar({
 
       block: $ => seq(
         '{',
-        repeat($._statement),
+        optional($._statement_list),
         '}'
       ),
 
+      _statement_list: $ => seq(
+        $._statement,
+        repeat(seq(terminator, $._statement)),
+        optional(terminator)
+      ),
+
       _statement: $ => choice(
-        $.return_statement,
         $.function_call,
         $.var_declaration,
+        $.return_statement,
       ),
 
       return_statement: $ => seq(
         'return',
-        $._expression,
-        ';'
+        field('expression', optional($._expression)),
+      ),
+
+      function_call: $ => prec(PREC.primary,
+        seq(
+          field('function', $.identifier),
+          field('arguments', $.argument_list)
+        )
       ),
 
       var_declaration: $ => seq(
@@ -172,13 +184,6 @@ module.exports = grammar({
           repeat(seq(',', field("argument", $._expression))),
         )),
         ')'
-      ),
-
-      function_call: $ => prec(PREC.primary,
-        seq(
-          field('function', $.identifier),
-          field('arguments', $.argument_list)
-        )
       ),
 
       interpreted_string_literal: $ => seq(

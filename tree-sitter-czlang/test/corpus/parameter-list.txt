@@ -3,7 +3,7 @@ Parameter list: no parameters
 ==================
 
 fun x() i32 {
-  return 1;
+  return 1
 }
 
 ---
@@ -21,7 +21,7 @@ Parameter list: single parameter
 ==================
 
 fun x(para1 bool) i32 {
-  return 1;
+  return 1
 }
 
 ---
@@ -40,7 +40,7 @@ Parameter list: multiple parameters
 ==================
 
 fun x(para1 bool, para2 i32, para3 bool) i32 {
-  return 1;
+  return 1
 }
 
 ---
@@ -61,7 +61,7 @@ Parameter list: mutable + references
 ==================
 
 fun x(para1 mut bool, para2 &mut i32, para3 bool) i32 {
-  return 1;
+  return 1
 }
 
 ---
@@ -81,8 +81,8 @@ fun x(para1 mut bool, para2 &mut i32, para3 bool) i32 {
 Parameter list: nullable
 ==================
 
-fun x(para1? mut bool, para2? &mut i32, para3? bool, para4? &MyType) i32 {
-  return 1;
+fun x(para1? mut bool, para2? &mut i32, para3? bool, para4? &i32) i32 {
+  return 1
 }
 
 ---
