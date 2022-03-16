@@ -3,8 +3,8 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 use crate::ast::{
-    print_err, ASTParser, Block, Expression, Function, FunctionCall, Package, Parameter, Statement,
-    Type, VarDeclaration,
+    print_err, ASTParser, Block, Expression, Function, FunctionCall, IfAlternative, IfStatement,
+    Package, Parameter, Statement, StringTemplatePart, Type, VarDeclaration,
 };
 use crate::buildin::Buildins;
 use crate::tree_sitter::parse;
@@ -38,7 +38,7 @@ impl<'a> Writer<'a> {
             return self;
         }
         if self.starting_new_line && self.indentation > 0 {
-            for _ in [0..self.indentation] {
+            for _ in 0..self.indentation {
                 *self.buffer += "\t";
             }
             self.starting_new_line = false;
@@ -86,10 +86,29 @@ fn transpile_parameters(parameters: &Vec<Parameter>, writer: &mut Writer) {
 fn transpile_expression(expression: &Expression) -> String {
     let mut out = "".to_string();
     match expression {
-        Expression::String(string) => {
-            out += "\"";
-            out += string;
-            out += "\".to_string()";
+        Expression::String(parts) => {
+            let mut fmt_string = "".to_string();
+            let mut fmt_params = Vec::new();
+            for part in parts {
+                match part {
+                    StringTemplatePart::Expression(expression) => {
+                        fmt_params.push(transpile_expression(expression));
+                        fmt_string += "{}";
+                    }
+                    StringTemplatePart::String(string) => fmt_string += string,
+                }
+            }
+            if fmt_params.is_empty() {
+                out += "\"";
+                out += &fmt_string;
+                out += "\"";
+            } else {
+                out += "format!(\"";
+                out += &fmt_string;
+                out += "\", ";
+                out += &fmt_params.join(", ");
+                out += ")"
+            }
         }
         Expression::Identifier(identifier) => out += &identifier,
         Expression::Null => out += "null",
@@ -110,6 +129,17 @@ fn transpile_buildin_function_call(
 
     match buildin.name.as_str() {
         "println" => {
+            if let Some(arg0) = call.arguments.get(0) {
+                match arg0 {
+                    Expression::String(_) => {
+                        writer.write("println!(");
+                        writer.write(&transpile_expression(arg0));
+                        writer.write(");");
+                        return true;
+                    }
+                    _ => {}
+                }
+            }
             writer.write("println!(\"{}\", ");
             let args: Vec<String> = call
                 .arguments
@@ -168,6 +198,33 @@ fn transpile_return_statement(expression: &Option<Expression>, writer: &mut Writ
     writer.write(";");
 }
 
+fn transpile_if_statement(if_statement: &IfStatement, writer: &mut Writer, buildins: &Buildins) {
+    writer.write("if ");
+    writer.write(&transpile_expression(&if_statement.condition));
+    writer.write(" {");
+    writer.new_line();
+    writer.indented(|writer| {
+        transpile_block(&if_statement.consequence, writer, buildins);
+    });
+    writer.write("}");
+    if let Some(alternative) = &if_statement.alternative {
+        match alternative {
+            IfAlternative::Else(else_block) => {
+                writer.write(" else {");
+                writer.new_line();
+                writer.indented(|writer| {
+                    transpile_block(else_block, writer, buildins);
+                });
+                writer.write("}");
+            }
+            IfAlternative::If(if_statement) => {
+                writer.write(" else ");
+                transpile_if_statement(if_statement, writer, buildins);
+            }
+        }
+    }
+}
+
 fn transpile_block(block: &Block, writer: &mut Writer, buildins: &Buildins) {
     for statement in &block.statements {
         match statement {
@@ -181,6 +238,10 @@ fn transpile_block(block: &Block, writer: &mut Writer, buildins: &Buildins) {
             }
             Statement::Return(expression) => {
                 transpile_return_statement(expression, writer);
+                writer.new_line();
+            }
+            Statement::IfStatement(if_statement) => {
+                transpile_if_statement(if_statement, writer, buildins);
                 writer.new_line();
             }
         }
@@ -228,13 +289,18 @@ pub fn transpile_project(project_dir: &Path) -> Result<(), anyhow::Error> {
     let source_code = String::from_utf8(buffer)?;
     let tree = parse(&source_code);
     let root_node = tree.root_node();
-    println!("Tree sitter {}", root_node.to_sexp());
+
     let file_path = main_rust.to_string_lossy();
     let parser = ASTParser::new(&file_path, &source_code);
     let package = parser.parse_file(root_node);
-    println!("AST: {:?}", package);
     for error in &package.errors {
         print_err(&error, &source_code);
+    }
+    if !package.errors.is_empty() {
+        return Err(anyhow::Error::msg(format!(
+            "{} compile error(s)",
+            package.errors.len()
+        )));
     }
 
     transpile(&package, &main_rust)?;
@@ -248,4 +314,37 @@ edition = "2021"
 "#;
     cargo_file.write_all(&cargo_content.as_bytes())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod rust_transpiler_tests {
+    use crate::test_utils::validate_project;
+
+    #[test]
+    fn if_else_statement() {
+        validate_project(
+            "if_else_statement",
+            r#"
+fun main() bool {
+    if true {
+        println("if")
+    }
+
+    if true {
+        println("if")
+    } else {
+        println("else")
+    }
+
+    if true {
+        println("if")
+    } else if true {
+        println("if else")
+    } else {
+        println("else")
+    }
+}
+        "#,
+        )
+    }
 }

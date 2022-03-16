@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, hash::Hash};
 
 use crate::ast::{Expression, Function, Statement, Type};
 
@@ -57,6 +57,7 @@ fn infer_types_function(function: &Function, infered_types: &mut InferedTypes) {
             }
             Statement::FunctionCall(_) => {}
             Statement::Return(_) => {}
+            Statement::IfStatement(_) => {}
         }
     }
 }

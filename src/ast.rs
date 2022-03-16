@@ -50,6 +50,14 @@ impl ASTError {
 }
 
 #[derive(Debug)]
+pub enum StringTemplatePart {
+    Expression(Expression),
+    String(String),
+}
+
+pub type StringTemplate = Vec<StringTemplatePart>;
+
+#[derive(Debug)]
 pub struct Parameter {
     pub name: String,
     pub is_mutable: bool,
@@ -75,6 +83,7 @@ pub enum Statement {
     FunctionCall(FunctionCall),
     VarDeclaration(VarDeclaration),
     Return(Option<Expression>),
+    IfStatement(IfStatement),
 }
 
 #[derive(Debug)]
@@ -116,10 +125,23 @@ pub struct Package {
 
 #[derive(Debug)]
 pub enum Expression {
-    String(String),
+    String(StringTemplate),
     Identifier(String),
     Null,
     Bool(bool),
+}
+
+#[derive(Debug)]
+pub enum IfAlternative {
+    Else(Block),
+    If(Box<IfStatement>),
+}
+
+#[derive(Debug)]
+pub struct IfStatement {
+    pub condition: Expression,
+    pub consequence: Block,
+    pub alternative: Option<IfAlternative>,
 }
 
 pub struct ASTParser<'a> {
@@ -196,6 +218,10 @@ impl<'a> ASTParser<'a> {
                         };
                     statements.push(Statement::Return(expression));
                 }
+                "if_statement" => {
+                    let statement = self.parse_if(&statement_node)?;
+                    statements.push(Statement::IfStatement(statement));
+                }
                 _ => {}
             }
         }
@@ -256,13 +282,38 @@ impl<'a> ASTParser<'a> {
         Some(arguments)
     }
 
+    fn parse_string(&mut self, node: &Node) -> Option<StringTemplate> {
+        let start_column = node.start_position().column;
+        let string = node_text(&node, self)?;
+        let string = string.as_str()[1..string.len() - 1].to_string();
+        let mut position = 0;
+        let mut template = StringTemplate::new();
+        let mut cursor = node.walk();
+        for embetted_expr in node.children_by_field_name("embetted_expr", &mut cursor) {
+            let expression_node = child_by_field(&embetted_expr, "expression", self)?;
+            let expression = self.parse_expression(&expression_node)?;
+            template.push(StringTemplatePart::String(
+                string.as_str()[position..embetted_expr.start_position().column - start_column - 1]
+                    .to_string(),
+            ));
+            position = embetted_expr.end_position().column - start_column - 1;
+            template.push(StringTemplatePart::Expression(expression));
+        }
+        if position == 0 {
+            // no expressions just take the whole string
+            template.push(StringTemplatePart::String(string));
+        } else if position < string.len() {
+            template.push(StringTemplatePart::String(
+                string.as_str()[position..].to_string(),
+            ));
+        }
+        Some(template)
+    }
+
     fn parse_expression(&mut self, node: &Node) -> Option<Expression> {
         let expression = match node.kind() {
             "identifier" => Expression::Identifier(node_text(&node, self)?),
-            "interpreted_string_literal" => {
-                let string = node_text(&node, self)?;
-                Expression::String(string.as_str()[1..string.len() - 1].to_string())
-            }
+            "interpreted_string_literal" => Expression::String(self.parse_string(node)?),
             "null" => Expression::Null,
             "true" => Expression::Bool(true),
             "false" => Expression::Bool(false),
@@ -312,6 +363,31 @@ impl<'a> ASTParser<'a> {
             _ => Type::Identifier(type_text),
         };
         Some(t)
+    }
+
+    fn parse_if(&mut self, node: &Node) -> Option<IfStatement> {
+        let condition = child_by_field(node, "condition", self)?;
+        let consequence = child_by_field(node, "consequence", self)?;
+        let alternative = node.child_by_field_name("alternative".as_bytes());
+
+        let condition = self.parse_expression(&condition)?;
+        let consequence = self.parse_block(&consequence)?;
+
+        let alternative = match alternative {
+            Some(alternative) => {
+                if alternative.kind() == "if_statement" {
+                    Some(IfAlternative::If(Box::new(self.parse_if(&alternative)?)))
+                } else {
+                    Some(IfAlternative::Else(self.parse_block(&alternative)?))
+                }
+            }
+            None => None,
+        };
+        Some(IfStatement {
+            condition,
+            consequence,
+            alternative,
+        })
     }
 }
 
