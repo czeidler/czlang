@@ -142,6 +142,7 @@ module.exports = grammar({
         $.function_call,
         $.var_declaration,
         $.return_statement,
+        $.if_statement,
       ),
 
       return_statement: $ => seq(
@@ -180,8 +181,8 @@ module.exports = grammar({
       argument_list: $ => seq(
         '(',
         optional(seq(
-          field("argument", $._expression),
-          repeat(seq(',', field("argument", $._expression))),
+          field('argument', $._expression),
+          repeat(seq(',', field('argument', $._expression))),
         )),
         ')'
       ),
@@ -189,10 +190,27 @@ module.exports = grammar({
       interpreted_string_literal: $ => seq(
         '"',
         repeat(choice(
-          token.immediate(prec(1, /[^"\n\\]+/)),
+          token.immediate(prec(1, /[^"\n\\{]+/)),
+          field('embetted_expr', $.embetted_expr),
           $.escape_sequence
         )),
         '"'
+      ),
+
+      embetted_expr: $ => seq(
+        '{',
+        field('expression', $._expression),
+        '}'
+      ),
+
+      if_statement: $ => seq(
+        'if',
+        field('condition', $._expression),
+        field('consequence', $.block),
+        optional(seq(
+          'else',
+          field('alternative', choice($.block, $.if_statement))
+        ))
       ),
 
       escape_sequence: $ => token.immediate(seq(

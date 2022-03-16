@@ -1,0 +1,26 @@
+==================
+String literal
+==================
+
+fun x() {
+  val b = "text {var}, test2 {var2}"
+}
+
+---
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameter_list)
+    (block
+        (var_declaration
+            (identifier)
+            (interpreted_string_literal
+              (embetted_expr
+                (identifier))
+              (embetted_expr
+                (identifier)))
+        )
+    )
+  )
+)
