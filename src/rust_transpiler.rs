@@ -1,10 +1,10 @@
-use std::fs::{create_dir_all, File};
+use std::fs::create_dir_all;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 use crate::ast::{
-    print_err, ASTParser, Block, Expression, Function, FunctionCall, IfAlternative, IfStatement,
-    Package, Parameter, Statement, StringTemplatePart, Type, VarDeclaration,
+    print_err, Block, Expression, File, FileContext, Function, FunctionCall, IfAlternative,
+    IfStatement, Parameter, Statement, StringTemplatePart, Type, VarDeclaration,
 };
 use crate::buildin::Buildins;
 use crate::tree_sitter::parse;
@@ -259,25 +259,27 @@ fn transpile_function(function: &Function, writer: &mut Writer, buildins: &Build
     writer.write("}");
 }
 
-pub fn transpile(package: &Package, outfile: &PathBuf) -> Result<(), io::Error> {
-    let mut file = File::create(outfile)?;
+pub fn transpile(file: &File, outfile: &PathBuf) -> Result<(), io::Error> {
+    let mut outfile = std::fs::File::create(outfile)?;
 
     let buildins = Buildins::new();
     let mut buffer = "".to_string();
     let mut writer = Writer::new(&mut buffer);
-    for function in &package.functions {
+
+    for (_, function) in &file.functions {
         transpile_function(function, &mut writer, &buildins);
         writer.new_line();
         writer.new_line();
     }
-    file.write(buffer.as_bytes())?;
-    file.flush()?;
+
+    outfile.write(buffer.as_bytes())?;
+    outfile.flush()?;
     Ok(())
 }
 
 pub fn transpile_project(project_dir: &Path) -> Result<(), anyhow::Error> {
     let main_file_path = project_dir.join("main.cz");
-    let mut main_file = File::open(&main_file_path)?;
+    let mut main_file = std::fs::File::open(&main_file_path)?;
     let mut buffer = Vec::new();
     main_file.read_to_end(&mut buffer)?;
 
@@ -291,22 +293,25 @@ pub fn transpile_project(project_dir: &Path) -> Result<(), anyhow::Error> {
     let root_node = tree.root_node();
 
     let file_path = main_rust.to_string_lossy();
-    let parser = ASTParser::new(&file_path, &source_code);
-    let package = parser.parse_file(root_node);
-    for error in &package.errors {
-        print_err(&error, &source_code);
+    let mut file_context = FileContext::new(root_node.clone(), file_path.to_string(), source_code);
+    let file = file_context.parse_file();
+    for error in &file.context.errors {
+        print_err(&error, &file.context.source);
     }
-    if !package.errors.is_empty() {
+    if !file.context.errors.is_empty() {
         return Err(anyhow::Error::msg(format!(
             "{} compile error(s)",
-            package.errors.len()
+            file.context.errors.len()
         )));
     }
 
-    transpile(&package, &main_rust)?;
+    //let result = validate(&package);
+    //todo
+
+    transpile(&file, &main_rust)?;
 
     // write Cargo.toml
-    let mut cargo_file = File::create(&build_dir.join("Cargo.toml"))?;
+    let mut cargo_file = std::fs::File::create(&build_dir.join("Cargo.toml"))?;
     let cargo_content = r#"[package]
 name = "app"
 version = "0.1.0"
