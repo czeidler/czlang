@@ -61,6 +61,25 @@ pub struct NodeData {
 pub struct File<'a> {
     pub context: FileContext<'a>,
     pub functions: HashMap<String, rc::Rc<Function>>,
+    pub struct_defs: HashMap<String, rc::Rc<Struct>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Struct {
+    pub node: NodeData,
+
+    pub name: String,
+    pub fields: Vec<Field>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Field {
+    pub node: NodeData,
+
+    pub name: String,
+    pub is_reference: bool,
+    pub is_nullable: bool,
+    pub r#type: Type,
 }
 
 #[derive(Debug, Clone)]
@@ -193,6 +212,7 @@ impl<'a> FileContext<'a> {
 
 pub fn parse_file<'a>(node: Node<'a>, context: &mut FileContext<'a>) -> File<'a> {
     let mut functions = HashMap::new();
+    let mut struct_defs = HashMap::new();
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
@@ -200,6 +220,11 @@ pub fn parse_file<'a>(node: Node<'a>, context: &mut FileContext<'a>) -> File<'a>
                 if let Some(fun) = parse_fun_and_cache(context, &child, &node) {
                     functions.insert(fun.name.clone(), fun);
                 };
+            }
+            "struct_definition" => {
+                if let Some(struct_def) = parse_struct_and_cache(context, &child, &node) {
+                    struct_defs.insert(struct_def.name.clone(), struct_def);
+                }
             }
             _ => {}
         };
@@ -209,6 +234,7 @@ pub fn parse_file<'a>(node: Node<'a>, context: &mut FileContext<'a>) -> File<'a>
     File {
         context: context.clone(),
         functions,
+        struct_defs,
     }
 }
 
@@ -247,6 +273,74 @@ fn parse_fun<'a>(
         body: parse_block_and_cache(context, body_node, node.clone()),
     };
     Some(fun)
+}
+
+pub fn parse_struct_and_cache<'a>(
+    context: &mut FileContext<'a>,
+    node: &Node<'a>,
+    parent: &Node<'a>,
+) -> Option<rc::Rc<Struct>> {
+    parse_struct(context, node, parent).map(|value| {
+        let symbol = rc::Rc::new(value);
+        context
+            .nodes
+            .insert(node.id(), CachedNode::AstStruct(symbol.clone()));
+        symbol
+    })
+}
+
+fn parse_struct<'a>(
+    context: &mut FileContext<'a>,
+    node: &Node<'a>,
+    parent: &Node<'a>,
+) -> Option<Struct> {
+    let name = child_by_field(&node, "name", context)?;
+    let fields = child_by_field(&node, "fields", context)?;
+    let fields = parse_struct_fields(context, &fields, node)?;
+    Some(Struct {
+        node: NodeData {
+            id: node.id(),
+            parent: parent.id(),
+        },
+        name: node_text(&name, context)?,
+        fields,
+    })
+}
+
+fn parse_struct_fields<'a>(
+    context: &mut FileContext<'a>,
+    node: &Node<'a>,
+    parent: &Node<'a>,
+) -> Option<Vec<Field>> {
+    let mut fields = Vec::new();
+    let mut cursor = node.walk();
+    for field_node in node.children_by_field_name("field", &mut cursor) {
+        fields.push(parse_struct_field(context, &field_node, parent)?);
+    }
+    Some(fields)
+}
+
+fn parse_struct_field<'a>(
+    context: &mut FileContext<'a>,
+    node: &Node<'a>,
+    parent: &Node<'a>,
+) -> Option<Field> {
+    let name = child_by_field(&node, "name", context)?;
+    let is_reference = node.child_by_field_name("reference".as_bytes()).is_some();
+    let is_nullable = node.child_by_field_name("nullable".as_bytes()).is_some();
+    let field_type = node.child_by_field_name("type")?;
+
+    Some(Field {
+        node: NodeData {
+            id: node.id(),
+            parent: parent.id(),
+        },
+
+        name: node_text(&name, context)?,
+        is_reference,
+        is_nullable,
+        r#type: parse_type(context, &field_type)?,
+    })
 }
 
 pub fn parse_block_and_cache<'a>(
@@ -474,6 +568,7 @@ fn parse_if<'a>(
 #[derive(Debug, Clone)]
 pub enum CachedNode {
     AstFun(rc::Rc<Function>),
+    AstStruct(rc::Rc<Struct>),
     AstBlock(rc::Rc<Block>),
     AstIf(rc::Rc<IfStatement>),
 }

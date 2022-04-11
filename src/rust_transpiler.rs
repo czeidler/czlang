@@ -3,8 +3,8 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 use crate::ast::{
-    print_err, Block, Expression, File, FileContext, Function, FunctionCall, IfAlternative,
-    IfStatement, Parameter, Statement, StringTemplatePart, Type, VarDeclaration,
+    print_err, Block, Expression, Field, File, FileContext, Function, FunctionCall, IfAlternative,
+    IfStatement, Parameter, Statement, StringTemplatePart, Struct, Type, VarDeclaration,
 };
 use crate::buildin::Buildins;
 use crate::tree_sitter::parse;
@@ -51,6 +51,12 @@ impl<'a> Writer<'a> {
         self.write("\n");
         self.starting_new_line = true;
     }
+}
+
+fn transpile_optional_type(t: &Type, writer: &mut Writer) {
+    writer.write("Option<");
+    transpile_type(t, writer);
+    writer.write(">");
 }
 
 fn transpile_type(t: &Type, writer: &mut Writer) {
@@ -259,12 +265,52 @@ fn transpile_function(function: &Function, writer: &mut Writer, buildins: &Build
     writer.write("}");
 }
 
+fn transpile_struct_field(field: &Field, writer: &mut Writer) {
+    writer.write(&field.name);
+    writer.write(": ");
+    if field.is_reference {
+        writer.write("&'a ");
+    }
+    if field.is_nullable {
+        transpile_optional_type(&field.r#type, writer);
+    } else {
+        transpile_type(&field.r#type, writer);
+    }
+    writer.write(",");
+}
+
+fn transpile_struct_fields(fields: &Vec<Field>, writer: &mut Writer) {
+    for field in fields {
+        transpile_struct_field(field, writer);
+        writer.new_line();
+    }
+}
+
+fn transpile_struct(struct_def: &Struct, writer: &mut Writer) {
+    writer.write(&format!("struct {}", struct_def.name));
+    if struct_def.fields.iter().any(|it| it.is_reference) {
+        writer.write("<'a>");
+    }
+    writer.write(" {");
+    writer.new_line();
+    writer.indented(|writer| {
+        transpile_struct_fields(&struct_def.fields, writer);
+    });
+    writer.write("}");
+}
+
 pub fn transpile(file: &File, outfile: &PathBuf) -> Result<(), io::Error> {
     let mut outfile = std::fs::File::create(outfile)?;
 
     let buildins = Buildins::new();
     let mut buffer = "".to_string();
     let mut writer = Writer::new(&mut buffer);
+
+    for (_, struct_def) in &file.struct_defs {
+        transpile_struct(struct_def, &mut writer);
+        writer.new_line();
+        writer.new_line();
+    }
 
     for (_, function) in &file.functions {
         transpile_function(function, &mut writer, &buildins);
