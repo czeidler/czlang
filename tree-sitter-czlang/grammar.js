@@ -79,8 +79,8 @@ module.exports = grammar({
       source_file: $ => repeat($._definition),
 
       _definition: $ => choice(
-        $.function_definition
-        // TODO: other kinds of definitions
+        $.function_definition,
+        $.struct_definition
       ),
 
       function_definition: $ => seq(
@@ -158,7 +158,7 @@ module.exports = grammar({
       ),
 
       var_declaration: $ => seq(
-        field('variable', 'val'),
+        field('variable', 'var'),
         field('name', $.identifier),
         field('nullable', optional('?')),
         field("reference", optional("&")),
@@ -211,6 +211,29 @@ module.exports = grammar({
           'else',
           field('alternative', choice($.block, $.if_statement))
         ))
+      ),
+
+      struct_definition: $ => seq(
+        'struct',
+        field('name', $.identifier),
+        field('fields', $.field_definition_list),
+      ),
+
+      field_definition_list: $ => seq(
+        '{',
+        optional(seq(
+          field('field', $.field_definition),
+          repeat(seq(terminator, field('field', $.field_definition))),
+          optional(terminator)
+        )),
+        '}'
+      ),
+
+      field_definition: $ => seq(
+        field('name', $.identifier),
+        field('nullable', optional('?')),
+        field("reference", optional("&")),
+        field('type', $._type)
       ),
 
       escape_sequence: $ => token.immediate(seq(

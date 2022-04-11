@@ -3,7 +3,7 @@ String literal
 ==================
 
 fun x() {
-  val b = "text {var}, test2 {var2}"
+  var b = "text {var}, test2 {var2}"
 }
 
 ---
