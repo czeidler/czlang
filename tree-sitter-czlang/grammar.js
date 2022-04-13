@@ -80,7 +80,8 @@ module.exports = grammar({
 
       _definition: $ => choice(
         $.function_definition,
-        $.struct_definition
+        $.struct_definition,
+        $.interface_definition,
       ),
 
       function_definition: $ => seq(
@@ -107,6 +108,7 @@ module.exports = grammar({
 
       _type: $ => choice(
         $.primitive_type,
+        $.identifier
       ),
 
       primitive_type: $ => choice(
@@ -234,6 +236,43 @@ module.exports = grammar({
         field('nullable', optional('?')),
         field("reference", optional("&")),
         field('type', $._type)
+      ),
+
+      interface_definition: $ => seq(
+        'interface',
+        field('name', $.identifier),
+        '{',
+        optional(seq(
+          $._interface_body,
+          repeat(seq(terminator, $._interface_body)),
+          optional(terminator)
+        )),
+        '}'
+      ),
+
+      _interface_body: $ => seq(
+         $.method_spec
+      ),
+
+      method_spec: $ => seq(
+        field('name', $.identifier),
+        field('self', optional($.self_parameter)),
+        field('parameters', $.self_parameter_list),
+        field('result', optional($._type)),
+      ),
+
+      self_parameter_list: $ => seq(
+        '(',
+        optional(seq(choice($.self_parameter, $.parameter), repeat(seq(",", $.parameter)))),
+        ')'
+      ),
+
+      self_parameter: $ => seq(
+        optional(choice(
+          field('mut_reference', seq('&', 'mut')),
+          field('reference', '&')
+        )),
+        'self',
       ),
 
       escape_sequence: $ => token.immediate(seq(
