@@ -1,9 +1,18 @@
-use std::{collections::HashMap, rc::Rc};
+use std::collections::HashMap;
 
-use crate::ast::{Block, Function, NodeData, Parameter, Type};
+use crate::ast::{NodeData, Parameter, Type};
+
+#[derive(Debug, Clone)]
+pub struct FunctionDeclaration {
+    pub node: NodeData,
+
+    pub name: String,
+    pub parameters: Vec<Parameter>,
+    pub return_type: String,
+}
 
 pub struct Buildins {
-    pub functions: HashMap<String, Function>,
+    pub functions: HashMap<String, FunctionDeclaration>,
 }
 
 impl Buildins {
@@ -11,7 +20,7 @@ impl Buildins {
         let mut functions = HashMap::new();
         functions.insert(
             "println".to_string(),
-            Function {
+            FunctionDeclaration {
                 node: NodeData { id: 1, parent: 0 },
                 name: "println".to_string(),
                 parameters: vec![Parameter {
@@ -25,10 +34,6 @@ impl Buildins {
                     origin: None,
                 }],
                 return_type: "".to_string(),
-                body: Rc::new(Block {
-                    node: NodeData { id: 2, parent: 1 },
-                    statements: vec![],
-                }),
             },
         );
         Buildins { functions }
