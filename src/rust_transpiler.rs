@@ -3,8 +3,9 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 use crate::ast::{
-    print_err, Block, Expression, Field, File, FileContext, Function, FunctionCall, IfAlternative,
-    IfStatement, Parameter, Statement, StringTemplatePart, Struct, Type, VarDeclaration,
+    print_err, BinaryOperator, Block, Expression, Field, File, FileContext, Function, FunctionCall,
+    IfAlternative, IfStatement, Parameter, Statement, StringTemplatePart, Struct, Type,
+    UnaryOperator, VarDeclaration,
 };
 use crate::buildin::Buildins;
 use crate::tree_sitter::parse;
@@ -119,6 +120,41 @@ fn transpile_expression(expression: &Expression) -> String {
         Expression::Identifier(identifier) => out += &identifier,
         Expression::Null => out += "null",
         Expression::Bool(b) => out += &format!("{}", b),
+        Expression::UnaryExpression(expr) => {
+            let op = match expr.operator {
+                UnaryOperator::Minus => "-",
+                UnaryOperator::Not => "!",
+                UnaryOperator::Reference => "&",
+            };
+            out += op;
+            out += &transpile_expression(&expr.operand);
+        }
+        Expression::BinaryExpression(expr) => {
+            let op = match expr.operator {
+                BinaryOperator::Add => "+",
+                BinaryOperator::Substract => "-",
+                BinaryOperator::Multiply => "*",
+                BinaryOperator::Divide => "/",
+                BinaryOperator::Equal => "==",
+                BinaryOperator::NotEqual => "!=",
+                BinaryOperator::Smaller => "<",
+                BinaryOperator::SmallerEqual => "<=",
+                BinaryOperator::Bigger => ">",
+                BinaryOperator::BiggerEqual => ">=",
+                BinaryOperator::And => "&&",
+                BinaryOperator::Or => "||",
+            };
+            out += &transpile_expression(&expr.left);
+            out += " ";
+            out += op;
+            out += " ";
+            out += &transpile_expression(&expr.right);
+        }
+        Expression::ParenthesizedExpression(expr) => {
+            out += "(";
+            out += &transpile_expression(&expr.expression);
+            out += ")";
+        }
     }
     out
 }

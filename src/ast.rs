@@ -163,6 +163,53 @@ pub enum Expression {
     Identifier(String),
     Null,
     Bool(bool),
+    UnaryExpression(UnaryExpression),
+    BinaryExpression(BinaryExpression),
+    ParenthesizedExpression(ParenthesizedExpression),
+}
+
+#[derive(Debug, Clone)]
+pub enum UnaryOperator {
+    /// -
+    Minus,
+    /// !
+    Not,
+    /// &
+    Reference,
+}
+
+#[derive(Debug, Clone)]
+pub struct UnaryExpression {
+    pub operator: UnaryOperator,
+    pub operand: Box<Expression>,
+}
+
+#[derive(Debug, Clone)]
+pub enum BinaryOperator {
+    Add,
+    Substract,
+    Multiply,
+    Divide,
+    Equal,
+    NotEqual,
+    Smaller,
+    SmallerEqual,
+    Bigger,
+    BiggerEqual,
+    And,
+    Or,
+}
+
+#[derive(Debug, Clone)]
+pub struct BinaryExpression {
+    pub operator: BinaryOperator,
+    pub left: Box<Expression>,
+    pub right: Box<Expression>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ParenthesizedExpression {
+    pub expression: Box<Expression>,
 }
 
 #[derive(Debug, Clone)]
@@ -436,6 +483,13 @@ fn parse_expression<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Optio
         "null" => Expression::Null,
         "true" => Expression::Bool(true),
         "false" => Expression::Bool(false),
+        "unary_expression" => Expression::UnaryExpression(parse_unary_expression(context, node)?),
+        "binary_expression" => {
+            Expression::BinaryExpression(parse_binary_expression(context, node)?)
+        }
+        "parenthesized_expression" => {
+            Expression::ParenthesizedExpression(parse_parenthesized_expression(context, node)?)
+        }
         _ => {
             context.errors.push(ASTError::from_node(
                 node,
@@ -446,6 +500,79 @@ fn parse_expression<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Optio
         }
     };
     Some(expression)
+}
+
+fn parse_unary_expression<'a>(
+    context: &mut FileContext<'a>,
+    node: &Node<'a>,
+) -> Option<UnaryExpression> {
+    let operator = child_by_field(&node, "operator", context)?;
+    let string = node_text(&operator, context)?;
+    let operator = match string.as_str() {
+        "-" => UnaryOperator::Minus,
+        "!" => UnaryOperator::Not,
+        "&" => UnaryOperator::Reference,
+        unknown => {
+            context.errors.push(ASTError::from_node(
+                node,
+                &context.file_path,
+                &format!("Unknown unary operator: {}", unknown),
+            ));
+            return None;
+        }
+    };
+    let operand = child_by_field(&node, "operand", context)?;
+    Some(UnaryExpression {
+        operator,
+        operand: Box::new(parse_expression(context, &operand)?),
+    })
+}
+
+fn parse_binary_expression<'a>(
+    context: &mut FileContext<'a>,
+    node: &Node<'a>,
+) -> Option<BinaryExpression> {
+    let operator = child_by_field(&node, "operator", context)?;
+    let string = node_text(&operator, context)?;
+    let operator = match string.as_str() {
+        "+" => BinaryOperator::Add,
+        "-" => BinaryOperator::Substract,
+        "*" => BinaryOperator::Multiply,
+        "/" => BinaryOperator::Divide,
+        "==" => BinaryOperator::Equal,
+        "!=" => BinaryOperator::NotEqual,
+        "<" => BinaryOperator::Smaller,
+        "<=" => BinaryOperator::SmallerEqual,
+        ">" => BinaryOperator::Bigger,
+        ">=" => BinaryOperator::BiggerEqual,
+        "&&" => BinaryOperator::And,
+        "||" => BinaryOperator::Or,
+        unknown => {
+            context.errors.push(ASTError::from_node(
+                node,
+                &context.file_path,
+                &format!("Unknown binary operator: {}", unknown),
+            ));
+            return None;
+        }
+    };
+    let left = child_by_field(&node, "left", context)?;
+    let right = child_by_field(&node, "right", context)?;
+    Some(BinaryExpression {
+        operator,
+        left: Box::new(parse_expression(context, &left)?),
+        right: Box::new(parse_expression(context, &right)?),
+    })
+}
+
+fn parse_parenthesized_expression<'a>(
+    context: &mut FileContext<'a>,
+    node: &Node<'a>,
+) -> Option<ParenthesizedExpression> {
+    let expression = child_by_field(&node, "expression", context)?;
+    Some(ParenthesizedExpression {
+        expression: Box::new(parse_expression(context, &expression)?),
+    })
 }
 
 fn parse_string<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<StringTemplate> {

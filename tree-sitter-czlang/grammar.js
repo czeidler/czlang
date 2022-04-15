@@ -184,7 +184,7 @@ module.exports = grammar({
 
       parenthesized_expression: $ => seq(
         '(',
-        $._expression,
+        field('expression', $._expression),
         ')'
       ),
 
