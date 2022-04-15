@@ -177,8 +177,38 @@ module.exports = grammar({
         $.null,
         $.true,
         $.false,
-        // TODO: other kinds of expressions
+        $.unary_expression,
+        $.binary_expression,
+        $.parenthesized_expression
       ),
+
+      parenthesized_expression: $ => seq(
+        '(',
+        $._expression,
+        ')'
+      ),
+
+      unary_expression: $ => prec(PREC.unary, seq(
+        field('operator', choice('-', '!', '&')),
+        field('operand', $._expression)
+      )),
+
+      binary_expression: $ => {
+        const table = [
+          [PREC.multiplicative, choice(...multiplicative_operators)],
+          [PREC.additive, choice(...additive_operators)],
+          [PREC.comparative, choice(...comparative_operators)],
+          [PREC.and, '&&'],
+          [PREC.or, '||'],
+        ];
+        return choice(...table.map(([precedence, operator]) =>
+          prec.left(precedence, seq(
+            field('left', $._expression),
+            field('operator', operator),
+            field('right', $._expression)
+          ))
+        ));
+      },
 
       argument_list: $ => seq(
         '(',
