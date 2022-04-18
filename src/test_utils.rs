@@ -10,10 +10,12 @@ pub fn create_project(test_dir: &str, file_content: &str) {
     if test_dir == "." || test_dir == "" {
         panic!("Invalid test dir: {}", test_dir);
     }
-    remove_dir_all(test_dir).unwrap();
+    let project_path = Path::new(test_dir);
+    if project_path.exists() {
+        remove_dir_all(test_dir).unwrap();
+    }
     create_dir_all(test_dir).unwrap();
 
-    let project_path = Path::new(test_dir);
     let main_file_path = project_path.join("main.cz");
     let mut main_file = File::create(&main_file_path).unwrap();
     main_file.write_all(file_content.as_bytes()).unwrap();
