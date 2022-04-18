@@ -1,4 +1,7 @@
-use std::{collections::HashMap, rc};
+use std::{
+    collections::HashMap,
+    rc::{self, Rc},
+};
 
 use tree_sitter::Node;
 
@@ -127,6 +130,31 @@ pub enum Type {
     I32,
     U32,
     Identifier(String),
+    Array(Array),
+    Slice(Slice),
+}
+
+#[derive(Debug, Clone)]
+pub struct Array {
+    pub r#type: Rc<Type>,
+    pub length: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct Slice {
+    pub r#type: Rc<Type>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ArrayExpression {
+    pub expressions: Vec<Expression>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SliceExpression {
+    pub operand: Rc<Expression>,
+    pub start: Option<usize>,
+    pub end: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -134,7 +162,7 @@ pub enum Statement {
     FunctionCall(FunctionCall),
     VarDeclaration(VarDeclaration),
     Return(Option<Expression>),
-    IfStatement(rc::Rc<IfStatement>),
+    IfStatement(Rc<IfStatement>),
 }
 
 #[derive(Debug, Clone)]
@@ -161,11 +189,14 @@ pub struct FunctionCall {
 pub enum Expression {
     String(StringTemplate),
     Identifier(String),
+    IntLiteral(usize),
     Null,
     Bool(bool),
     UnaryExpression(UnaryExpression),
     BinaryExpression(BinaryExpression),
     ParenthesizedExpression(ParenthesizedExpression),
+    ArrayExpression(ArrayExpression),
+    SliceExpression(SliceExpression),
 }
 
 #[derive(Debug, Clone)]
@@ -479,6 +510,7 @@ fn parse_function_call_arguments<'a>(
 fn parse_expression<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Expression> {
     let expression = match node.kind() {
         "identifier" => Expression::Identifier(node_text(&node, context)?),
+        "int_literal" => Expression::IntLiteral(parse_usize(context, node)?),
         "interpreted_string_literal" => Expression::String(parse_string(context, node)?),
         "null" => Expression::Null,
         "true" => Expression::Bool(true),
@@ -490,6 +522,8 @@ fn parse_expression<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Optio
         "parenthesized_expression" => {
             Expression::ParenthesizedExpression(parse_parenthesized_expression(context, node)?)
         }
+        "array_expression" => Expression::ArrayExpression(parse_array_expression(context, node)?),
+        "slice_expression" => Expression::SliceExpression(parse_slice_expression(context, node)?),
         _ => {
             context.errors.push(ASTError::from_node(
                 node,
@@ -572,6 +606,40 @@ fn parse_parenthesized_expression<'a>(
     let expression = child_by_field(&node, "expression", context)?;
     Some(ParenthesizedExpression {
         expression: Box::new(parse_expression(context, &expression)?),
+    })
+}
+
+fn parse_array_expression<'a>(
+    context: &mut FileContext<'a>,
+    node: &Node<'a>,
+) -> Option<ArrayExpression> {
+    let mut expressions = Vec::new();
+    let mut cursor = node.walk();
+    for child in node.children_by_field_name("expression", &mut cursor) {
+        expressions.push(parse_expression(context, &child)?);
+    }
+
+    Some(ArrayExpression { expressions })
+}
+
+fn parse_slice_expression<'a>(
+    context: &mut FileContext<'a>,
+    node: &Node<'a>,
+) -> Option<SliceExpression> {
+    let operand = child_by_field(&node, "operand", context)?;
+    let start = match node.child_by_field_name("start".as_bytes()) {
+        Some(n) => Some(parse_usize(context, &n)?),
+        None => None,
+    };
+    let end = match node.child_by_field_name("end".as_bytes()) {
+        Some(n) => Some(parse_usize(context, &n)?),
+        None => None,
+    };
+
+    Some(SliceExpression {
+        operand: Rc::new(parse_expression(context, &operand)?),
+        start,
+        end,
     })
 }
 
@@ -731,16 +799,59 @@ fn parse_parameter<'a>(context: &mut FileContext<'a>, node: Node<'a>) -> Option<
     })
 }
 
-fn parse_type<'a>(context: &mut FileContext<'a>, node: &Node) -> Option<Type> {
-    let type_text = node_text(&node, context)?;
-    let t = match type_text.as_str() {
-        "string" => Type::String,
-        "bool" => Type::Bool,
-        "i32" => Type::I32,
-        "u32" => Type::U32,
-        _ => Type::Identifier(type_text),
+fn parse_type<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Type> {
+    let t = match node.kind() {
+        "primitive_type" => {
+            let type_text = node_text(&node, context)?;
+            match type_text.as_str() {
+                "string" => Type::String,
+                "bool" => Type::Bool,
+                "i32" => Type::I32,
+                "u32" => Type::U32,
+                _ => {
+                    context.errors.push(ASTError::from_node(
+                        node,
+                        &context.file_path,
+                        &format!("Unsupported primitve type: {}", type_text),
+                    ));
+                    return None;
+                }
+            }
+        }
+        "identifier" => {
+            let type_text = node_text(&node, context)?;
+            Type::Identifier(type_text)
+        }
+        "array_type" => Type::Array(parse_array(context, &node)?),
+        "slice_type" => Type::Slice(parse_slice(context, &node)?),
+        _ => {
+            context.errors.push(ASTError::from_node(
+                node,
+                &context.file_path,
+                &format!("Unsupported type: {}", node.kind()),
+            ));
+            return None;
+        }
     };
+
     Some(t)
+}
+
+fn parse_array<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Array> {
+    let element = child_by_field(&node, "element", context)?;
+    let length = child_by_field(&node, "length", context)?;
+    let length = parse_usize(context, &length)?;
+    Some(Array {
+        r#type: Rc::new(parse_type(context, &element)?),
+        length,
+    })
+}
+
+fn parse_slice<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Slice> {
+    let element = child_by_field(&node, "element", context)?;
+    Some(Slice {
+        r#type: Rc::new(parse_type(context, &element)?),
+    })
 }
 
 fn error_to_string(err: &Node) -> String {
@@ -803,6 +914,21 @@ fn child_by_field<'a>(
             None
         }
     }
+}
+
+fn parse_usize<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<usize> {
+    let string = node_text(&node, context)?;
+    string
+        .parse::<usize>()
+        .map_err(|err| {
+            context.errors.push(ASTError::from_node(
+                node,
+                &context.file_path,
+                &format!("Failed to parse integer: {}", err),
+            ));
+            err
+        })
+        .ok()
 }
 
 fn collect_errors(node: Node, file_path: &str, errors: &mut Vec<ASTError>) {

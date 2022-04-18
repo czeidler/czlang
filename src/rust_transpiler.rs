@@ -3,9 +3,9 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 use crate::ast::{
-    print_err, BinaryOperator, Block, Expression, Field, File, FileContext, Function, FunctionCall,
-    IfAlternative, IfStatement, Parameter, Statement, StringTemplatePart, Struct, Type,
-    UnaryOperator, VarDeclaration,
+    print_err, Array, ArrayExpression, BinaryOperator, Block, Expression, Field, File, FileContext,
+    Function, FunctionCall, IfAlternative, IfStatement, Parameter, Slice, SliceExpression,
+    Statement, StringTemplatePart, Struct, Type, UnaryOperator, VarDeclaration,
 };
 use crate::buildin::Buildins;
 use crate::tree_sitter::parse;
@@ -68,8 +68,24 @@ fn transpile_type(t: &Type, writer: &mut Writer) {
         Type::U32 => "u32",
         Type::Identifier(identifier) => identifier.as_str(),
         Type::Str => "&str",
+        Type::Array(array) => return transpile_array(array, writer),
+        Type::Slice(slice) => return transpile_slice(slice, writer),
     };
     writer.write(text);
+}
+
+fn transpile_array(array: &Array, writer: &mut Writer) {
+    writer.write("[");
+    transpile_type(&array.r#type, writer);
+    writer.write("; ");
+    writer.write(&format!("{}", array.length));
+    writer.write("]");
+}
+
+fn transpile_slice(slice: &Slice, writer: &mut Writer) {
+    writer.write("&[");
+    transpile_type(&slice.r#type, writer);
+    writer.write("]");
 }
 
 fn transpile_parameter(parameter: &Parameter, writer: &mut Writer) {
@@ -118,6 +134,7 @@ fn transpile_expression(expression: &Expression) -> String {
             }
         }
         Expression::Identifier(identifier) => out += &identifier,
+        Expression::IntLiteral(number) => out += &format!("{}", number),
         Expression::Null => out += "null",
         Expression::Bool(b) => out += &format!("{}", b),
         Expression::UnaryExpression(expr) => {
@@ -155,7 +172,38 @@ fn transpile_expression(expression: &Expression) -> String {
             out += &transpile_expression(&expr.expression);
             out += ")";
         }
+        Expression::ArrayExpression(array) => out += &transpile_array_expr(array),
+        Expression::SliceExpression(slice) => out += &transpile_slice_expr(slice),
     }
+    out
+}
+
+fn transpile_array_expr(array: &ArrayExpression) -> String {
+    let mut out = "".to_string();
+    out += "[";
+    let mut iter = array.expressions.iter().peekable();
+    while let Some(expr) = iter.next() {
+        out += &transpile_expression(expr);
+        if iter.peek().is_some() {
+            out += ", ";
+        }
+    }
+    out += "]";
+    out
+}
+
+fn transpile_slice_expr(slice: &SliceExpression) -> String {
+    let mut out = "".to_string();
+    out += &transpile_expression(&slice.operand);
+    out += "[";
+    if let Some(start) = slice.start {
+        out += &format!("{}", start);
+    }
+    out += "..";
+    if let Some(end) = slice.end {
+        out += &format!("{}", end);
+    }
+    out += "]";
     out
 }
 
@@ -410,7 +458,7 @@ mod rust_transpiler_tests {
     #[test]
     fn if_else_statement() {
         validate_project(
-            "if_else_statement",
+            "test_projects/transpile_if_else_statement",
             r#"
 fun main() bool {
     if true {
@@ -430,6 +478,21 @@ fun main() bool {
     } else {
         println("else")
     }
+}
+        "#,
+        )
+    }
+
+    #[test]
+    fn array_slice() {
+        validate_project(
+            "test_projects/transpile_array_slice",
+            r#"
+fun main() i32 {
+    var array i32[5] = [1, 2, 3, 4, 5]
+    var array2 = [1, 2, 3]
+    var slice = &array[:]
+    var slice2 = &array2[1:1]
 }
         "#,
         )

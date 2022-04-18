@@ -23,8 +23,8 @@ fun x() i32 {
     (block
         (if_statement
             (binary_expression
-              (number)
-              (number))
+              (int_literal)
+              (int_literal))
             (block))
         (var_declaration
             (identifier)
@@ -50,8 +50,8 @@ fun x() i32 {
             (unary_expression
               (parenthesized_expression
                 (binary_expression
-                  (number)
-                  (number)))))
+                  (int_literal)
+                  (int_literal)))))
         (var_declaration
             (identifier)
             (unary_expression

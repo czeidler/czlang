@@ -108,7 +108,9 @@ module.exports = grammar({
 
       _type: $ => choice(
         $.primitive_type,
-        $.identifier
+        $.identifier,
+        $.array_type,
+        $.slice_type,
       ),
 
       primitive_type: $ => choice(
@@ -127,6 +129,36 @@ module.exports = grammar({
         'string',
         'void'
       ),
+
+      array_type: $ => seq(
+        field('element', $._type),
+        '[',
+        field('length', $._expression),
+        ']',
+      ),
+
+      slice_type: $ => seq(
+        field('element', $._type),
+        '[',
+        ']',
+      ),
+
+      array_expression: $ => prec(PREC.primary, seq(
+        '[',
+        commaSeparatedList(field('expression', $._expression)),
+        ']'
+      )),
+
+      slice_expression: $ => prec(PREC.primary, seq(
+        field('operand', $._expression),
+        '[',
+        seq(
+          field('start', optional($._expression)),
+          ':',
+          field('end', optional($._expression))
+        ),
+        ']'
+      )),
 
       block: $ => seq(
         '{',
@@ -172,14 +204,17 @@ module.exports = grammar({
 
       _expression: $ => choice(
         $.identifier,
-        $.number,
+        $.int_literal,
+        $.float_literal,
         $.interpreted_string_literal,
         $.null,
         $.true,
         $.false,
         $.unary_expression,
         $.binary_expression,
-        $.parenthesized_expression
+        $.parenthesized_expression,
+        $.array_expression,
+        $.slice_expression,
       ),
 
       parenthesized_expression: $ => seq(
@@ -321,7 +356,10 @@ module.exports = grammar({
         repeat(choice(letter, unicodeDigit))
       )),
 
-      number: $ => /\d+/,
+      int_literal: $ => token(intLiteral),
+
+      float_literal: $ => token(floatLiteral),
+
       null: $ => 'null',
       true: $ => 'true',
       false: $ => 'false',

@@ -34,7 +34,7 @@ fun x() i32 {
     (parameter_list)
     (primitive_type)
     (block
-      (return_statement (number))
+      (return_statement (int_literal))
     )
   )
 )
