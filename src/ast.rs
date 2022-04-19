@@ -91,8 +91,8 @@ pub struct Function {
 
     pub name: String,
     pub parameters: Vec<Parameter>,
-    pub return_type: String,
-    pub body: rc::Rc<Block>,
+    pub return_type: Option<Type>,
+    pub body: Rc<Block>,
 }
 
 #[derive(Debug, Clone)]
@@ -159,7 +159,7 @@ pub struct SliceExpression {
 
 #[derive(Debug, Clone)]
 pub enum Statement {
-    FunctionCall(FunctionCall),
+    Expression(Expression),
     VarDeclaration(VarDeclaration),
     Return(Option<Expression>),
     IfStatement(Rc<IfStatement>),
@@ -197,6 +197,7 @@ pub enum Expression {
     ParenthesizedExpression(ParenthesizedExpression),
     ArrayExpression(ArrayExpression),
     SliceExpression(SliceExpression),
+    FunctionCall(FunctionCall),
 }
 
 #[derive(Debug, Clone)]
@@ -335,10 +336,13 @@ fn parse_fun<'a>(
     node: &Node<'a>,
     parent: &Node<'a>,
 ) -> Option<Function> {
-    let name = child(node, "function name", 1, context)?;
-    let parameter_list = child(node, "parameters", 2, context)?;
-    let return_type = child(node, "return type", 3, context)?;
-    let body_node: Node = child(node, "function body", 4, context)?;
+    let name = child_by_field(&node, "name", context)?;
+    let parameter_list = child_by_field(&node, "parameters", context)?;
+    let return_type = match node.child_by_field_name("result".as_bytes()) {
+        Some(return_type) => parse_type(context, &return_type),
+        None => None,
+    };
+    let body_node: Node = child_by_field(&node, "body", context)?;
 
     let fun = Function {
         node: NodeData {
@@ -347,7 +351,7 @@ fn parse_fun<'a>(
         },
         name: node_text(&name, context)?,
         parameters: parse_parameters(context, parameter_list)?,
-        return_type: node_text(&return_type, context)?,
+        return_type,
         body: parse_block_and_cache(context, body_node, node.clone()),
     };
     Some(fun)
@@ -406,7 +410,7 @@ fn parse_struct_field<'a>(
     let name = child_by_field(&node, "name", context)?;
     let is_reference = node.child_by_field_name("reference".as_bytes()).is_some();
     let is_nullable = node.child_by_field_name("nullable".as_bytes()).is_some();
-    let field_type = node.child_by_field_name("type")?;
+    let field_type = child_by_field(&node, "type", context)?;
 
     Some(Field {
         node: NodeData {
@@ -443,9 +447,9 @@ fn parse_block<'a>(context: &mut FileContext<'a>, node: Node<'a>, parent: Node<'
         };
 
         match statement_node.kind() {
-            "function_call" => {
-                match parse_function_call(context, &statement_node) {
-                    Some(statement) => statements.push(Statement::FunctionCall(statement)),
+            "expression" => {
+                match parse_expression(context, &statement_node) {
+                    Some(expression) => statements.push(Statement::Expression(expression)),
                     None => continue,
                 };
             }
@@ -524,6 +528,7 @@ fn parse_expression<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Optio
         }
         "array_expression" => Expression::ArrayExpression(parse_array_expression(context, node)?),
         "slice_expression" => Expression::SliceExpression(parse_slice_expression(context, node)?),
+        "function_call" => Expression::FunctionCall(parse_function_call(context, &node)?),
         _ => {
             context.errors.push(ASTError::from_node(
                 node,

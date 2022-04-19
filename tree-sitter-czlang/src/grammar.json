@@ -725,6 +725,10 @@
         {
           "type": "SYMBOL",
           "name": "slice_expression"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "function_call"
         }
       ]
     },

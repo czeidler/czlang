@@ -173,7 +173,7 @@ module.exports = grammar({
       ),
 
       _statement: $ => choice(
-        $.function_call,
+        $._expression,
         $.var_declaration,
         $.return_statement,
         $.if_statement,
@@ -215,6 +215,7 @@ module.exports = grammar({
         $.parenthesized_expression,
         $.array_expression,
         $.slice_expression,
+        $.function_call,
       ),
 
       parenthesized_expression: $ => seq(

@@ -5,6 +5,7 @@ Function call
 fun x() i32 {
   callFunction()
   callFunction(argument1, argument2)
+  var test = callFunction()
 }
 
 ---
@@ -18,4 +19,13 @@ fun x() i32 {
       (function_call (identifier) (argument_list))
       (function_call (identifier) (argument_list
         (identifier) (identifier)))
-      )))
+      (var_declaration
+        (identifier)
+        (function_call
+          (identifier)
+          (argument_list)
+        )
+      )
+    )
+  )
+)
