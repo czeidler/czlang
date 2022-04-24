@@ -2,6 +2,8 @@ use std::fs::create_dir_all;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
+use tree_sitter::Tree;
+
 use crate::ast::{
     print_err, Array, ArrayExpression, BinaryOperator, Block, Expression, Field, File, FileContext,
     Function, FunctionCall, IfAlternative, IfStatement, Parameter, Slice, SliceExpression,
@@ -9,6 +11,7 @@ use crate::ast::{
 };
 use crate::buildin::Buildins;
 use crate::tree_sitter::parse;
+use crate::validation::validate;
 
 struct Writer<'a> {
     indentation: u16,
@@ -69,12 +72,15 @@ impl RustTranspiler {
         let text = match t {
             Type::String => "String",
             Type::Bool => "bool",
+            Type::I8 => "i8",
+            Type::U8 => "u8",
             Type::I32 => "i32",
             Type::U32 => "u32",
             Type::Identifier(identifier) => identifier.as_str(),
             Type::Str => "&str",
             Type::Array(array) => return self.transpile_array(array, writer),
             Type::Slice(slice) => return self.transpile_slice(slice, writer),
+            Type::Null => "None",
         };
         writer.write(text);
     }
@@ -437,16 +443,11 @@ pub fn transpile_project(project_dir: &Path) -> Result<(), anyhow::Error> {
     let mut buffer = Vec::new();
     main_file.read_to_end(&mut buffer)?;
 
-    let build_dir = project_dir.join(".build");
-    let src_rust = build_dir.join("src");
-    create_dir_all(&src_rust)?;
-    let main_rust = src_rust.join("main.rs");
-
     let source_code = String::from_utf8(buffer)?;
     let tree = parse(&source_code);
     let root_node = tree.root_node();
 
-    let file_path = main_rust.to_string_lossy();
+    let file_path = main_file_path.to_string_lossy();
     let mut file_context = FileContext::new(root_node.clone(), file_path.to_string(), source_code);
     let file = file_context.parse_file();
     for error in &file.context.errors {
@@ -459,8 +460,15 @@ pub fn transpile_project(project_dir: &Path) -> Result<(), anyhow::Error> {
         )));
     }
 
-    //let result = validate(&package);
-    //todo
+    let _ = match validate(&file) {
+        Ok(result) => result,
+        Err(err) => return Err(anyhow::Error::msg(err)),
+    };
+
+    let build_dir = project_dir.join(".build");
+    let src_rust = build_dir.join("src");
+    create_dir_all(&src_rust)?;
+    let main_rust = src_rust.join("main.rs");
 
     transpile(&file, &main_rust)?;
 
@@ -477,11 +485,11 @@ edition = "2021"
 
 #[cfg(test)]
 mod rust_transpiler_tests {
-    use crate::test_utils::validate_project;
+    use crate::test_utils::transpile_and_validate_project;
 
     #[test]
     fn function_call() {
-        validate_project(
+        transpile_and_validate_project(
             "test_projects/function_call",
             r#"
 fun test() i32 {
@@ -498,7 +506,7 @@ fun main() {
 
     #[test]
     fn if_else_statement() {
-        validate_project(
+        transpile_and_validate_project(
             "test_projects/transpile_if_else_statement",
             r#"
 fun main() {
@@ -526,7 +534,7 @@ fun main() {
 
     #[test]
     fn array_slice() {
-        validate_project(
+        transpile_and_validate_project(
             "test_projects/transpile_array_slice",
             r#"
 fun main() {

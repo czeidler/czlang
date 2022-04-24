@@ -122,25 +122,28 @@ pub struct Parameter {
     pub origin: Option<SourceSpan>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
+    Null,
     Str,
     String,
     Bool,
-    I32,
+    U8,
+    I8,
     U32,
+    I32,
     Identifier(String),
     Array(Array),
     Slice(Slice),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Array {
     pub r#type: Rc<Type>,
     pub length: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Slice {
     pub r#type: Rc<Type>,
 }
@@ -811,6 +814,8 @@ fn parse_type<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Type
             match type_text.as_str() {
                 "string" => Type::String,
                 "bool" => Type::Bool,
+                "i8" => Type::I8,
+                "u8" => Type::U8,
                 "i32" => Type::I32,
                 "u32" => Type::U32,
                 _ => {
