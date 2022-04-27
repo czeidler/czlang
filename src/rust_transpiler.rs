@@ -3,8 +3,6 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use tree_sitter::Tree;
-
 use crate::ast::{
     print_err, Array, ArrayExpression, BinaryOperator, Block, Expression, Field, File, FileContext,
     Function, FunctionCall, IfAlternative, IfStatement, Parameter, Slice, SliceExpression,
