@@ -173,11 +173,13 @@ module.exports = grammar({
       ),
 
       _statement: $ => choice(
-        $._expression,
+        $.expression_statement,
         $.var_declaration,
         $.return_statement,
         $.if_statement,
       ),
+
+      expression_statement: $ => field('expression', $._expression),
 
       return_statement: $ => seq(
         'return',

@@ -16,16 +16,21 @@ fun x() i32 {
     (parameter_list)
     (primitive_type)
     (block
-      (function_call (identifier) (argument_list))
-      (function_call (identifier) (argument_list
-        (identifier) (identifier)))
+      (expression_statement
+        (function_call
+          (identifier)
+          (argument_list)))
+      (expression_statement
+        (function_call
+          (identifier)
+          (argument_list
+            (identifier)
+            (identifier))))
       (var_declaration
         (identifier)
         (function_call
           (identifier)
-          (argument_list)
-        )
-      )
+          (argument_list)))
     )
   )
 )
