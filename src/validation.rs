@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    rc::{Rc, Weak},
+};
 
 use crate::ast::{Expression, File, Function, Statement, Type, VarDeclaration};
 
@@ -24,7 +27,15 @@ pub struct VarState {
 }
 
 pub struct FunScope {
+    file: Weak<File>,
+
     vars: HashMap<String, VarState>,
+}
+
+impl FunScope {
+    fn file(&self) -> Rc<File> {
+        self.file.upgrade().unwrap()
+    }
 }
 
 fn lookup_identifier(scope: &FunScope, identifier: &String) -> Option<CodeAnalysisItem> {
@@ -85,7 +96,43 @@ pub fn validate_expression(
         Expression::ParenthesizedExpression(_) => todo!(),
         Expression::ArrayExpression(_) => todo!(),
         Expression::SliceExpression(_) => todo!(),
-        Expression::FunctionCall(_) => todo!(),
+        Expression::FunctionCall(fun_call) => {
+            let file = scope.file();
+            let fun = match file.functions.get(&fun_call.name) {
+                Some(fun) => fun,
+                None => return Err(format!("No fun with name {} found", fun_call.name)),
+            };
+            if fun.parameters.len() != fun_call.arguments.len() {
+                return Err(format!(
+                    "Expected {} arguments but found {}",
+                    fun.parameters.len(),
+                    fun_call.arguments.len()
+                ));
+            }
+            for (i, parameter) in fun.parameters.iter().enumerate() {
+                let arg = fun_call.arguments.get(i).unwrap();
+                let arg = validate_expression(scope, arg)?;
+                if arg
+                    .types
+                    .iter()
+                    .find(|arg_type| *arg_type == &parameter._type)
+                    .is_none()
+                {
+                    return Err(format!(
+                        "Argument as invalid type {:?}; but expected {:?}",
+                        arg.types, parameter._type
+                    ));
+                }
+            }
+
+            ExpressionState {
+                types: fun
+                    .return_type
+                    .as_ref()
+                    .map(|t| vec![t.clone()])
+                    .unwrap_or(vec![]),
+            }
+        }
     };
     Ok(result)
 }
@@ -173,8 +220,9 @@ pub fn validate_statement(
     Ok(())
 }
 
-pub fn validate_fun(fun: &Function) -> Result<(), String> {
+pub fn validate_fun(fun: &Rc<Function>, file: &Rc<File>) -> Result<(), String> {
     let mut scope = FunScope {
+        file: Rc::downgrade(file),
         vars: HashMap::new(),
     };
     for par_ref in &fun.parameters {
@@ -187,9 +235,9 @@ pub fn validate_fun(fun: &Function) -> Result<(), String> {
     Ok(())
 }
 
-pub fn validate(file: &File) -> Result<(), String> {
+pub fn validate(file: &Rc<File>) -> Result<(), String> {
     for (_, fun) in &file.functions {
-        validate_fun(&fun)?;
+        validate_fun(fun, file)?;
     }
 
     Ok(())
@@ -262,5 +310,60 @@ fun main() { test() }
         "#,
         )
         .unwrap_err();
+
+        validate_project(
+            "test_projects/var_expression_validation_4",
+            r#"
+            fun test_call() bool {
+                return true
+            }
+
+            fun test() {
+                var variable i32 = test_call()
+            }
+        "#,
+        )
+        .unwrap_err();
+
+        validate_project(
+            "test_projects/var_expression_validation_5",
+            r#"
+            fun test_call(arg0 string) bool {
+                return true
+            }
+
+            fun test() {
+                test_call(34, "test")
+            }
+        "#,
+        )
+        .unwrap_err();
+
+        validate_project(
+            "test_projects/var_expression_validation_6",
+            r#"
+            fun test_call(arg0 string, arg1 bool) bool {
+                return true
+            }
+
+            fun test() {
+                test_call(34, "test")
+            }
+        "#,
+        )
+        .unwrap_err();
+
+        transpile_and_validate_project(
+            "test_projects/var_expression_validation_7",
+            r#"
+            fun test_call(arg0 u32, arg1 bool) bool {
+                return true
+            }
+
+            fun main() {
+                test_call(34, true)
+            }
+        "#,
+        );
     }
 }

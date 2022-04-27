@@ -1,6 +1,7 @@
 use std::fs::create_dir_all;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use tree_sitter::Tree;
 
@@ -340,6 +341,7 @@ impl RustTranspiler {
             match statement {
                 Statement::Expression(expr) => {
                     self.transpile_expression(expr, writer);
+                    writer.write(";");
                     writer.new_line();
                 }
                 Statement::VarDeclaration(var) => {
@@ -449,14 +451,14 @@ pub fn transpile_project(project_dir: &Path) -> Result<(), anyhow::Error> {
 
     let file_path = main_file_path.to_string_lossy();
     let mut file_context = FileContext::new(root_node.clone(), file_path.to_string(), source_code);
-    let file = file_context.parse_file();
-    for error in &file.context.errors {
-        print_err(&error, &file.context.source);
+    let file = Rc::new(file_context.parse_file());
+    for error in &file_context.errors {
+        print_err(&error, &file_context.source);
     }
-    if !file.context.errors.is_empty() {
+    if !file_context.errors.is_empty() {
         return Err(anyhow::Error::msg(format!(
             "{} compile error(s)",
-            file.context.errors.len()
+            file_context.errors.len()
         )));
     }
 

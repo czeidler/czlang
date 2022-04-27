@@ -61,8 +61,7 @@ pub struct NodeData {
 }
 
 #[derive(Debug, Clone)]
-pub struct File<'a> {
-    pub context: FileContext<'a>,
+pub struct File {
     pub functions: HashMap<String, rc::Rc<Function>>,
     pub struct_defs: HashMap<String, rc::Rc<Struct>>,
 }
@@ -286,13 +285,13 @@ impl<'a> FileContext<'a> {
         }
     }
 
-    pub fn parse_file(&mut self) -> File<'a> {
+    pub fn parse_file(&mut self) -> File {
         collect_errors(self.root, &self.file_path, &mut self.errors);
         parse_file(self.root, self)
     }
 }
 
-pub fn parse_file<'a>(node: Node<'a>, context: &mut FileContext<'a>) -> File<'a> {
+pub fn parse_file<'a>(node: Node<'a>, context: &mut FileContext<'a>) -> File {
     let mut functions = HashMap::new();
     let mut struct_defs = HashMap::new();
     let mut cursor = node.walk();
@@ -314,7 +313,6 @@ pub fn parse_file<'a>(node: Node<'a>, context: &mut FileContext<'a>) -> File<'a>
 
     // package only has one file right now
     File {
-        context: context.clone(),
         functions,
         struct_defs,
     }
@@ -448,15 +446,17 @@ fn parse_block<'a>(context: &mut FileContext<'a>, node: Node<'a>, parent: Node<'
             Some(statement_node) => statement_node,
             None => continue,
         };
-
         match statement_node.kind() {
-            "expression" => {
-                match parse_expression(context, &statement_node) {
+            "expression_statement" => {
+                let expression_node = match child_by_field(&statement_node, "expression", context) {
+                    Some(expression_node) => expression_node,
+                    None => continue,
+                };
+                match parse_expression(context, &expression_node) {
                     Some(expression) => statements.push(Statement::Expression(expression)),
                     None => continue,
                 };
             }
-
             "var_declaration" => {
                 match parse_var_declaration(context, statement_node) {
                     Some(statement) => statements.push(Statement::VarDeclaration(statement)),

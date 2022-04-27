@@ -2,6 +2,7 @@ use std::{
     fs::{create_dir_all, remove_dir_all, File},
     io::{Read, Write},
     path::Path,
+    rc::Rc,
 };
 
 use crate::{
@@ -57,14 +58,14 @@ pub fn validate_project<'a>(test_dir: &str, file_content: &str) -> Result<(), an
 
     let file_path = main_file_path.to_string_lossy();
     let mut file_context = FileContext::new(root_node.clone(), file_path.to_string(), source_code);
-    let file = file_context.parse_file();
-    for error in &file.context.errors {
-        print_err(&error, &file.context.source);
+    let file = Rc::new(file_context.parse_file());
+    for error in &file_context.errors {
+        print_err(&error, &file_context.source);
     }
-    if !file.context.errors.is_empty() {
+    if !file_context.errors.is_empty() {
         return Err(anyhow::Error::msg(format!(
             "{} compile error(s)",
-            file.context.errors.len()
+            file_context.errors.len()
         )));
     }
 
