@@ -2,15 +2,16 @@ use std::fs::create_dir_all;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::slice::SliceIndex;
 
 use crate::ast::{
-    print_err, Array, ArrayExpression, BinaryOperator, Block, Expression, Field, File, FileContext,
-    Function, FunctionCall, IfAlternative, IfStatement, Parameter, Slice, SliceExpression,
-    Statement, StringTemplatePart, Struct, Type, UnaryOperator, VarDeclaration,
+    print_err, Array, ArrayExpression, BinaryOperator, Block, Expression, ExpressionType, Field,
+    File, FileContext, Function, FunctionCall, IfAlternative, IfStatement, Parameter, Slice,
+    SliceExpression, Statement, StringTemplatePart, Struct, Type, UnaryOperator, VarDeclaration,
 };
 use crate::buildin::Buildins;
 use crate::tree_sitter::parse;
-use crate::validation::validate;
+use crate::validation::{validate, FileAnalysis, FunScope};
 
 struct Writer<'a> {
     indentation: u16,
@@ -56,11 +57,12 @@ impl<'a> Writer<'a> {
     }
 }
 
-struct RustTranspiler {
+struct RustTranspiler<'a> {
     buildins: Buildins,
+    file_analysis: &'a FileAnalysis,
 }
 
-impl RustTranspiler {
+impl<'a> RustTranspiler<'a> {
     fn transpile_optional_type(&self, t: &Type, writer: &mut Writer) {
         writer.write("Option<");
         self.transpile_type(t, writer);
@@ -69,6 +71,7 @@ impl RustTranspiler {
 
     fn transpile_type(&self, t: &Type, writer: &mut Writer) {
         let text = match t {
+            Type::Str => "str",
             Type::String => "String",
             Type::Bool => "bool",
             Type::I8 => "i8",
@@ -76,7 +79,6 @@ impl RustTranspiler {
             Type::I32 => "i32",
             Type::U32 => "u32",
             Type::Identifier(identifier) => identifier.as_str(),
-            Type::Str => "&str",
             Type::Array(array) => return self.transpile_array(array, writer),
             Type::Slice(slice) => return self.transpile_slice(slice, writer),
             Type::Null => "None",
@@ -116,9 +118,14 @@ impl RustTranspiler {
         writer.write(")");
     }
 
-    fn transpile_expression(&self, expression: &Expression, writer: &mut Writer) {
-        match expression {
-            Expression::String(parts) => {
+    fn transpile_expression(
+        &self,
+        expression: &Expression,
+        fun_scope: &FunScope,
+        writer: &mut Writer,
+    ) {
+        match &expression.r#type {
+            ExpressionType::String(parts) => {
                 let mut fmt_string = "".to_string();
                 let mut fmt_params = Vec::new();
                 for part in parts {
@@ -126,7 +133,7 @@ impl RustTranspiler {
                         StringTemplatePart::Expression(expression) => {
                             let mut buffer = "".to_string();
                             let mut fmt_writer = Writer::new(&mut buffer);
-                            self.transpile_expression(expression, &mut fmt_writer);
+                            self.transpile_expression(expression, fun_scope, &mut fmt_writer);
 
                             fmt_params.push(buffer);
                             fmt_string += "{}";
@@ -146,28 +153,28 @@ impl RustTranspiler {
                     writer.write(")");
                 }
             }
-            Expression::Identifier(identifier) => {
+            ExpressionType::Identifier(identifier) => {
                 writer.write(&identifier);
             }
-            Expression::IntLiteral(number) => {
+            ExpressionType::IntLiteral(number) => {
                 writer.write(&format!("{}", number));
             }
-            Expression::Null => {
-                writer.write("null");
+            ExpressionType::Null => {
+                writer.write("None");
             }
-            Expression::Bool(b) => {
+            ExpressionType::Bool(b) => {
                 writer.write(&format!("{}", b));
             }
-            Expression::UnaryExpression(expr) => {
+            ExpressionType::UnaryExpression(expr) => {
                 let op = match expr.operator {
                     UnaryOperator::Minus => "-",
                     UnaryOperator::Not => "!",
                     UnaryOperator::Reference => "&",
                 };
                 writer.write(op);
-                self.transpile_expression(&expr.operand, writer);
+                self.transpile_expression(&expr.operand, fun_scope, writer);
             }
-            Expression::BinaryExpression(expr) => {
+            ExpressionType::BinaryExpression(expr) => {
                 let op = match expr.operator {
                     BinaryOperator::Add => "+",
                     BinaryOperator::Substract => "-",
@@ -182,30 +189,39 @@ impl RustTranspiler {
                     BinaryOperator::And => "&&",
                     BinaryOperator::Or => "||",
                 };
-                self.transpile_expression(&expr.left, writer);
+                self.transpile_expression(&expr.left, fun_scope, writer);
                 writer.write(" ");
                 writer.write(op);
                 writer.write(" ");
-                self.transpile_expression(&expr.right, writer);
+                self.transpile_expression(&expr.right, fun_scope, writer);
             }
-            Expression::ParenthesizedExpression(expr) => {
+            ExpressionType::ParenthesizedExpression(expr) => {
                 writer.write("(");
-                self.transpile_expression(&expr.expression, writer);
+                self.transpile_expression(&expr.expression, fun_scope, writer);
                 writer.write(")");
             }
-            Expression::ArrayExpression(array) => self.transpile_array_expr(array, writer),
-            Expression::SliceExpression(slice) => self.transpile_slice_expr(slice, writer),
-            Expression::FunctionCall(call) => {
-                self.transpile_function_call(call, writer);
+            ExpressionType::ArrayExpression(array) => {
+                self.transpile_array_expr(array, fun_scope, writer)
+            }
+            ExpressionType::SliceExpression(slice) => {
+                self.transpile_slice_expr(slice, fun_scope, writer)
+            }
+            ExpressionType::FunctionCall(call) => {
+                self.transpile_function_call(call, fun_scope, writer);
             }
         };
     }
 
-    fn transpile_array_expr(&self, array: &ArrayExpression, writer: &mut Writer) {
+    fn transpile_array_expr(
+        &self,
+        array: &ArrayExpression,
+        fun_scope: &FunScope,
+        writer: &mut Writer,
+    ) {
         writer.write("[");
         let mut iter = array.expressions.iter().peekable();
         while let Some(expr) = iter.next() {
-            self.transpile_expression(expr, writer);
+            self.transpile_expression(expr, fun_scope, writer);
             if iter.peek().is_some() {
                 writer.write(", ");
             }
@@ -213,8 +229,13 @@ impl RustTranspiler {
         writer.write("]");
     }
 
-    fn transpile_slice_expr(&self, slice: &SliceExpression, writer: &mut Writer) {
-        self.transpile_expression(&slice.operand, writer);
+    fn transpile_slice_expr(
+        &self,
+        slice: &SliceExpression,
+        fun_scope: &FunScope,
+        writer: &mut Writer,
+    ) {
+        self.transpile_expression(&slice.operand, fun_scope, writer);
         writer.write("[");
         if let Some(start) = slice.start {
             writer.write(&format!("{}", start));
@@ -226,7 +247,12 @@ impl RustTranspiler {
         writer.write("]");
     }
 
-    fn transpile_buildin_function_call(&self, call: &FunctionCall, writer: &mut Writer) -> bool {
+    fn transpile_buildin_function_call(
+        &self,
+        call: &FunctionCall,
+        fun_scope: &FunScope,
+        writer: &mut Writer,
+    ) -> bool {
         let buildin = match self.buildins.functions.get(&call.name) {
             Some(buildin) => buildin,
             None => return false,
@@ -235,10 +261,10 @@ impl RustTranspiler {
         match buildin.name.as_str() {
             "println" => {
                 if let Some(arg0) = call.arguments.get(0) {
-                    match arg0 {
-                        Expression::String(_) => {
+                    match arg0.r#type {
+                        ExpressionType::String(_) => {
                             writer.write("println!(");
-                            self.transpile_expression(arg0, writer);
+                            self.transpile_expression(arg0, fun_scope, writer);
                             writer.write(");");
                             return true;
                         }
@@ -248,7 +274,7 @@ impl RustTranspiler {
                 writer.write("println!(\"{}\", ");
                 let mut iter = call.arguments.iter().peekable();
                 while let Some(expr) = iter.next() {
-                    self.transpile_expression(expr, writer);
+                    self.transpile_expression(expr, fun_scope, writer);
                     if iter.peek().is_some() {
                         writer.write(", ");
                     }
@@ -261,8 +287,13 @@ impl RustTranspiler {
         return false;
     }
 
-    fn transpile_function_call(&self, call: &FunctionCall, writer: &mut Writer) {
-        if self.transpile_buildin_function_call(call, writer) {
+    fn transpile_function_call(
+        &self,
+        call: &FunctionCall,
+        fun_scope: &FunScope,
+        writer: &mut Writer,
+    ) {
+        if self.transpile_buildin_function_call(call, fun_scope, writer) {
             return;
         }
 
@@ -271,7 +302,7 @@ impl RustTranspiler {
 
         let mut iter = call.arguments.iter().peekable();
         while let Some(expr) = iter.next() {
-            self.transpile_expression(expr, writer);
+            self.transpile_expression(expr, fun_scope, writer);
             if iter.peek().is_some() {
                 writer.write(", ");
             }
@@ -280,40 +311,80 @@ impl RustTranspiler {
         writer.write(")");
     }
 
-    fn transpile_var_declaration(&self, var_declaration: &VarDeclaration, writer: &mut Writer) {
+    fn transpile_var_declaration(
+        &self,
+        var_declaration: &VarDeclaration,
+        fun_scope: &FunScope,
+        writer: &mut Writer,
+    ) {
         writer.write("let ");
-        if var_declaration.is_mutable {
+        if var_declaration.is_mutable && !var_declaration.is_reference {
             writer.write("mut ");
         }
         writer.write(&var_declaration.name);
         match &var_declaration.var_type {
             Some(t) => {
                 writer.write(": ");
-                self.transpile_type(&t, writer);
+                if var_declaration.is_reference && var_declaration.is_mutable {
+                    writer.write("&mut ");
+                } else if var_declaration.is_reference {
+                    writer.write("& ");
+                }
+                if var_declaration.is_nullable {
+                    writer.write("Option<");
+                    self.transpile_type(&t, writer);
+                    writer.write(">");
+                } else {
+                    self.transpile_type(&t, writer);
+                }
             }
             None => {}
         }
         writer.write(" = ");
-        self.transpile_expression(&var_declaration.value, writer);
-        writer.write(";");
-    }
-
-    fn transpile_return_statement(&self, expression: &Option<Expression>, writer: &mut Writer) {
-        writer.write("return");
-        if let Some(expression) = expression {
-            writer.write(" ");
-            self.transpile_expression(expression, writer);
+        if var_declaration.is_nullable {
+            let expr_state = fun_scope
+                .expressions
+                .get(&var_declaration.value.id)
+                .unwrap();
+            if expr_state.types.len() == 1 && expr_state.types[0] == Type::Null {
+                self.transpile_expression(&var_declaration.value, fun_scope, writer);
+            } else {
+                writer.write("Some(");
+                self.transpile_expression(&var_declaration.value, fun_scope, writer);
+                writer.write(")");
+            }
+        } else {
+            self.transpile_expression(&var_declaration.value, fun_scope, writer);
         }
         writer.write(";");
     }
 
-    fn transpile_if_statement(&self, if_statement: &IfStatement, writer: &mut Writer) {
+    fn transpile_return_statement(
+        &self,
+        expression: &Option<Expression>,
+        fun_scope: &FunScope,
+        writer: &mut Writer,
+    ) {
+        writer.write("return");
+        if let Some(expression) = expression {
+            writer.write(" ");
+            self.transpile_expression(expression, fun_scope, writer);
+        }
+        writer.write(";");
+    }
+
+    fn transpile_if_statement(
+        &self,
+        if_statement: &IfStatement,
+        fun_scope: &FunScope,
+        writer: &mut Writer,
+    ) {
         writer.write("if ");
-        self.transpile_expression(&if_statement.condition, writer);
+        self.transpile_expression(&if_statement.condition, fun_scope, writer);
         writer.write(" {");
         writer.new_line();
         writer.indented(|writer| {
-            self.transpile_block(&if_statement.consequence, writer);
+            self.transpile_block(&if_statement.consequence, fun_scope, writer);
         });
         writer.write("}");
         if let Some(alternative) = &if_statement.alternative {
@@ -322,36 +393,36 @@ impl RustTranspiler {
                     writer.write(" else {");
                     writer.new_line();
                     writer.indented(|writer| {
-                        self.transpile_block(else_block, writer);
+                        self.transpile_block(else_block, fun_scope, writer);
                     });
                     writer.write("}");
                 }
                 IfAlternative::If(if_statement) => {
                     writer.write(" else ");
-                    self.transpile_if_statement(if_statement, writer);
+                    self.transpile_if_statement(if_statement, fun_scope, writer);
                 }
             }
         }
     }
 
-    fn transpile_block(&self, block: &Block, writer: &mut Writer) {
+    fn transpile_block(&self, block: &Block, fun_scope: &FunScope, writer: &mut Writer) {
         for statement in &block.statements {
             match statement {
                 Statement::Expression(expr) => {
-                    self.transpile_expression(expr, writer);
+                    self.transpile_expression(expr, fun_scope, writer);
                     writer.write(";");
                     writer.new_line();
                 }
                 Statement::VarDeclaration(var) => {
-                    self.transpile_var_declaration(var, writer);
+                    self.transpile_var_declaration(var, fun_scope, writer);
                     writer.new_line();
                 }
                 Statement::Return(expression) => {
-                    self.transpile_return_statement(expression, writer);
+                    self.transpile_return_statement(expression, fun_scope, writer);
                     writer.new_line();
                 }
                 Statement::IfStatement(if_statement) => {
-                    self.transpile_if_statement(if_statement, writer);
+                    self.transpile_if_statement(if_statement, fun_scope, writer);
                     writer.new_line();
                 }
             }
@@ -359,6 +430,8 @@ impl RustTranspiler {
     }
 
     fn transpile_function(&self, function: &Function, writer: &mut Writer) {
+        let fun_scope = self.file_analysis.functions.get(&function.name).unwrap();
+
         writer.write(&format!("fn {}", function.name));
         self.transpile_parameters(&function.parameters, writer);
         if let Some(return_type) = &function.return_type {
@@ -368,7 +441,7 @@ impl RustTranspiler {
         writer.write(" {");
         writer.new_line();
         writer.indented(|writer| {
-            self.transpile_block(&function.body, writer);
+            self.transpile_block(&function.body, fun_scope, writer);
         });
         writer.write("}");
     }
@@ -422,13 +495,18 @@ impl RustTranspiler {
     }
 }
 
-pub fn transpile(file: &File, outfile: &PathBuf) -> Result<(), io::Error> {
+pub fn transpile(
+    file: &File,
+    file_analysis: &FileAnalysis,
+    outfile: &PathBuf,
+) -> Result<(), io::Error> {
     let mut outfile = std::fs::File::create(outfile)?;
 
     let mut buffer = "".to_string();
     let mut writer = Writer::new(&mut buffer);
     let transpiler = RustTranspiler {
         buildins: Buildins::new(),
+        file_analysis,
     };
     transpiler.transpile_file(file, &mut writer);
 
@@ -460,7 +538,7 @@ pub fn transpile_project(project_dir: &Path) -> Result<(), anyhow::Error> {
         )));
     }
 
-    let _ = match validate(&file) {
+    let file_analysis = match validate(&file) {
         Ok(result) => result,
         Err(err) => return Err(anyhow::Error::msg(err)),
     };
@@ -470,7 +548,7 @@ pub fn transpile_project(project_dir: &Path) -> Result<(), anyhow::Error> {
     create_dir_all(&src_rust)?;
     let main_rust = src_rust.join("main.rs");
 
-    transpile(&file, &main_rust)?;
+    transpile(&file, &file_analysis, &main_rust)?;
 
     // write Cargo.toml
     let mut cargo_file = std::fs::File::create(&build_dir.join("Cargo.toml"))?;
@@ -542,6 +620,23 @@ fun main() {
     var array2 = [1, 2, 3]
     var slice = &array[:]
     var slice2 = &array2[1:1]
+}
+        "#,
+        )
+    }
+
+    #[test]
+    fn var_declaration() {
+        transpile_and_validate_project(
+            "test_projects/transpile_var_declaration",
+            r#"
+fun main() {
+    var value1 i32 = 12
+    var value2 mut i32 = 12
+    //var value3 &i32 = &value1
+    //var value4 &mut i32 = &value1
+    var value5? i32 = null
+    var value6? i32 = 12
 }
         "#,
         )
