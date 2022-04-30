@@ -3,22 +3,19 @@ use std::{
     rc::{Rc, Weak},
 };
 
-use crate::ast::{Expression, File, Function, Statement, Type, VarDeclaration};
+use crate::ast::{Expression, ExpressionType, File, Function, Statement, Type, VarDeclaration};
 
-pub struct CodeAnalysis {
-    files: HashMap<String, CodeAnalysisFile>,
-}
-
-pub struct CodeAnalysisFile {
-    items: HashMap<usize, CodeAnalysisItem>,
+pub struct FileAnalysis {
+    pub functions: HashMap<String, FunScope>,
 }
 
 pub enum CodeAnalysisItem {
     VarState(VarState),
 }
 
+#[derive(Debug, Clone)]
 pub struct ExpressionState {
-    types: Vec<Type>,
+    pub types: Vec<Type>,
 }
 
 #[derive(Debug, Clone)]
@@ -29,7 +26,9 @@ pub struct VarState {
 pub struct FunScope {
     file: Weak<File>,
 
-    vars: HashMap<String, VarState>,
+    pub vars: HashMap<String, VarState>,
+
+    pub expressions: HashMap<usize, ExpressionState>,
 }
 
 impl FunScope {
@@ -53,15 +52,15 @@ fn type_overlap(left: &Vec<Type>, right: &Vec<Type>) -> Vec<Type> {
 }
 
 pub fn validate_expression(
-    scope: &FunScope,
+    scope: &mut FunScope,
     expression: &Expression,
 ) -> Result<ExpressionState, String> {
-    let result = match expression {
-        Expression::String(_) => ExpressionState {
+    let result = match &expression.r#type {
+        ExpressionType::String(_) => ExpressionState {
             types: vec![Type::String],
         },
-        Expression::Identifier(identifier) => {
-            let identifier = match lookup_identifier(scope, identifier) {
+        ExpressionType::Identifier(identifier) => {
+            let identifier = match lookup_identifier(scope, &identifier) {
                 Some(identifier) => identifier,
                 None => return Err(format!("Identifier not found: {:?}", identifier)),
             };
@@ -71,17 +70,20 @@ pub fn validate_expression(
                 },
             }
         }
-        Expression::IntLiteral(_) => ExpressionState {
+        ExpressionType::IntLiteral(_) => ExpressionState {
             types: vec![Type::U32, Type::I32],
         },
-        Expression::Null => ExpressionState {
+        ExpressionType::Null => ExpressionState {
             types: vec![Type::Null],
         },
-        Expression::Bool(_) => ExpressionState {
+        ExpressionType::Bool(_) => ExpressionState {
             types: vec![Type::Bool],
         },
-        Expression::UnaryExpression(_) => todo!(),
-        Expression::BinaryExpression(binary) => {
+        ExpressionType::UnaryExpression(_) => {
+            // TODO
+            ExpressionState { types: vec![] }
+        }
+        ExpressionType::BinaryExpression(binary) => {
             let left = validate_expression(scope, &binary.left)?;
             let right = validate_expression(scope, &binary.right)?;
             let overlap: Vec<Type> = type_overlap(&left.types, &right.types);
@@ -93,10 +95,10 @@ pub fn validate_expression(
             }
             ExpressionState { types: overlap }
         }
-        Expression::ParenthesizedExpression(_) => todo!(),
-        Expression::ArrayExpression(_) => todo!(),
-        Expression::SliceExpression(_) => todo!(),
-        Expression::FunctionCall(fun_call) => {
+        ExpressionType::ParenthesizedExpression(_) => todo!(),
+        ExpressionType::ArrayExpression(_) => todo!(),
+        ExpressionType::SliceExpression(_) => todo!(),
+        ExpressionType::FunctionCall(fun_call) => {
             let file = scope.file();
             let fun = match file.functions.get(&fun_call.name) {
                 Some(fun) => fun,
@@ -134,6 +136,7 @@ pub fn validate_expression(
             }
         }
     };
+    scope.expressions.insert(expression.id, result.clone());
     Ok(result)
 }
 
@@ -220,10 +223,11 @@ pub fn validate_statement(
     Ok(())
 }
 
-pub fn validate_fun(fun: &Rc<Function>, file: &Rc<File>) -> Result<(), String> {
+pub fn validate_fun(fun: &Rc<Function>, file: &Rc<File>) -> Result<FunScope, String> {
     let mut scope = FunScope {
         file: Rc::downgrade(file),
         vars: HashMap::new(),
+        expressions: HashMap::new(),
     };
     for par_ref in &fun.parameters {
         //let parameter = par_ref.get(parser)
@@ -232,15 +236,19 @@ pub fn validate_fun(fun: &Rc<Function>, file: &Rc<File>) -> Result<(), String> {
         validate_statement(&mut scope, fun, statement)?;
     }
 
-    Ok(())
+    Ok(scope)
 }
 
-pub fn validate(file: &Rc<File>) -> Result<(), String> {
+pub fn validate(file: &Rc<File>) -> Result<FileAnalysis, String> {
+    let mut file_analysis = FileAnalysis {
+        functions: HashMap::new(),
+    };
     for (_, fun) in &file.functions {
-        validate_fun(fun, file)?;
+        let scope = validate_fun(fun, file)?;
+        file_analysis.functions.insert(fun.name.clone(), scope);
     }
 
-    Ok(())
+    Ok(file_analysis)
 }
 
 #[cfg(test)]
