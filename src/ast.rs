@@ -188,7 +188,13 @@ pub struct FunctionCall {
 }
 
 #[derive(Debug, Clone)]
-pub enum Expression {
+pub struct Expression {
+    pub id: usize,
+    pub r#type: ExpressionType,
+}
+
+#[derive(Debug, Clone)]
+pub enum ExpressionType {
     String(StringTemplate),
     Identifier(String),
     IntLiteral(usize),
@@ -515,23 +521,29 @@ fn parse_function_call_arguments<'a>(
 }
 
 fn parse_expression<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Expression> {
-    let expression = match node.kind() {
-        "identifier" => Expression::Identifier(node_text(&node, context)?),
-        "int_literal" => Expression::IntLiteral(parse_usize(context, node)?),
-        "interpreted_string_literal" => Expression::String(parse_string(context, node)?),
-        "null" => Expression::Null,
-        "true" => Expression::Bool(true),
-        "false" => Expression::Bool(false),
-        "unary_expression" => Expression::UnaryExpression(parse_unary_expression(context, node)?),
+    let expression_type = match node.kind() {
+        "identifier" => ExpressionType::Identifier(node_text(&node, context)?),
+        "int_literal" => ExpressionType::IntLiteral(parse_usize(context, node)?),
+        "interpreted_string_literal" => ExpressionType::String(parse_string(context, node)?),
+        "null" => ExpressionType::Null,
+        "true" => ExpressionType::Bool(true),
+        "false" => ExpressionType::Bool(false),
+        "unary_expression" => {
+            ExpressionType::UnaryExpression(parse_unary_expression(context, node)?)
+        }
         "binary_expression" => {
-            Expression::BinaryExpression(parse_binary_expression(context, node)?)
+            ExpressionType::BinaryExpression(parse_binary_expression(context, node)?)
         }
         "parenthesized_expression" => {
-            Expression::ParenthesizedExpression(parse_parenthesized_expression(context, node)?)
+            ExpressionType::ParenthesizedExpression(parse_parenthesized_expression(context, node)?)
         }
-        "array_expression" => Expression::ArrayExpression(parse_array_expression(context, node)?),
-        "slice_expression" => Expression::SliceExpression(parse_slice_expression(context, node)?),
-        "function_call" => Expression::FunctionCall(parse_function_call(context, &node)?),
+        "array_expression" => {
+            ExpressionType::ArrayExpression(parse_array_expression(context, node)?)
+        }
+        "slice_expression" => {
+            ExpressionType::SliceExpression(parse_slice_expression(context, node)?)
+        }
+        "function_call" => ExpressionType::FunctionCall(parse_function_call(context, &node)?),
         _ => {
             context.errors.push(ASTError::from_node(
                 node,
@@ -541,7 +553,10 @@ fn parse_expression<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Optio
             return None;
         }
     };
-    Some(expression)
+    Some(Expression {
+        id: node.id(),
+        r#type: expression_type,
+    })
 }
 
 fn parse_unary_expression<'a>(
