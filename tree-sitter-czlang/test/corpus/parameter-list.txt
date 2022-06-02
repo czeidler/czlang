@@ -60,7 +60,7 @@ fun x(para1 bool, para2 i32, para3 bool) i32 {
 Parameter list: mutable + references
 ==================
 
-fun x(para1 mut bool, para2 &mut i32, para3 bool) i32 {
+fun x(para1 mut bool, para2 mut &i32, para3 bool) i32 {
   return 1
 }
 
@@ -71,7 +71,7 @@ fun x(para1 mut bool, para2 &mut i32, para3 bool) i32 {
     (identifier)
     (parameter_list
         (parameter (identifier) (primitive_type))
-        (parameter (identifier) (primitive_type))
+        (parameter (identifier) (reference_type (primitive_type)))
         (parameter (identifier) (primitive_type)))
     (primitive_type)
     (block
@@ -81,7 +81,7 @@ fun x(para1 mut bool, para2 &mut i32, para3 bool) i32 {
 Parameter list: nullable
 ==================
 
-fun x(para1? mut bool, para2? &mut i32, para3? bool, para4? &i32) i32 {
+fun x(para1 mut bool, para2 mut &i32, para3 bool, para4 &i32 | null) i32 {
   return 1
 }
 
@@ -92,9 +92,13 @@ fun x(para1? mut bool, para2? &mut i32, para3? bool, para4? &i32) i32 {
     (identifier)
     (parameter_list
         (parameter (identifier) (primitive_type))
+        (parameter (identifier) (reference_type (primitive_type)))
         (parameter (identifier) (primitive_type))
-        (parameter (identifier) (primitive_type))
-        (parameter (identifier) (primitive_type))
+        (parameter (identifier) (sum_type
+          (reference_type
+            (primitive_type))
+          (primitive_type))
+        )
     )
     (primitive_type)
     (block

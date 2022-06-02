@@ -9,7 +9,7 @@ interface TestStruct {
     method3() OtherType
     methodSelf1(self, value2 bool)
     methodSelf2(&self)
-    methodSelf3(&mut self, value2 &mut i32)
+    methodSelf3(mut &self, value2 mut &i32)
 }
 
 ---
@@ -22,7 +22,7 @@ interface TestStruct {
         (self_parameter_list
         (parameter
             (identifier)
-            (primitive_type))
+            (reference_type (primitive_type)))
         (parameter
             (identifier)
             (primitive_type))))
@@ -54,6 +54,9 @@ interface TestStruct {
             (self_parameter)
             (parameter
                 (identifier)
-                (primitive_type))))
+                (reference_type (primitive_type))
+            )
+        )
+    )
   )
 )

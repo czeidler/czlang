@@ -48,6 +48,10 @@
             "named": true
           },
           {
+            "type": "selector_expression",
+            "named": true
+          },
+          {
             "type": "slice_expression",
             "named": true
           },
@@ -112,6 +116,10 @@
             "named": true
           },
           {
+            "type": "selector_expression",
+            "named": true
+          },
+          {
             "type": "slice_expression",
             "named": true
           },
@@ -144,11 +152,23 @@
             "named": true
           },
           {
+            "type": "parenthesized_type",
+            "named": true
+          },
+          {
             "type": "primitive_type",
             "named": true
           },
           {
+            "type": "reference_type",
+            "named": true
+          },
+          {
             "type": "slice_type",
+            "named": true
+          },
+          {
+            "type": "sum_type",
             "named": true
           }
         ]
@@ -195,6 +215,10 @@
           },
           {
             "type": "parenthesized_expression",
+            "named": true
+          },
+          {
+            "type": "selector_expression",
             "named": true
           },
           {
@@ -259,6 +283,10 @@
           },
           {
             "type": "parenthesized_expression",
+            "named": true
+          },
+          {
+            "type": "selector_expression",
             "named": true
           },
           {
@@ -402,6 +430,10 @@
             "named": true
           },
           {
+            "type": "selector_expression",
+            "named": true
+          },
+          {
             "type": "slice_expression",
             "named": true
           },
@@ -493,6 +525,10 @@
             "named": true
           },
           {
+            "type": "selector_expression",
+            "named": true
+          },
+          {
             "type": "slice_expression",
             "named": true
           },
@@ -557,6 +593,10 @@
             "named": true
           },
           {
+            "type": "selector_expression",
+            "named": true
+          },
+          {
             "type": "slice_expression",
             "named": true
           },
@@ -586,26 +626,6 @@
           }
         ]
       },
-      "nullable": {
-        "multiple": false,
-        "required": false,
-        "types": [
-          {
-            "type": "?",
-            "named": false
-          }
-        ]
-      },
-      "reference": {
-        "multiple": false,
-        "required": false,
-        "types": [
-          {
-            "type": "&",
-            "named": false
-          }
-        ]
-      },
       "type": {
         "multiple": false,
         "required": true,
@@ -619,11 +639,23 @@
             "named": true
           },
           {
+            "type": "parenthesized_type",
+            "named": true
+          },
+          {
             "type": "primitive_type",
             "named": true
           },
           {
+            "type": "reference_type",
+            "named": true
+          },
+          {
             "type": "slice_type",
+            "named": true
+          },
+          {
+            "type": "sum_type",
             "named": true
           }
         ]
@@ -719,11 +751,23 @@
             "named": true
           },
           {
+            "type": "parenthesized_type",
+            "named": true
+          },
+          {
             "type": "primitive_type",
             "named": true
           },
           {
+            "type": "reference_type",
+            "named": true
+          },
+          {
             "type": "slice_type",
+            "named": true
+          },
+          {
+            "type": "sum_type",
             "named": true
           }
         ]
@@ -790,6 +834,10 @@
           },
           {
             "type": "parenthesized_expression",
+            "named": true
+          },
+          {
+            "type": "selector_expression",
             "named": true
           },
           {
@@ -907,11 +955,23 @@
             "named": true
           },
           {
+            "type": "parenthesized_type",
+            "named": true
+          },
+          {
             "type": "primitive_type",
             "named": true
           },
           {
+            "type": "reference_type",
+            "named": true
+          },
+          {
             "type": "slice_type",
+            "named": true
+          },
+          {
+            "type": "sum_type",
             "named": true
           }
         ]
@@ -927,6 +987,11 @@
         ]
       }
     }
+  },
+  {
+    "type": "null",
+    "named": true,
+    "fields": {}
   },
   {
     "type": "parameter",
@@ -952,26 +1017,6 @@
           }
         ]
       },
-      "nullable": {
-        "multiple": false,
-        "required": false,
-        "types": [
-          {
-            "type": "?",
-            "named": false
-          }
-        ]
-      },
-      "reference": {
-        "multiple": false,
-        "required": false,
-        "types": [
-          {
-            "type": "&",
-            "named": false
-          }
-        ]
-      },
       "type": {
         "multiple": false,
         "required": true,
@@ -985,11 +1030,23 @@
             "named": true
           },
           {
+            "type": "parenthesized_type",
+            "named": true
+          },
+          {
             "type": "primitive_type",
             "named": true
           },
           {
+            "type": "reference_type",
+            "named": true
+          },
+          {
             "type": "slice_type",
+            "named": true
+          },
+          {
+            "type": "sum_type",
             "named": true
           }
         ]
@@ -1060,6 +1117,10 @@
             "named": true
           },
           {
+            "type": "selector_expression",
+            "named": true
+          },
+          {
             "type": "slice_expression",
             "named": true
           },
@@ -1076,9 +1137,99 @@
     }
   },
   {
+    "type": "parenthesized_type",
+    "named": true,
+    "fields": {
+      "type": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "array_type",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "parenthesized_type",
+            "named": true
+          },
+          {
+            "type": "primitive_type",
+            "named": true
+          },
+          {
+            "type": "reference_type",
+            "named": true
+          },
+          {
+            "type": "slice_type",
+            "named": true
+          },
+          {
+            "type": "sum_type",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "primitive_type",
     "named": true,
     "fields": {}
+  },
+  {
+    "type": "reference_type",
+    "named": true,
+    "fields": {
+      "reference": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "&",
+            "named": false
+          }
+        ]
+      },
+      "type": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "array_type",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "parenthesized_type",
+            "named": true
+          },
+          {
+            "type": "primitive_type",
+            "named": true
+          },
+          {
+            "type": "reference_type",
+            "named": true
+          },
+          {
+            "type": "slice_type",
+            "named": true
+          },
+          {
+            "type": "sum_type",
+            "named": true
+          }
+        ]
+      }
+    }
   },
   {
     "type": "return_statement",
@@ -1126,6 +1277,98 @@
           },
           {
             "type": "parenthesized_expression",
+            "named": true
+          },
+          {
+            "type": "selector_expression",
+            "named": true
+          },
+          {
+            "type": "slice_expression",
+            "named": true
+          },
+          {
+            "type": "true",
+            "named": true
+          },
+          {
+            "type": "unary_expression",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "selector_expression",
+    "named": true,
+    "fields": {
+      "chaining": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "?",
+            "named": false
+          }
+        ]
+      },
+      "field": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "operand": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "array_expression",
+            "named": true
+          },
+          {
+            "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "false",
+            "named": true
+          },
+          {
+            "type": "float_literal",
+            "named": true
+          },
+          {
+            "type": "function_call",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "int_literal",
+            "named": true
+          },
+          {
+            "type": "interpreted_string_literal",
+            "named": true
+          },
+          {
+            "type": "null",
+            "named": true
+          },
+          {
+            "type": "parenthesized_expression",
+            "named": true
+          },
+          {
+            "type": "selector_expression",
             "named": true
           },
           {
@@ -1242,6 +1485,10 @@
             "named": true
           },
           {
+            "type": "selector_expression",
+            "named": true
+          },
+          {
             "type": "slice_expression",
             "named": true
           },
@@ -1297,6 +1544,10 @@
           },
           {
             "type": "parenthesized_expression",
+            "named": true
+          },
+          {
+            "type": "selector_expression",
             "named": true
           },
           {
@@ -1358,6 +1609,10 @@
             "named": true
           },
           {
+            "type": "selector_expression",
+            "named": true
+          },
+          {
             "type": "slice_expression",
             "named": true
           },
@@ -1390,11 +1645,23 @@
             "named": true
           },
           {
+            "type": "parenthesized_type",
+            "named": true
+          },
+          {
             "type": "primitive_type",
             "named": true
           },
           {
+            "type": "reference_type",
+            "named": true
+          },
+          {
             "type": "slice_type",
+            "named": true
+          },
+          {
+            "type": "sum_type",
             "named": true
           }
         ]
@@ -1451,6 +1718,80 @@
     }
   },
   {
+    "type": "sum_type",
+    "named": true,
+    "fields": {
+      "left": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "array_type",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "parenthesized_type",
+            "named": true
+          },
+          {
+            "type": "primitive_type",
+            "named": true
+          },
+          {
+            "type": "reference_type",
+            "named": true
+          },
+          {
+            "type": "slice_type",
+            "named": true
+          },
+          {
+            "type": "sum_type",
+            "named": true
+          }
+        ]
+      },
+      "right": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "array_type",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "parenthesized_type",
+            "named": true
+          },
+          {
+            "type": "primitive_type",
+            "named": true
+          },
+          {
+            "type": "reference_type",
+            "named": true
+          },
+          {
+            "type": "slice_type",
+            "named": true
+          },
+          {
+            "type": "sum_type",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "unary_expression",
     "named": true,
     "fields": {
@@ -1496,6 +1837,10 @@
           },
           {
             "type": "parenthesized_expression",
+            "named": true
+          },
+          {
+            "type": "selector_expression",
             "named": true
           },
           {
@@ -1556,26 +1901,6 @@
           }
         ]
       },
-      "nullable": {
-        "multiple": false,
-        "required": false,
-        "types": [
-          {
-            "type": "?",
-            "named": false
-          }
-        ]
-      },
-      "reference": {
-        "multiple": false,
-        "required": false,
-        "types": [
-          {
-            "type": "&",
-            "named": false
-          }
-        ]
-      },
       "type": {
         "multiple": false,
         "required": false,
@@ -1589,11 +1914,23 @@
             "named": true
           },
           {
+            "type": "parenthesized_type",
+            "named": true
+          },
+          {
             "type": "primitive_type",
             "named": true
           },
           {
+            "type": "reference_type",
+            "named": true
+          },
+          {
             "type": "slice_type",
+            "named": true
+          },
+          {
+            "type": "sum_type",
             "named": true
           }
         ]
@@ -1640,6 +1977,10 @@
           },
           {
             "type": "parenthesized_expression",
+            "named": true
+          },
+          {
+            "type": "selector_expression",
             "named": true
           },
           {
@@ -1722,6 +2063,10 @@
   },
   {
     "type": "-",
+    "named": false
+  },
+  {
+    "type": ".",
     "named": false
   },
   {
@@ -1854,7 +2199,7 @@
   },
   {
     "type": "null",
-    "named": true
+    "named": false
   },
   {
     "type": "return",

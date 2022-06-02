@@ -66,3 +66,49 @@ fun x() {
     )
   )
 )
+
+
+==================
+Arrays with sum types
+==================
+
+fun x() {
+    var test i32 | string[5] = [5, -1, 2]
+    var test i32 | (bool | string)[] = test[0:9]
+}
+
+---
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameter_list)
+    (block
+      (var_declaration
+        (identifier)
+        (sum_type
+          (primitive_type)
+          (array_type
+            (primitive_type)
+            (int_literal)))
+        (array_expression
+          (int_literal)
+          (unary_expression
+            (int_literal))
+          (int_literal)))
+      (var_declaration
+        (identifier)
+        (sum_type
+          (primitive_type)
+          (slice_type
+            (parenthesized_type
+              (sum_type
+                (primitive_type)
+                (primitive_type)))))
+        (slice_expression
+          (identifier)
+          (int_literal)
+          (int_literal)))
+    )
+  )
+)

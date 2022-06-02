@@ -94,8 +94,6 @@ module.exports = grammar({
 
       parameter: $ => seq(
         field('name', $.identifier),
-        field('nullable', optional('?')),
-        field("reference", optional("&")),
         field("mutable", optional("mut")),
         field('type', $._type),
       ),
@@ -106,14 +104,35 @@ module.exports = grammar({
         ')'
       ),
 
+      reference_type: $ => prec.left(seq(
+        field("reference", "&"),
+        field('type', $._type),
+      )),
+
       _type: $ => choice(
         $.primitive_type,
         $.identifier,
         $.array_type,
         $.slice_type,
+        $.parenthesized_type,
+        $.sum_type,
+        $.reference_type
+      ),
+
+      sum_type: $ => prec.right(seq(
+        field('left', $._type),
+        "|",
+        field('right', $._type)
+      )),
+
+      parenthesized_type: $ => seq(
+        '(',
+        field('type', $._type),
+        ')'
       ),
 
       primitive_type: $ => choice(
+        'null',
         'bool',
         'i8',
         'u8',
@@ -130,18 +149,18 @@ module.exports = grammar({
         'void'
       ),
 
-      array_type: $ => seq(
+      array_type: $ => prec(PREC.unary, seq(
         field('element', $._type),
         '[',
         field('length', $._expression),
         ']',
-      ),
+      )),
 
-      slice_type: $ => seq(
+      slice_type: $ => prec(PREC.unary, seq(
         field('element', $._type),
         '[',
         ']',
-      ),
+      )),
 
       array_expression: $ => prec(PREC.primary, seq(
         '[',
@@ -158,6 +177,13 @@ module.exports = grammar({
           field('end', optional($._expression))
         ),
         ']'
+      )),
+
+      selector_expression: $ => prec(PREC.primary, seq(
+        field('operand', $._expression),
+        optional(field('chaining', '?')),
+        '.',
+        field('field', $.identifier)
       )),
 
       block: $ => seq(
@@ -196,8 +222,6 @@ module.exports = grammar({
       var_declaration: $ => seq(
         field('variable', 'var'),
         field('name', $.identifier),
-        field('nullable', optional('?')),
-        field("reference", optional("&")),
         field("mutable", optional("mut")),
         field('type', optional($._type)),
         '=',
@@ -218,6 +242,7 @@ module.exports = grammar({
         $.array_expression,
         $.slice_expression,
         $.function_call,
+        $.selector_expression,
       ),
 
       parenthesized_expression: $ => seq(
@@ -301,8 +326,6 @@ module.exports = grammar({
 
       field_definition: $ => seq(
         field('name', $.identifier),
-        field('nullable', optional('?')),
-        field("reference", optional("&")),
         field('type', $._type)
       ),
 
@@ -337,7 +360,7 @@ module.exports = grammar({
 
       self_parameter: $ => seq(
         optional(choice(
-          field('mut_reference', seq('&', 'mut')),
+          field('mut_reference', seq('mut', '&')),
           field('reference', '&')
         )),
         'self',
