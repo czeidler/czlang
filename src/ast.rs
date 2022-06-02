@@ -80,8 +80,7 @@ pub struct Field {
 
     pub name: String,
     pub is_reference: bool,
-    pub is_nullable: bool,
-    pub r#type: Type,
+    pub types: Vec<RefType>,
 }
 
 #[derive(Debug, Clone)]
@@ -90,7 +89,7 @@ pub struct Function {
 
     pub name: String,
     pub parameters: Vec<Parameter>,
-    pub return_type: Option<Type>,
+    pub return_types: Option<Vec<RefType>>,
     pub body: Rc<Block>,
 }
 
@@ -115,13 +114,12 @@ pub struct Parameter {
     pub name: String,
     pub is_mutable: bool,
     pub is_reference: bool,
-    pub is_nullable: bool,
-    pub _type: Type,
+    pub types: Vec<RefType>,
 
     pub origin: Option<SourceSpan>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Type {
     Null,
     Str,
@@ -131,20 +129,34 @@ pub enum Type {
     I8,
     U32,
     I32,
+    Number(Number),
     Identifier(String),
     Array(Array),
     Slice(Slice),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Not yet specified number type
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Number {
+    /// Narrowed down to:
+    pub types: Vec<Type>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct RefType {
+    pub is_reference: bool,
+    pub r#type: Type,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Array {
-    pub r#type: Rc<Type>,
+    pub types: Rc<Vec<RefType>>,
     pub length: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Slice {
-    pub r#type: Rc<Type>,
+    pub types: Rc<Vec<RefType>>,
 }
 
 #[derive(Debug, Clone)]
@@ -173,8 +185,7 @@ pub struct VarDeclaration {
     pub name: String,
     pub is_mutable: bool,
     pub is_reference: bool,
-    pub is_nullable: bool,
-    pub var_type: Option<Type>,
+    pub types: Option<Vec<RefType>>,
     pub value: Expression,
 
     pub origin: SourceSpan,
@@ -346,7 +357,7 @@ fn parse_fun<'a>(
     let name = child_by_field(&node, "name", context)?;
     let parameter_list = child_by_field(&node, "parameters", context)?;
     let return_type = match node.child_by_field_name("result".as_bytes()) {
-        Some(return_type) => parse_type(context, &return_type),
+        Some(return_type) => parse_types(context, &return_type),
         None => None,
     };
     let body_node: Node = child_by_field(&node, "body", context)?;
@@ -358,7 +369,7 @@ fn parse_fun<'a>(
         },
         name: node_text(&name, context)?,
         parameters: parse_parameters(context, parameter_list)?,
-        return_type,
+        return_types: return_type,
         body: parse_block_and_cache(context, body_node, node.clone()),
     };
     Some(fun)
@@ -416,7 +427,6 @@ fn parse_struct_field<'a>(
 ) -> Option<Field> {
     let name = child_by_field(&node, "name", context)?;
     let is_reference = node.child_by_field_name("reference".as_bytes()).is_some();
-    let is_nullable = node.child_by_field_name("nullable".as_bytes()).is_some();
     let field_type = child_by_field(&node, "type", context)?;
 
     Some(Field {
@@ -427,8 +437,7 @@ fn parse_struct_field<'a>(
 
         name: node_text(&name, context)?,
         is_reference,
-        is_nullable,
-        r#type: parse_type(context, &field_type)?,
+        types: parse_types(context, &field_type)?,
     })
 }
 
@@ -700,11 +709,10 @@ fn parse_var_declaration<'a>(
 ) -> Option<VarDeclaration> {
     let is_mutable = node.child_by_field_name("mutable".as_bytes()).is_some();
     let is_reference = node.child_by_field_name("reference".as_bytes()).is_some();
-    let is_nullable = node.child_by_field_name("nullable".as_bytes()).is_some();
 
     let name = child_by_field(&node, "name", context)?;
     let var_type = match node.child_by_field_name("type") {
-        Some(var_type) => Some(parse_type(context, &var_type)?),
+        Some(var_type) => Some(parse_types(context, &var_type)?),
         None => None,
     };
     let value_node = child_by_field(&node, "value", context)?;
@@ -714,8 +722,7 @@ fn parse_var_declaration<'a>(
         name: node_text(&name, context)?,
         is_mutable,
         is_reference,
-        is_nullable,
-        var_type,
+        types: var_type,
         value,
 
         origin: SourceSpan::from_node(&node),
@@ -806,7 +813,6 @@ fn parse_parameters<'a>(context: &mut FileContext<'a>, node: Node<'a>) -> Option
 fn parse_parameter<'a>(context: &mut FileContext<'a>, node: Node<'a>) -> Option<Parameter> {
     let is_mutable = node.child_by_field_name("mutable".as_bytes()).is_some();
     let is_reference = node.child_by_field_name("reference".as_bytes()).is_some();
-    let is_nullable = node.child_by_field_name("nullable".as_bytes()).is_some();
     let name = child(&node, "parameter name", 0, context)?;
     let _type = child(&node, "parameter type", 1, context)?;
 
@@ -815,8 +821,7 @@ fn parse_parameter<'a>(context: &mut FileContext<'a>, node: Node<'a>) -> Option<
         name: node_text(&name, context)?,
         is_mutable,
         is_reference,
-        is_nullable,
-        _type: parse_type(context, &_type)?,
+        types: parse_types(context, &_type)?,
 
         origin: Some(SourceSpan::from_node(&node)),
     })
@@ -833,6 +838,7 @@ fn parse_type<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Type
                 "u8" => Type::U8,
                 "i32" => Type::I32,
                 "u32" => Type::U32,
+                "null" => Type::Null,
                 _ => {
                     context.errors.push(ASTError::from_node(
                         node,
@@ -858,24 +864,66 @@ fn parse_type<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Type
             return None;
         }
     };
-
     Some(t)
+}
+
+fn parse_types<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Vec<RefType>> {
+    let types = match node.kind() {
+        "parenthesized_type" => {
+            let parenthesized_type = child_by_field(&node, "type", context)?;
+            return parse_types(context, &parenthesized_type);
+        }
+        "sum_type" => {
+            let left = child_by_field(&node, "left", context)?;
+            let right = child_by_field(&node, "right", context)?;
+            let mut types = parse_types(context, &left)?;
+            for mut t in parse_types(context, &right)? {
+                if types.contains(&t) {
+                    context.errors.push(ASTError::from_node(
+                        node,
+                        &context.file_path,
+                        &format!("Duplicated sum type: {:?}", t),
+                    ));
+                    return None;
+                }
+                types.push(t);
+            }
+            types
+        }
+        "reference_type" => {
+            let type_node = child_by_field(&node, "type", context)?;
+            vec![RefType {
+                is_reference: true,
+                r#type: parse_type(context, &type_node)?,
+            }]
+        }
+        _ => {
+            vec![RefType {
+                is_reference: false,
+                r#type: parse_type(context, node)?,
+            }]
+        }
+    };
+
+    Some(types)
 }
 
 fn parse_array<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Array> {
     let element = child_by_field(&node, "element", context)?;
     let length = child_by_field(&node, "length", context)?;
     let length = parse_usize(context, &length)?;
+    let types = parse_types(context, &element)?;
     Some(Array {
-        r#type: Rc::new(parse_type(context, &element)?),
+        types: Rc::new(types.into_iter().collect()),
         length,
     })
 }
 
 fn parse_slice<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Slice> {
     let element = child_by_field(&node, "element", context)?;
+    let types = parse_types(context, &element)?;
     Some(Slice {
-        r#type: Rc::new(parse_type(context, &element)?),
+        types: Rc::new(types.into_iter().collect()),
     })
 }
 

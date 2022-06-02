@@ -1,11 +1,19 @@
 use std::{
+    cell::RefCell,
     collections::HashMap,
     rc::{Rc, Weak},
 };
 
-use crate::ast::{Expression, ExpressionType, File, Function, Statement, Type, VarDeclaration};
+use crate::{
+    ast::{
+        Array, Expression, ExpressionType, File, Function, RefType, Slice, Statement, Type,
+        VarDeclaration,
+    },
+    types::{intersection, types_to_string},
+};
 
 pub struct FileAnalysis {
+    pub file_scope: Rc<RefCell<FileScope>>,
     pub functions: HashMap<String, FunScope>,
 }
 
@@ -15,25 +23,38 @@ pub enum CodeAnalysisItem {
 
 #[derive(Debug, Clone)]
 pub struct ExpressionState {
-    pub types: Vec<Type>,
+    pub types: Vec<RefType>,
 }
 
 #[derive(Debug, Clone)]
 pub struct VarState {
-    types: Vec<Type>,
+    types: Vec<RefType>,
+}
+
+pub struct FileScope {
+    pub file: Weak<File>,
+    pub sum_types: HashMap<String, Vec<RefType>>,
 }
 
 pub struct FunScope {
-    file: Weak<File>,
+    pub fun: Weak<Function>,
 
     pub vars: HashMap<String, VarState>,
 
     pub expressions: HashMap<usize, ExpressionState>,
+
+    pub file_scope: Weak<RefCell<FileScope>>,
 }
 
 impl FunScope {
-    fn file(&self) -> Rc<File> {
-        self.file.upgrade().unwrap()
+    pub fn file(&self) -> Rc<File> {
+        self.file_scope
+            .upgrade()
+            .unwrap()
+            .borrow()
+            .file
+            .upgrade()
+            .unwrap()
     }
 }
 
@@ -44,60 +65,98 @@ fn lookup_identifier(scope: &FunScope, identifier: &String) -> Option<CodeAnalys
     None
 }
 
-fn type_overlap(left: &Vec<Type>, right: &Vec<Type>) -> Vec<Type> {
-    left.iter()
-        .filter(|left| right.contains(left))
-        .map(|left| left.clone())
-        .collect()
+fn validate_expression_list(
+    scope: &mut FunScope,
+    expressions: &Vec<Expression>,
+) -> Result<Vec<RefType>, String> {
+    let mut output = Vec::new();
+    for expression in expressions {
+        let types = expression_type(scope, &expression)?;
+        for t in types {
+            if !output.contains(&t) {
+                output.push(t);
+            }
+        }
+    }
+    output.sort();
+    Ok(output)
 }
 
-pub fn validate_expression(
-    scope: &mut FunScope,
-    expression: &Expression,
-) -> Result<ExpressionState, String> {
-    let result = match &expression.r#type {
-        ExpressionType::String(_) => ExpressionState {
-            types: vec![Type::String],
-        },
+fn expression_type(scope: &mut FunScope, expression: &Expression) -> Result<Vec<RefType>, String> {
+    let types = match &expression.r#type {
+        ExpressionType::String(_) => vec![RefType {
+            is_reference: false,
+            r#type: Type::String,
+        }],
+
         ExpressionType::Identifier(identifier) => {
             let identifier = match lookup_identifier(scope, &identifier) {
                 Some(identifier) => identifier,
                 None => return Err(format!("Identifier not found: {:?}", identifier)),
             };
             match identifier {
-                CodeAnalysisItem::VarState(var) => ExpressionState {
-                    types: var.types.clone(),
-                },
+                CodeAnalysisItem::VarState(var) => var.types.clone(),
             }
         }
-        ExpressionType::IntLiteral(_) => ExpressionState {
-            types: vec![Type::U32, Type::I32],
+        ExpressionType::IntLiteral(_) => vec![
+            RefType {
+                is_reference: false,
+                r#type: Type::U32,
+            },
+            RefType {
+                is_reference: false,
+                r#type: Type::I32,
+            },
+        ],
+        ExpressionType::Null => vec![RefType {
+            is_reference: false,
+            r#type: Type::Null,
+        }],
+        ExpressionType::Bool(_) => vec![RefType {
+            is_reference: false,
+            r#type: Type::Bool,
+        }],
+
+        ExpressionType::UnaryExpression(unary) => match unary.operator {
+            crate::ast::UnaryOperator::Minus => todo!(),
+            crate::ast::UnaryOperator::Not => todo!(),
+            crate::ast::UnaryOperator::Reference => expression_type(scope, &unary.operand)?
+                .into_iter()
+                .map(|it| RefType {
+                    is_reference: true,
+                    r#type: it.r#type,
+                })
+                .collect(),
         },
-        ExpressionType::Null => ExpressionState {
-            types: vec![Type::Null],
-        },
-        ExpressionType::Bool(_) => ExpressionState {
-            types: vec![Type::Bool],
-        },
-        ExpressionType::UnaryExpression(_) => {
-            // TODO
-            ExpressionState { types: vec![] }
-        }
         ExpressionType::BinaryExpression(binary) => {
             let left = validate_expression(scope, &binary.left)?;
             let right = validate_expression(scope, &binary.right)?;
-            let overlap: Vec<Type> = type_overlap(&left.types, &right.types);
+            let overlap: Vec<RefType> = intersection(&left.types, &right.types);
             if overlap.is_empty() {
                 return Err(format!(
                     "Incompatible type in expression: left == {:?}, right == {:?}",
                     left.types, right.types,
                 ));
             }
-            ExpressionState { types: overlap }
+            overlap
         }
         ExpressionType::ParenthesizedExpression(_) => todo!(),
-        ExpressionType::ArrayExpression(_) => todo!(),
-        ExpressionType::SliceExpression(_) => todo!(),
+        ExpressionType::ArrayExpression(array) => vec![RefType {
+            is_reference: false,
+            r#type: Type::Array(Array {
+                types: Rc::new(validate_expression_list(scope, &array.expressions)?),
+                length: array.expressions.len(),
+            }),
+        }],
+        ExpressionType::SliceExpression(slice) => vec![RefType {
+            is_reference: false,
+            r#type: Type::Slice(Slice {
+                types: Rc::new(validate_expression_list(
+                    scope,
+                    &vec![slice.operand.as_ref().clone()],
+                )?),
+            }),
+        }],
         ExpressionType::FunctionCall(fun_call) => {
             let file = scope.file();
             let fun = match file.functions.get(&fun_call.name) {
@@ -117,25 +176,28 @@ pub fn validate_expression(
                 if arg
                     .types
                     .iter()
-                    .find(|arg_type| *arg_type == &parameter._type)
+                    .find(|arg_type| parameter.types.contains(arg_type))
                     .is_none()
                 {
                     return Err(format!(
                         "Argument as invalid type {:?}; but expected {:?}",
-                        arg.types, parameter._type
+                        arg.types, parameter.types
                     ));
                 }
             }
 
-            ExpressionState {
-                types: fun
-                    .return_type
-                    .as_ref()
-                    .map(|t| vec![t.clone()])
-                    .unwrap_or(vec![]),
-            }
+            fun.return_types.clone().unwrap_or(vec![])
         }
     };
+    Ok(types)
+}
+
+pub fn validate_expression(
+    scope: &mut FunScope,
+    expression: &Expression,
+) -> Result<ExpressionState, String> {
+    let types = expression_type(scope, expression)?;
+    let result = ExpressionState { types };
     scope.expressions.insert(expression.id, result.clone());
     Ok(result)
 }
@@ -145,12 +207,23 @@ pub fn validate_var_declaration(
     var_declaration: &VarDeclaration,
 ) -> Result<(), String> {
     let mut state = VarState { types: vec![] };
-    if var_declaration.is_nullable {
-        state.types.push(Type::Null);
-    }
-    if let Some(t) = &var_declaration.var_type {
-        if state.types.iter().find(|v| *v == t).is_none() {
-            state.types.push(t.clone());
+    if let Some(types) = &var_declaration.types {
+        for t in types {
+            if state.types.iter().find(|v| *v == t).is_none() {
+                state.types.push(t.clone());
+            }
+        }
+        state.types.sort();
+
+        // Add sum type
+        if state.types.len() > 1 {
+            scope
+                .file_scope
+                .upgrade()
+                .unwrap()
+                .borrow_mut()
+                .sum_types
+                .insert(sum_type_name(&state.types), state.types.clone());
         }
     }
 
@@ -159,12 +232,14 @@ pub fn validate_var_declaration(
         for t in expr.types {
             state.types.push(t);
         }
+        state.types.sort();
     } else {
-        let overlap = type_overlap(&state.types, &expr.types);
+        let overlap = intersection(&state.types, &expr.types);
         if overlap.is_empty() {
             return Err(format!(
-                "Incompatible type in var assignement: var == {:?}, expr == {:?}",
-                state.types, expr.types,
+                "Incompatible type in var assignement: var: {}, expr: {}",
+                types_to_string(&state.types),
+                types_to_string(&expr.types),
             ));
         }
         state.types = overlap;
@@ -199,22 +274,22 @@ pub fn validate_statement(
             } else {
                 vec![]
             };
-            if ret_types.is_empty() && fun.return_type.is_some() {
-                return Err(format!("Unexpected return type: {:?}", fun.return_type));
+            if ret_types.is_empty() && fun.return_types.is_some() {
+                return Err(format!("Unexpected return type: {:?}", fun.return_types));
             }
-            if ret_types.is_empty() && fun.return_type.is_none() {
+            if ret_types.is_empty() && fun.return_types.is_none() {
                 return Ok(());
             }
-            let fun_ret_type = if let Some(fun_ret_type) = &fun.return_type {
-                vec![fun_ret_type.clone()]
+            let fun_ret_type = if let Some(fun_ret_type) = &fun.return_types {
+                fun_ret_type.clone()
             } else {
                 vec![]
             };
-            let overlap = type_overlap(&ret_types, &fun_ret_type);
+            let overlap = intersection(&ret_types, &fun_ret_type);
             if overlap.is_empty() {
                 return Err(format!(
                     "Incompatible return type: fun == {:?}, expr == {:?}",
-                    fun.return_type, ret_types,
+                    fun.return_types, ret_types,
                 ));
             }
         }
@@ -223,9 +298,13 @@ pub fn validate_statement(
     Ok(())
 }
 
-pub fn validate_fun(fun: &Rc<Function>, file: &Rc<File>) -> Result<FunScope, String> {
+pub fn validate_fun(
+    file_scope: &Rc<RefCell<FileScope>>,
+    fun: &Rc<Function>,
+) -> Result<FunScope, String> {
     let mut scope = FunScope {
-        file: Rc::downgrade(file),
+        fun: Rc::downgrade(fun),
+        file_scope: Rc::downgrade(file_scope),
         vars: HashMap::new(),
         expressions: HashMap::new(),
     };
@@ -240,15 +319,61 @@ pub fn validate_fun(fun: &Rc<Function>, file: &Rc<File>) -> Result<FunScope, Str
 }
 
 pub fn validate(file: &Rc<File>) -> Result<FileAnalysis, String> {
+    let file_scope = Rc::new(RefCell::new(FileScope {
+        file: Rc::downgrade(file),
+        sum_types: HashMap::new(),
+    }));
     let mut file_analysis = FileAnalysis {
+        file_scope,
         functions: HashMap::new(),
     };
+
     for (_, fun) in &file.functions {
-        let scope = validate_fun(fun, file)?;
+        let scope = validate_fun(&file_analysis.file_scope, fun)?;
         file_analysis.functions.insert(fun.name.clone(), scope);
     }
 
     Ok(file_analysis)
+}
+
+/// types must be sorted
+pub fn sum_type_name(types: &Vec<RefType>) -> String {
+    let mut name = "".to_string();
+    for t in types {
+        if t.is_reference {
+            name += "R";
+        }
+        let part = match &t.r#type {
+            Type::Null => "N",
+            Type::Str => "S",
+            Type::String => "St",
+            Type::Bool => "B",
+            Type::U8 => "U8",
+            Type::I8 => "I8",
+            Type::U32 => "U32",
+            Type::I32 => "I32",
+            Type::Identifier(id) => id,
+            Type::Array(array) => {
+                let types = array.types.as_ref().clone();
+                name += "A";
+                let part = sum_type_name(&types);
+                name += &part;
+                name += "E";
+                continue;
+            }
+            Type::Slice(slice) => {
+                let types = slice.types.as_ref().clone();
+                name += "As";
+                let part = sum_type_name(&types);
+                name += &part;
+                name += "E";
+                continue;
+            }
+            Type::Number(_) => "N",
+        };
+        name += part;
+    }
+    name
 }
 
 #[cfg(test)]

@@ -2,16 +2,16 @@ use std::fs::create_dir_all;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::slice::SliceIndex;
 
 use crate::ast::{
     print_err, Array, ArrayExpression, BinaryOperator, Block, Expression, ExpressionType, Field,
-    File, FileContext, Function, FunctionCall, IfAlternative, IfStatement, Parameter, Slice,
-    SliceExpression, Statement, StringTemplatePart, Struct, Type, UnaryOperator, VarDeclaration,
+    File, FileContext, Function, FunctionCall, IfAlternative, IfStatement, Parameter, RefType,
+    Slice, SliceExpression, Statement, StringTemplatePart, Struct, Type, UnaryOperator,
+    VarDeclaration,
 };
 use crate::buildin::Buildins;
 use crate::tree_sitter::parse;
-use crate::validation::{validate, FileAnalysis, FunScope};
+use crate::validation::{sum_type_name, validate, FileAnalysis, FunScope};
 
 struct Writer<'a> {
     indentation: u16,
@@ -63,14 +63,28 @@ struct RustTranspiler<'a> {
 }
 
 impl<'a> RustTranspiler<'a> {
-    fn transpile_optional_type(&self, t: &Type, writer: &mut Writer) {
-        writer.write("Option<");
-        self.transpile_type(t, writer);
-        writer.write(">");
+    fn transpile_types(&self, types: &Vec<RefType>, writer: &mut Writer) {
+        if types.len() > 1 {
+            // TODO avoid clone() and sort earlier?
+            let mut sorted_type = types.clone();
+            sorted_type.sort();
+            let name = sum_type_name(&sorted_type);
+            writer.write(&name);
+            return;
+        }
+        if types.is_empty() {
+            return;
+        }
+
+        let t = types.get(0).unwrap();
+        self.transpile_type(t, writer)
     }
 
-    fn transpile_type(&self, t: &Type, writer: &mut Writer) {
-        let text = match t {
+    fn transpile_type(&self, t: &RefType, writer: &mut Writer) {
+        if t.is_reference {
+            writer.write("&");
+        }
+        let text = match &t.r#type {
             Type::Str => "str",
             Type::String => "String",
             Type::Bool => "bool",
@@ -79,16 +93,45 @@ impl<'a> RustTranspiler<'a> {
             Type::I32 => "i32",
             Type::U32 => "u32",
             Type::Identifier(identifier) => identifier.as_str(),
-            Type::Array(array) => return self.transpile_array(array, writer),
-            Type::Slice(slice) => return self.transpile_slice(slice, writer),
+            Type::Array(array) => return self.transpile_array(&array, writer),
+            Type::Slice(slice) => return self.transpile_slice(&slice, writer),
             Type::Null => "None",
+            Type::Number(_) => todo!(),
         };
         writer.write(text);
     }
 
+    fn transpile_sum_type_def(&self, name: &str, types: &Vec<RefType>, writer: &mut Writer) {
+        writer.write("enum ");
+        writer.write(name);
+        writer.write(" {");
+        writer.new_line();
+        writer.indented(|writer| {
+            for t in types {
+                match &t.r#type {
+                    Type::Null => writer.write("Null"),
+                    Type::Str => todo!(),
+                    Type::String => writer.write("String(String)"),
+                    Type::Bool => writer.write("Bool(bool)"),
+                    Type::U8 => writer.write("U8(u8)"),
+                    Type::I8 => writer.write("I8(i8)"),
+                    Type::U32 => writer.write("U32(u32)"),
+                    Type::I32 => writer.write("I32(i32)"),
+                    Type::Number(_) => panic!("Validation should have failed"),
+                    Type::Identifier(identifier) => writer.write(&identifier),
+                    Type::Array(_) => writer.write("todoarray"),
+                    Type::Slice(_) => writer.write("todoslice"),
+                };
+                writer.write(",");
+                writer.new_line();
+            }
+        });
+        writer.write("}");
+    }
+
     fn transpile_array(&self, array: &Array, writer: &mut Writer) {
         writer.write("[");
-        self.transpile_type(&array.r#type, writer);
+        self.transpile_types(&array.types, writer);
         writer.write("; ");
         writer.write(&format!("{}", array.length));
         writer.write("]");
@@ -96,14 +139,14 @@ impl<'a> RustTranspiler<'a> {
 
     fn transpile_slice(&self, slice: &Slice, writer: &mut Writer) {
         writer.write("&[");
-        self.transpile_type(&slice.r#type, writer);
+        self.transpile_types(&slice.types, writer);
         writer.write("]");
     }
 
     fn transpile_parameter(&self, parameter: &Parameter, writer: &mut Writer) {
         writer.write(&parameter.name);
         writer.write(": ");
-        self.transpile_type(&parameter._type, writer);
+        self.transpile_types(&parameter.types, writer);
     }
 
     fn transpile_parameters(&self, parameters: &Vec<Parameter>, writer: &mut Writer) {
@@ -121,6 +164,7 @@ impl<'a> RustTranspiler<'a> {
     fn transpile_expression(
         &self,
         expression: &Expression,
+        target: Option<&Vec<RefType>>,
         fun_scope: &FunScope,
         writer: &mut Writer,
     ) {
@@ -133,7 +177,12 @@ impl<'a> RustTranspiler<'a> {
                         StringTemplatePart::Expression(expression) => {
                             let mut buffer = "".to_string();
                             let mut fmt_writer = Writer::new(&mut buffer);
-                            self.transpile_expression(expression, fun_scope, &mut fmt_writer);
+                            self.transpile_expression(
+                                expression,
+                                target,
+                                fun_scope,
+                                &mut fmt_writer,
+                            );
 
                             fmt_params.push(buffer);
                             fmt_string += "{}";
@@ -160,7 +209,11 @@ impl<'a> RustTranspiler<'a> {
                 writer.write(&format!("{}", number));
             }
             ExpressionType::Null => {
-                writer.write("None");
+                // TODO sort earlier
+                let mut target = target.unwrap().clone();
+                target.sort();
+                writer.write(&sum_type_name(&target));
+                writer.write("::Null");
             }
             ExpressionType::Bool(b) => {
                 writer.write(&format!("{}", b));
@@ -172,7 +225,7 @@ impl<'a> RustTranspiler<'a> {
                     UnaryOperator::Reference => "&",
                 };
                 writer.write(op);
-                self.transpile_expression(&expr.operand, fun_scope, writer);
+                self.transpile_expression(&expr.operand, target, fun_scope, writer);
             }
             ExpressionType::BinaryExpression(expr) => {
                 let op = match expr.operator {
@@ -189,22 +242,22 @@ impl<'a> RustTranspiler<'a> {
                     BinaryOperator::And => "&&",
                     BinaryOperator::Or => "||",
                 };
-                self.transpile_expression(&expr.left, fun_scope, writer);
+                self.transpile_expression(&expr.left, target, fun_scope, writer);
                 writer.write(" ");
                 writer.write(op);
                 writer.write(" ");
-                self.transpile_expression(&expr.right, fun_scope, writer);
+                self.transpile_expression(&expr.right, target, fun_scope, writer);
             }
             ExpressionType::ParenthesizedExpression(expr) => {
                 writer.write("(");
-                self.transpile_expression(&expr.expression, fun_scope, writer);
+                self.transpile_expression(&expr.expression, target, fun_scope, writer);
                 writer.write(")");
             }
             ExpressionType::ArrayExpression(array) => {
-                self.transpile_array_expr(array, fun_scope, writer)
+                self.transpile_array_expr(array, target, fun_scope, writer)
             }
             ExpressionType::SliceExpression(slice) => {
-                self.transpile_slice_expr(slice, fun_scope, writer)
+                self.transpile_slice_expr(slice, target, fun_scope, writer)
             }
             ExpressionType::FunctionCall(call) => {
                 self.transpile_function_call(call, fun_scope, writer);
@@ -215,13 +268,14 @@ impl<'a> RustTranspiler<'a> {
     fn transpile_array_expr(
         &self,
         array: &ArrayExpression,
+        target: Option<&Vec<RefType>>,
         fun_scope: &FunScope,
         writer: &mut Writer,
     ) {
         writer.write("[");
         let mut iter = array.expressions.iter().peekable();
         while let Some(expr) = iter.next() {
-            self.transpile_expression(expr, fun_scope, writer);
+            self.transpile_expression(expr, target, fun_scope, writer);
             if iter.peek().is_some() {
                 writer.write(", ");
             }
@@ -232,10 +286,11 @@ impl<'a> RustTranspiler<'a> {
     fn transpile_slice_expr(
         &self,
         slice: &SliceExpression,
+        target: Option<&Vec<RefType>>,
         fun_scope: &FunScope,
         writer: &mut Writer,
     ) {
-        self.transpile_expression(&slice.operand, fun_scope, writer);
+        self.transpile_expression(&slice.operand, target, fun_scope, writer);
         writer.write("[");
         if let Some(start) = slice.start {
             writer.write(&format!("{}", start));
@@ -264,8 +319,8 @@ impl<'a> RustTranspiler<'a> {
                     match arg0.r#type {
                         ExpressionType::String(_) => {
                             writer.write("println!(");
-                            self.transpile_expression(arg0, fun_scope, writer);
-                            writer.write(");");
+                            self.transpile_expression(arg0, None, fun_scope, writer);
+                            writer.write(")");
                             return true;
                         }
                         _ => {}
@@ -274,12 +329,12 @@ impl<'a> RustTranspiler<'a> {
                 writer.write("println!(\"{}\", ");
                 let mut iter = call.arguments.iter().peekable();
                 while let Some(expr) = iter.next() {
-                    self.transpile_expression(expr, fun_scope, writer);
+                    self.transpile_expression(expr, None, fun_scope, writer);
                     if iter.peek().is_some() {
                         writer.write(", ");
                     }
                 }
-                writer.write(");");
+                writer.write(")");
                 return true;
             }
             _ => {}
@@ -300,9 +355,14 @@ impl<'a> RustTranspiler<'a> {
         writer.write(&call.name);
         writer.write("(");
 
-        let mut iter = call.arguments.iter().peekable();
-        while let Some(expr) = iter.next() {
-            self.transpile_expression(expr, fun_scope, writer);
+        // TODO make this a query method:
+        let file = fun_scope.file();
+        let fun = file.functions.get(&call.name).unwrap();
+
+        let mut iter = call.arguments.iter().enumerate().peekable();
+        while let Some((i, expr)) = iter.next() {
+            let parameter = fun.parameters.get(i).unwrap();
+            self.transpile_expression(expr, Some(&parameter.types), fun_scope, writer);
             if iter.peek().is_some() {
                 writer.write(", ");
             }
@@ -322,7 +382,7 @@ impl<'a> RustTranspiler<'a> {
             writer.write("mut ");
         }
         writer.write(&var_declaration.name);
-        match &var_declaration.var_type {
+        match &var_declaration.types {
             Some(t) => {
                 writer.write(": ");
                 if var_declaration.is_reference && var_declaration.is_mutable {
@@ -330,32 +390,17 @@ impl<'a> RustTranspiler<'a> {
                 } else if var_declaration.is_reference {
                     writer.write("& ");
                 }
-                if var_declaration.is_nullable {
-                    writer.write("Option<");
-                    self.transpile_type(&t, writer);
-                    writer.write(">");
-                } else {
-                    self.transpile_type(&t, writer);
-                }
+                self.transpile_types(t, writer);
             }
             None => {}
         }
         writer.write(" = ");
-        if var_declaration.is_nullable {
-            let expr_state = fun_scope
-                .expressions
-                .get(&var_declaration.value.id)
-                .unwrap();
-            if expr_state.types.len() == 1 && expr_state.types[0] == Type::Null {
-                self.transpile_expression(&var_declaration.value, fun_scope, writer);
-            } else {
-                writer.write("Some(");
-                self.transpile_expression(&var_declaration.value, fun_scope, writer);
-                writer.write(")");
-            }
-        } else {
-            self.transpile_expression(&var_declaration.value, fun_scope, writer);
-        }
+        self.transpile_expression(
+            &var_declaration.value,
+            var_declaration.types.as_ref(),
+            fun_scope,
+            writer,
+        );
         writer.write(";");
     }
 
@@ -368,7 +413,12 @@ impl<'a> RustTranspiler<'a> {
         writer.write("return");
         if let Some(expression) = expression {
             writer.write(" ");
-            self.transpile_expression(expression, fun_scope, writer);
+            self.transpile_expression(
+                expression,
+                fun_scope.fun.upgrade().unwrap().return_types.as_ref(),
+                fun_scope,
+                writer,
+            );
         }
         writer.write(";");
     }
@@ -379,8 +429,17 @@ impl<'a> RustTranspiler<'a> {
         fun_scope: &FunScope,
         writer: &mut Writer,
     ) {
+        let target_types = vec![RefType {
+            is_reference: false,
+            r#type: Type::Bool,
+        }];
         writer.write("if ");
-        self.transpile_expression(&if_statement.condition, fun_scope, writer);
+        self.transpile_expression(
+            &if_statement.condition,
+            Some(&target_types),
+            fun_scope,
+            writer,
+        );
         writer.write(" {");
         writer.new_line();
         writer.indented(|writer| {
@@ -409,7 +468,7 @@ impl<'a> RustTranspiler<'a> {
         for statement in &block.statements {
             match statement {
                 Statement::Expression(expr) => {
-                    self.transpile_expression(expr, fun_scope, writer);
+                    self.transpile_expression(expr, None, fun_scope, writer);
                     writer.write(";");
                     writer.new_line();
                 }
@@ -434,9 +493,9 @@ impl<'a> RustTranspiler<'a> {
 
         writer.write(&format!("fn {}", function.name));
         self.transpile_parameters(&function.parameters, writer);
-        if let Some(return_type) = &function.return_type {
+        if let Some(return_type) = &function.return_types {
             writer.write(" -> ");
-            self.transpile_type(return_type, writer);
+            self.transpile_types(return_type, writer);
         }
         writer.write(" {");
         writer.new_line();
@@ -452,11 +511,8 @@ impl<'a> RustTranspiler<'a> {
         if field.is_reference {
             writer.write("&'a ");
         }
-        if field.is_nullable {
-            self.transpile_optional_type(&field.r#type, writer);
-        } else {
-            self.transpile_type(&field.r#type, writer);
-        }
+        self.transpile_types(&field.types, writer);
+
         writer.write(",");
     }
 
@@ -481,6 +537,12 @@ impl<'a> RustTranspiler<'a> {
     }
 
     pub fn transpile_file(&self, file: &File, writer: &mut Writer) {
+        for (name, types) in &self.file_analysis.file_scope.borrow().sum_types {
+            self.transpile_sum_type_def(&name, types, writer);
+            writer.new_line();
+            writer.new_line();
+        }
+
         for (_, struct_def) in &file.struct_defs {
             self.transpile_struct(struct_def, writer);
             writer.new_line();
@@ -635,8 +697,8 @@ fun main() {
     var value2 mut i32 = 12
     //var value3 &i32 = &value1
     //var value4 &mut i32 = &value1
-    var value5? i32 = null
-    var value6? i32 = 12
+    var value5 i32 | null = null
+    var value6 i32 = 12
 }
         "#,
         )

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ast::{NodeData, Parameter, Type};
+use crate::ast::{NodeData, Parameter, RefType, Type};
 
 #[derive(Debug, Clone)]
 pub struct FunctionDeclaration {
@@ -26,10 +26,14 @@ impl Buildins {
                 parameters: vec![Parameter {
                     id: 0,
                     name: "value".to_string(),
-                    _type: Type::Str,
+                    types: [RefType {
+                        is_reference: false,
+                        r#type: Type::Str,
+                    }]
+                    .into_iter()
+                    .collect(),
                     is_mutable: false,
                     is_reference: false,
-                    is_nullable: false,
 
                     origin: None,
                 }],

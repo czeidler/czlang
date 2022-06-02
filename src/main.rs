@@ -6,6 +6,7 @@ mod ast;
 mod buildin;
 mod rust_transpiler;
 mod tree_sitter;
+mod types;
 mod validation;
 
 #[cfg(test)]
