@@ -695,8 +695,8 @@ fun main() {
 fun main() {
     var value1 i32 = 12
     var value2 mut i32 = 12
-    //var value3 &i32 = &value1
-    //var value4 &mut i32 = &value1
+    var value3 &i32 = &value1
+    var value4 mut &i32 = &value1
     var value5 i32 | null = null
     var value6 i32 = 12
 }
