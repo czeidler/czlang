@@ -223,6 +223,7 @@ impl<'a> RustTranspiler<'a> {
                     UnaryOperator::Minus => "-",
                     UnaryOperator::Not => "!",
                     UnaryOperator::Reference => "&",
+                    UnaryOperator::TypeOf => "",
                 };
                 writer.write(op);
                 self.transpile_expression(&expr.operand, target, fun_scope, writer);

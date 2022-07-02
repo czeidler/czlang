@@ -252,7 +252,7 @@ module.exports = grammar({
       ),
 
       unary_expression: $ => prec(PREC.unary, seq(
-        field('operator', choice('-', '!', '&')),
+        field('operator', choice('-', '!', '&', 'typeof')),
         field('operand', $._expression)
       )),
 

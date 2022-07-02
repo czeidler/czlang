@@ -227,6 +227,7 @@ pub enum UnaryOperator {
     Not,
     /// &
     Reference,
+    TypeOf,
 }
 
 #[derive(Debug, Clone)]
@@ -578,6 +579,7 @@ fn parse_unary_expression<'a>(
         "-" => UnaryOperator::Minus,
         "!" => UnaryOperator::Not,
         "&" => UnaryOperator::Reference,
+        "typeof" => UnaryOperator::TypeOf,
         unknown => {
             context.errors.push(ASTError::from_node(
                 node,

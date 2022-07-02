@@ -7,7 +7,7 @@ use std::{
 use crate::{
     ast::{
         Array, Expression, ExpressionType, File, Function, RefType, Slice, Statement, Type,
-        VarDeclaration,
+        UnaryOperator, VarDeclaration,
     },
     types::{intersection, types_to_string},
 };
@@ -40,8 +40,6 @@ pub struct FunScope {
     pub fun: Weak<Function>,
 
     pub vars: HashMap<String, VarState>,
-
-    pub expressions: HashMap<usize, ExpressionState>,
 
     pub file_scope: Weak<RefCell<FileScope>>,
 }
@@ -118,15 +116,16 @@ fn expression_type(scope: &mut FunScope, expression: &Expression) -> Result<Vec<
         }],
 
         ExpressionType::UnaryExpression(unary) => match unary.operator {
-            crate::ast::UnaryOperator::Minus => todo!(),
-            crate::ast::UnaryOperator::Not => todo!(),
-            crate::ast::UnaryOperator::Reference => expression_type(scope, &unary.operand)?
+            UnaryOperator::Minus => todo!(),
+            UnaryOperator::Not => todo!(),
+            UnaryOperator::Reference => expression_type(scope, &unary.operand)?
                 .into_iter()
                 .map(|it| RefType {
                     is_reference: true,
                     r#type: it.r#type,
                 })
                 .collect(),
+            UnaryOperator::TypeOf => todo!(),
         },
         ExpressionType::BinaryExpression(binary) => {
             let left = validate_expression(scope, &binary.left)?;
@@ -198,7 +197,6 @@ pub fn validate_expression(
 ) -> Result<ExpressionState, String> {
     let types = expression_type(scope, expression)?;
     let result = ExpressionState { types };
-    scope.expressions.insert(expression.id, result.clone());
     Ok(result)
 }
 
@@ -306,7 +304,6 @@ pub fn validate_fun(
         fun: Rc::downgrade(fun),
         file_scope: Rc::downgrade(file_scope),
         vars: HashMap::new(),
-        expressions: HashMap::new(),
     };
     for par_ref in &fun.parameters {
         //let parameter = par_ref.get(parser)
@@ -495,6 +492,21 @@ fun main() { test() }
 
             fun main() {
                 test_call(34, true)
+            }
+        "#,
+        );
+    }
+
+    #[test]
+    fn type_of_validation() {
+        transpile_and_validate_project(
+            "test_projects/type_of_validation",
+            r#"
+            fun main() {
+                var test = true
+                if typeof test == bool {
+
+                }
             }
         "#,
         );
