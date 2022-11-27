@@ -8,7 +8,7 @@ pub struct FunctionDeclaration {
 
     pub name: String,
     pub parameters: Vec<Parameter>,
-    pub return_type: String,
+    pub return_types: Vec<RefType>,
 }
 
 pub struct Buildins {
@@ -37,7 +37,7 @@ impl Buildins {
 
                     origin: None,
                 }],
-                return_type: "".to_string(),
+                return_types: vec![],
             },
         );
         Buildins { functions }

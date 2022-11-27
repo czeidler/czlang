@@ -1,6 +1,6 @@
 use std::{fmt, rc::Rc, vec};
 
-use crate::ast::{Array, Number, RefType, Slice, Type};
+use crate::ast::{Array, RefType, Slice, Type};
 
 pub fn types_to_string(types: &Vec<RefType>) -> String {
     let parts: Vec<String> = types.into_iter().map(|it| format!("{:#}", it)).collect();
@@ -44,22 +44,9 @@ impl fmt::Display for RefType {
                 }
                 Ok(())
             }
-            Type::Number(number) => {
-                write!(f, "number(")?;
-                write!(
-                    f,
-                    "{}",
-                    types_to_string(
-                        &number
-                            .types
-                            .iter()
-                            .map(|it| RefType {
-                                is_reference: false,
-                                r#type: it.clone(),
-                            })
-                            .collect()
-                    )
-                )?;
+            Type::Unresolved(types) => {
+                write!(f, "unresolved(")?;
+                write!(f, "{}", types_to_string(&types))?;
                 write!(f, ")")
             }
         }
@@ -92,26 +79,6 @@ fn is_equal(left_types: &Vec<RefType>, right_types: &Vec<RefType>) -> bool {
         }
     }
     return true;
-}
-
-fn add_number(output: &mut Vec<RefType>, intersection: Vec<RefType>, is_reference: bool) {
-    for existing in output.into_iter() {
-        match &mut existing.r#type {
-            Type::Number(number) => {
-                for i in &intersection {
-                    number.types.push(i.r#type.clone());
-                }
-                return;
-            }
-            _ => {}
-        }
-    }
-    output.push(RefType {
-        is_reference,
-        r#type: Type::Number(Number {
-            types: intersection.into_iter().map(|it| it.r#type).collect(),
-        }),
-    });
 }
 
 pub fn intersection(left_types: &Vec<RefType>, right_types: &Vec<RefType>) -> Vec<RefType> {
@@ -151,68 +118,29 @@ pub fn intersection(left_types: &Vec<RefType>, right_types: &Vec<RefType>) -> Ve
                         }),
                     });
                 }
-                (Type::Number(l), Type::Number(r)) => {
-                    let inter = intersection(
-                        &l.types
-                            .iter()
-                            .map(|it| RefType {
-                                is_reference: false,
-                                r#type: it.clone(),
-                            })
-                            .collect(),
-                        &r.types
-                            .iter()
-                            .map(|it| RefType {
-                                is_reference: false,
-                                r#type: it.clone(),
-                            })
-                            .collect(),
-                    );
-                    if inter.len() == 0 {
-                        continue;
-                    }
-
-                    add_number(&mut output, inter, left.is_reference);
+                (Type::Unresolved(l), Type::Unresolved(r)) => {
+                    let mut inter = intersection(&l, &r);
+                    output.append(&mut inter);
                 }
-                (Type::Number(l), r) => {
-                    let inter = intersection(
-                        &l.types
-                            .iter()
-                            .map(|it| RefType {
-                                is_reference: false,
-                                r#type: it.clone(),
-                            })
-                            .collect(),
+                (Type::Unresolved(l), r) => {
+                    let mut inter = intersection(
+                        &l,
                         &vec![RefType {
                             is_reference: false,
                             r#type: r.clone(),
                         }],
                     );
-                    if inter.len() == 0 {
-                        continue;
-                    }
-
-                    add_number(&mut output, inter, left.is_reference);
+                    output.append(&mut inter);
                 }
-                (l, Type::Number(r)) => {
-                    let inter = intersection(
-                        &r.types
-                            .iter()
-                            .map(|it| RefType {
-                                is_reference: false,
-                                r#type: it.clone(),
-                            })
-                            .collect(),
+                (l, Type::Unresolved(r)) => {
+                    let mut inter = intersection(
+                        &r,
                         &vec![RefType {
                             is_reference: false,
                             r#type: l.clone(),
                         }],
                     );
-                    if inter.len() == 0 {
-                        continue;
-                    }
-
-                    add_number(&mut output, inter, left.is_reference);
+                    output.append(&mut inter);
                 }
                 _ => {
                     if left.r#type == right.r#type {
@@ -231,7 +159,7 @@ mod tests {
     use std::{rc::Rc, vec};
 
     use crate::{
-        ast::{Array, Number, RefType, Type},
+        ast::{Array, RefType, Type},
         types::{intersection, is_equal},
     };
 
@@ -432,9 +360,11 @@ mod tests {
                 length: 2,
                 types: Rc::new(vec![RefType {
                     is_reference: false,
-                    r#type: Type::Number(Number {
-                        types: vec![Type::I32, Type::U32, Type::U8],
-                    }),
+                    r#type: Type::Unresolved(vec![
+                        RefType::value(Type::I32),
+                        RefType::value(Type::U32),
+                        RefType::value(Type::U8),
+                    ]),
                 }]),
             }),
         }];
@@ -447,9 +377,10 @@ mod tests {
                     length: 2,
                     types: Rc::new(vec![RefType {
                         is_reference: false,
-                        r#type: Type::Number(Number {
-                            types: vec![Type::I32, Type::U32],
-                        }),
+                        r#type: Type::Unresolved(vec![
+                            RefType::value(Type::I32),
+                            RefType::value(Type::U32)
+                        ],),
                     }]),
                 }),
             }]

@@ -11,6 +11,7 @@ fun x() i32 {
   var c = !true
   var d = &value
   var e = a && b && c || e && f
+  var f = -89
 }
 
 ---
@@ -74,6 +75,11 @@ fun x() i32 {
                 (identifier)
               )
             )
+        )
+        (var_declaration
+            (identifier)
+            (unary_expression
+              (int_literal))
         )
     )
   )

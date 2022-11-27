@@ -1,9 +1,22 @@
 use std::{
+    cell::RefCell,
     collections::HashMap,
-    rc::{self, Rc},
+    hash::Hash,
+    rc::{Rc, Weak},
 };
 
 use tree_sitter::Node;
+
+use crate::{buildin::FunctionDeclaration, validation::TypeNarrowing};
+
+// code analysis:
+
+#[derive(Debug, Clone)]
+pub struct VarState {
+    pub types: Vec<RefType>,
+}
+
+// ast:
 
 #[derive(Debug, Clone)]
 pub struct SourcePosition {
@@ -62,8 +75,46 @@ pub struct NodeData {
 
 #[derive(Debug, Clone)]
 pub struct File {
-    pub functions: HashMap<String, rc::Rc<Function>>,
-    pub struct_defs: HashMap<String, rc::Rc<Struct>>,
+    pub functions: HashMap<String, Rc<RefCell<Function>>>,
+    pub struct_defs: HashMap<String, Rc<Struct>>,
+
+    /// From validation:
+    pub sum_types: HashMap<String, Vec<RefType>>,
+}
+
+impl File {
+    pub fn lookup_function(&self, name: &str) -> Option<FunctionDeclaration> {
+        if let Some(declaration) = self
+            .functions
+            .get(name)
+            .map(|f| f.borrow().as_declaration())
+        {
+            return Some(declaration);
+        }
+
+        match name {
+            "println" => Some(FunctionDeclaration {
+                node: NodeData { id: 1, parent: 0 },
+                name: "println".to_string(),
+                parameters: vec![Parameter {
+                    id: 0,
+                    name: "value".to_string(),
+                    types: [RefType {
+                        is_reference: false,
+                        r#type: Type::Str,
+                    }]
+                    .into_iter()
+                    .collect(),
+                    is_mutable: false,
+                    is_reference: false,
+
+                    origin: None,
+                }],
+                return_types: vec![],
+            }),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -85,16 +136,38 @@ pub struct Field {
 
 #[derive(Debug, Clone)]
 pub struct Function {
+    pub parent: Weak<RefCell<File>>,
+
     pub node: NodeData,
 
     pub name: String,
     pub parameters: Vec<Parameter>,
     pub return_types: Option<Vec<RefType>>,
-    pub body: Rc<Block>,
+    pub body: Rc<RefCell<Block>>,
+
+    /// From code analysis
+    pub vars: HashMap<String, VarState>,
+}
+
+impl Function {
+    pub fn file(&self) -> Rc<RefCell<File>> {
+        self.parent.upgrade().unwrap()
+    }
+
+    pub fn as_declaration(&self) -> FunctionDeclaration {
+        FunctionDeclaration {
+            node: self.node.clone(),
+            name: self.name.clone(),
+            parameters: self.parameters.clone(),
+            return_types: self.return_types.clone().unwrap_or(vec![]),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct Block {
+    pub parent: Option<BlockParent>,
+
     pub node: NodeData,
 
     pub statements: Vec<Statement>,
@@ -129,17 +202,10 @@ pub enum Type {
     I8,
     U32,
     I32,
-    Number(Number),
     Identifier(String),
     Array(Array),
     Slice(Slice),
-}
-
-/// Not yet specified number type
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct Number {
-    /// Narrowed down to:
-    pub types: Vec<Type>,
+    Unresolved(Vec<RefType>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -148,6 +214,21 @@ pub struct RefType {
     pub r#type: Type,
 }
 
+impl RefType {
+    pub fn value(r#type: Type) -> RefType {
+        RefType {
+            is_reference: false,
+            r#type,
+        }
+    }
+
+    pub fn reference(r#type: Type) -> RefType {
+        RefType {
+            is_reference: true,
+            r#type,
+        }
+    }
+}
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Array {
     pub types: Rc<Vec<RefType>>,
@@ -176,7 +257,7 @@ pub enum Statement {
     Expression(Expression),
     VarDeclaration(VarDeclaration),
     Return(Option<Expression>),
-    IfStatement(Rc<IfStatement>),
+    IfStatement(Rc<RefCell<IfStatement>>),
 }
 
 #[derive(Debug, Clone)]
@@ -202,6 +283,8 @@ pub struct FunctionCall {
 pub struct Expression {
     pub id: usize,
     pub r#type: ExpressionType,
+
+    pub resolved_types: RefCell<Option<Vec<RefType>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -266,15 +349,18 @@ pub struct ParenthesizedExpression {
 
 #[derive(Debug, Clone)]
 pub enum IfAlternative {
-    Else(rc::Rc<Block>),
-    If(rc::Rc<IfStatement>),
+    Else(Rc<RefCell<Block>>),
+    If(Rc<RefCell<IfStatement>>),
 }
 
 #[derive(Debug, Clone)]
 pub struct IfStatement {
     pub condition: Expression,
-    pub consequence: rc::Rc<Block>,
+    pub consequence: Rc<RefCell<Block>>,
     pub alternative: Option<IfAlternative>,
+
+    /// Type narrowing from the if contition
+    pub type_narrowing: Option<TypeNarrowing>,
 }
 
 #[derive(Debug, Clone)]
@@ -288,7 +374,6 @@ pub struct FileContext<'a> {
     pub root: Node<'a>,
     pub file_path: String,
     pub source: String,
-    pub nodes: HashMap<usize, CachedNode>,
     pub errors: Vec<ASTError>,
 }
 
@@ -298,31 +383,39 @@ impl<'a> FileContext<'a> {
             root,
             file_path,
             source,
-            nodes: HashMap::new(),
             errors: Vec::new(),
         }
     }
 
-    pub fn parse_file(&mut self) -> File {
+    pub fn parse_file(&mut self) -> Rc<RefCell<File>> {
         collect_errors(self.root, &self.file_path, &mut self.errors);
         parse_file(self.root, self)
     }
 }
 
-pub fn parse_file<'a>(node: Node<'a>, context: &mut FileContext<'a>) -> File {
-    let mut functions = HashMap::new();
-    let mut struct_defs = HashMap::new();
+pub fn parse_file<'a>(node: Node<'a>, context: &mut FileContext<'a>) -> Rc<RefCell<File>> {
+    let file = Rc::new(RefCell::new(File {
+        functions: HashMap::new(),
+        struct_defs: HashMap::new(),
+
+        sum_types: HashMap::new(),
+    }));
+
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
             "function_definition" => {
-                if let Some(fun) = parse_fun_and_cache(context, &child, &node) {
-                    functions.insert(fun.name.clone(), fun);
+                if let Some(fun) = parse_fun(context, &file, &child, &node) {
+                    file.borrow_mut()
+                        .functions
+                        .insert(fun.borrow().name.clone(), fun.clone());
                 };
             }
             "struct_definition" => {
-                if let Some(struct_def) = parse_struct_and_cache(context, &child, &node) {
-                    struct_defs.insert(struct_def.name.clone(), struct_def);
+                if let Some(struct_def) = parse_struct(context, &child, &node) {
+                    file.borrow_mut()
+                        .struct_defs
+                        .insert(struct_def.name.clone(), struct_def);
                 }
             }
             _ => {}
@@ -330,31 +423,15 @@ pub fn parse_file<'a>(node: Node<'a>, context: &mut FileContext<'a>) -> File {
     }
 
     // package only has one file right now
-    File {
-        functions,
-        struct_defs,
-    }
-}
-
-pub fn parse_fun_and_cache<'a>(
-    context: &mut FileContext<'a>,
-    node: &Node<'a>,
-    parent: &Node<'a>,
-) -> Option<rc::Rc<Function>> {
-    parse_fun(context, node, parent).map(|value| {
-        let fun = rc::Rc::new(value);
-        context
-            .nodes
-            .insert(node.id(), CachedNode::AstFun(fun.clone()));
-        fun
-    })
+    file
 }
 
 fn parse_fun<'a>(
     context: &mut FileContext<'a>,
+    file: &Rc<RefCell<File>>,
     node: &Node<'a>,
     parent: &Node<'a>,
-) -> Option<Function> {
+) -> Option<Rc<RefCell<Function>>> {
     let name = child_by_field(&node, "name", context)?;
     let parameter_list = child_by_field(&node, "parameters", context)?;
     let return_type = match node.child_by_field_name("result".as_bytes()) {
@@ -362,8 +439,10 @@ fn parse_fun<'a>(
         None => None,
     };
     let body_node: Node = child_by_field(&node, "body", context)?;
+    let body = parse_block(context, body_node, node.clone());
 
-    let fun = Function {
+    let fun = Rc::new(RefCell::new(Function {
+        parent: Rc::downgrade(file),
         node: NodeData {
             id: node.id(),
             parent: parent.id(),
@@ -371,41 +450,30 @@ fn parse_fun<'a>(
         name: node_text(&name, context)?,
         parameters: parse_parameters(context, parameter_list)?,
         return_types: return_type,
-        body: parse_block_and_cache(context, body_node, node.clone()),
-    };
-    Some(fun)
-}
+        body: body.clone(),
 
-pub fn parse_struct_and_cache<'a>(
-    context: &mut FileContext<'a>,
-    node: &Node<'a>,
-    parent: &Node<'a>,
-) -> Option<rc::Rc<Struct>> {
-    parse_struct(context, node, parent).map(|value| {
-        let symbol = rc::Rc::new(value);
-        context
-            .nodes
-            .insert(node.id(), CachedNode::AstStruct(symbol.clone()));
-        symbol
-    })
+        vars: HashMap::new(),
+    }));
+    body.borrow_mut().parent = Some(BlockParent::Function(Rc::downgrade(&fun)));
+    Some(fun)
 }
 
 fn parse_struct<'a>(
     context: &mut FileContext<'a>,
     node: &Node<'a>,
     parent: &Node<'a>,
-) -> Option<Struct> {
+) -> Option<Rc<Struct>> {
     let name = child_by_field(&node, "name", context)?;
     let fields = child_by_field(&node, "fields", context)?;
     let fields = parse_struct_fields(context, &fields, node)?;
-    Some(Struct {
+    Some(Rc::new(Struct {
         node: NodeData {
             id: node.id(),
             parent: parent.id(),
         },
         name: node_text(&name, context)?,
         fields,
-    })
+    }))
 }
 
 fn parse_struct_fields<'a>(
@@ -442,20 +510,11 @@ fn parse_struct_field<'a>(
     })
 }
 
-pub fn parse_block_and_cache<'a>(
+fn parse_block<'a>(
     context: &mut FileContext<'a>,
     node: Node<'a>,
-    parent: Node<'a>,
-) -> rc::Rc<Block> {
-    let block = parse_block(context, node, parent);
-    let block = rc::Rc::new(block);
-    context
-        .nodes
-        .insert(node.id(), CachedNode::AstBlock(block.clone()));
-    block
-}
-
-fn parse_block<'a>(context: &mut FileContext<'a>, node: Node<'a>, parent: Node<'a>) -> Block {
+    parent_node: Node<'a>,
+) -> Rc<RefCell<Block>> {
     let mut statements: Vec<Statement> = Vec::new();
     for index in 1..node.child_count() - 1 {
         let statement_node = match child(&node, "statement", index, context) {
@@ -487,7 +546,7 @@ fn parse_block<'a>(context: &mut FileContext<'a>, node: Node<'a>, parent: Node<'
                 };
             }
             "if_statement" => {
-                match parse_if_and_cache(context, statement_node, parent) {
+                match parse_if(context, statement_node, parent_node) {
                     Some(statement) => statements.push(Statement::IfStatement(statement)),
                     None => continue,
                 };
@@ -496,13 +555,14 @@ fn parse_block<'a>(context: &mut FileContext<'a>, node: Node<'a>, parent: Node<'
             _ => {}
         }
     }
-    Block {
+    Rc::new(RefCell::new(Block {
+        parent: None,
         statements,
         node: NodeData {
             id: node.id(),
-            parent: parent.id(),
+            parent: parent_node.id(),
         },
-    }
+    }))
 }
 
 fn parse_function_call<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<FunctionCall> {
@@ -566,6 +626,7 @@ fn parse_expression<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Optio
     Some(Expression {
         id: node.id(),
         r#type: expression_type,
+        resolved_types: RefCell::new(None),
     })
 }
 
@@ -742,41 +803,28 @@ fn parse_return_statement<'a>(
     Some(expression)
 }
 
-pub fn parse_if_and_cache<'a>(
-    context: &mut FileContext<'a>,
-    node: Node<'a>,
-    parent: Node<'a>,
-) -> Option<rc::Rc<IfStatement>> {
-    let statement = parse_if(context, node, parent)?;
-    let statement = rc::Rc::new(statement);
-    context
-        .nodes
-        .insert(node.id(), CachedNode::AstIf(statement.clone()));
-    Some(statement)
-}
-
 fn parse_if<'a>(
     context: &mut FileContext<'a>,
     node: Node<'a>,
     parent: Node<'a>,
-) -> Option<IfStatement> {
+) -> Option<Rc<RefCell<IfStatement>>> {
     let condition = child_by_field(&node, "condition", context)?;
     let consequence = child_by_field(&node, "consequence", context)?;
     let alternative = node.child_by_field_name("alternative".as_bytes());
 
     let condition = parse_expression(context, &condition)?;
-    let consequence = parse_block_and_cache(context, consequence, parent);
+    let consequence = parse_block(context, consequence, parent);
 
     let alternative = match alternative {
         Some(alternative) => {
             if alternative.kind() == "if_statement" {
-                Some(IfAlternative::If(parse_if_and_cache(
+                Some(IfAlternative::If(parse_if(
                     context,
                     alternative.clone(),
                     node.clone(),
                 )?))
             } else {
-                Some(IfAlternative::Else(parse_block_and_cache(
+                Some(IfAlternative::Else(parse_block(
                     context,
                     alternative,
                     node.clone(),
@@ -785,19 +833,18 @@ fn parse_if<'a>(
         }
         None => None,
     };
-    Some(IfStatement {
+    Some(Rc::new(RefCell::new(IfStatement {
         condition,
         consequence,
         alternative,
-    })
+        type_narrowing: None,
+    })))
 }
 
 #[derive(Debug, Clone)]
-pub enum CachedNode {
-    AstFun(rc::Rc<Function>),
-    AstStruct(rc::Rc<Struct>),
-    AstBlock(rc::Rc<Block>),
-    AstIf(rc::Rc<IfStatement>),
+pub enum BlockParent {
+    Function(Weak<RefCell<Function>>),
+    Block(Weak<RefCell<Block>>),
 }
 
 fn parse_parameters<'a>(context: &mut FileContext<'a>, node: Node<'a>) -> Option<Vec<Parameter>> {
@@ -879,7 +926,7 @@ fn parse_types<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Vec
             let left = child_by_field(&node, "left", context)?;
             let right = child_by_field(&node, "right", context)?;
             let mut types = parse_types(context, &left)?;
-            for mut t in parse_types(context, &right)? {
+            for t in parse_types(context, &right)? {
                 if types.contains(&t) {
                     context.errors.push(ASTError::from_node(
                         node,

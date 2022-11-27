@@ -1,75 +1,44 @@
 use std::{
-    cell::RefCell,
-    collections::HashMap,
-    rc::{Rc, Weak},
+    cell::{RefCell, RefMut},
+    rc::Rc,
 };
 
 use crate::{
     ast::{
-        Array, Expression, ExpressionType, File, Function, RefType, Slice, Statement, Type,
-        UnaryOperator, VarDeclaration,
+        Array, BinaryExpression, BinaryOperator, Block, Expression, ExpressionType, File, Function,
+        IfAlternative, IfStatement, RefType, Slice, Statement, Type, UnaryOperator, VarDeclaration,
+        VarState,
     },
     types::{intersection, types_to_string},
 };
-
-pub struct FileAnalysis {
-    pub file_scope: Rc<RefCell<FileScope>>,
-    pub functions: HashMap<String, FunScope>,
-}
 
 pub enum CodeAnalysisItem {
     VarState(VarState),
 }
 
-#[derive(Debug, Clone)]
-pub struct ExpressionState {
-    pub types: Vec<RefType>,
-}
-
-#[derive(Debug, Clone)]
-pub struct VarState {
-    types: Vec<RefType>,
-}
-
-pub struct FileScope {
-    pub file: Weak<File>,
-    pub sum_types: HashMap<String, Vec<RefType>>,
-}
-
-pub struct FunScope {
-    pub fun: Weak<Function>,
-
-    pub vars: HashMap<String, VarState>,
-
-    pub file_scope: Weak<RefCell<FileScope>>,
-}
-
-impl FunScope {
-    pub fn file(&self) -> Rc<File> {
-        self.file_scope
-            .upgrade()
-            .unwrap()
-            .borrow()
-            .file
-            .upgrade()
-            .unwrap()
-    }
-}
-
-fn lookup_identifier(scope: &FunScope, identifier: &String) -> Option<CodeAnalysisItem> {
-    if let Some(var) = scope.vars.get(identifier) {
+fn lookup_identifier(fun: &Function, identifier: &String) -> Option<CodeAnalysisItem> {
+    if let Some(var) = fun.vars.get(identifier) {
         return Some(CodeAnalysisItem::VarState(var.clone()));
     }
+    if let Some(param) = (&fun.parameters)
+        .into_iter()
+        .find(|it| &it.name == identifier)
+    {
+        return Some(CodeAnalysisItem::VarState(VarState {
+            types: param.types.clone(),
+        }));
+    }
+
     None
 }
 
 fn validate_expression_list(
-    scope: &mut FunScope,
+    fun: &Function,
     expressions: &Vec<Expression>,
 ) -> Result<Vec<RefType>, String> {
     let mut output = Vec::new();
     for expression in expressions {
-        let types = expression_type(scope, &expression)?;
+        let types = expression_type(fun, &expression)?;
         for t in types {
             if !output.contains(&t) {
                 output.push(t);
@@ -80,15 +49,12 @@ fn validate_expression_list(
     Ok(output)
 }
 
-fn expression_type(scope: &mut FunScope, expression: &Expression) -> Result<Vec<RefType>, String> {
+pub fn expression_type(fun: &Function, expression: &Expression) -> Result<Vec<RefType>, String> {
     let types = match &expression.r#type {
-        ExpressionType::String(_) => vec![RefType {
-            is_reference: false,
-            r#type: Type::String,
-        }],
+        ExpressionType::String(_) => vec![RefType::value(Type::String)],
 
         ExpressionType::Identifier(identifier) => {
-            let identifier = match lookup_identifier(scope, &identifier) {
+            let identifier = match lookup_identifier(fun, &identifier) {
                 Some(identifier) => identifier,
                 None => return Err(format!("Identifier not found: {:?}", identifier)),
             };
@@ -96,45 +62,42 @@ fn expression_type(scope: &mut FunScope, expression: &Expression) -> Result<Vec<
                 CodeAnalysisItem::VarState(var) => var.types.clone(),
             }
         }
-        ExpressionType::IntLiteral(_) => vec![
-            RefType {
-                is_reference: false,
-                r#type: Type::U32,
-            },
-            RefType {
-                is_reference: false,
-                r#type: Type::I32,
-            },
-        ],
-        ExpressionType::Null => vec![RefType {
-            is_reference: false,
-            r#type: Type::Null,
-        }],
-        ExpressionType::Bool(_) => vec![RefType {
-            is_reference: false,
-            r#type: Type::Bool,
-        }],
+        ExpressionType::IntLiteral(_) => vec![RefType::value(Type::Unresolved(vec![
+            RefType::value(Type::I32),
+            RefType::value(Type::U32),
+        ]))],
+        ExpressionType::Null => vec![RefType::value(Type::Null)],
+        ExpressionType::Bool(_) => vec![RefType::value(Type::Bool)],
 
         ExpressionType::UnaryExpression(unary) => match unary.operator {
-            UnaryOperator::Minus => todo!(),
-            UnaryOperator::Not => todo!(),
-            UnaryOperator::Reference => expression_type(scope, &unary.operand)?
-                .into_iter()
-                .map(|it| RefType {
-                    is_reference: true,
-                    r#type: it.r#type,
-                })
-                .collect(),
+            UnaryOperator::Minus => match unary.operand.r#type {
+                ExpressionType::IntLiteral(_) => {
+                    vec![RefType::value(Type::Unresolved(vec![RefType::value(
+                        Type::I32,
+                    )]))]
+                }
+                _ => return Err(format!("Unexpected operand: {:?}", unary.operand.r#type)),
+            },
+            UnaryOperator::Not => expression_type(fun, &unary.operand)?,
+            UnaryOperator::Reference => {
+                let types = expression_type(fun, &unary.operand)?;
+
+                types
+                    .into_iter()
+                    .map(|it| RefType::reference(it.r#type))
+                    .collect()
+            }
             UnaryOperator::TypeOf => todo!(),
         },
+        // var u32 i, i + 3
         ExpressionType::BinaryExpression(binary) => {
-            let left = validate_expression(scope, &binary.left)?;
-            let right = validate_expression(scope, &binary.right)?;
-            let overlap: Vec<RefType> = intersection(&left.types, &right.types);
+            let left = validate_expression(fun, &binary.left)?;
+            let right = validate_expression(fun, &binary.right)?;
+            let overlap: Vec<RefType> = intersection(&left, &right);
             if overlap.is_empty() {
                 return Err(format!(
                     "Incompatible type in expression: left == {:?}, right == {:?}",
-                    left.types, right.types,
+                    left, right,
                 ));
             }
             overlap
@@ -143,7 +106,7 @@ fn expression_type(scope: &mut FunScope, expression: &Expression) -> Result<Vec<
         ExpressionType::ArrayExpression(array) => vec![RefType {
             is_reference: false,
             r#type: Type::Array(Array {
-                types: Rc::new(validate_expression_list(scope, &array.expressions)?),
+                types: Rc::new(validate_expression_list(fun, &array.expressions)?),
                 length: array.expressions.len(),
             }),
         }],
@@ -151,57 +114,156 @@ fn expression_type(scope: &mut FunScope, expression: &Expression) -> Result<Vec<
             is_reference: false,
             r#type: Type::Slice(Slice {
                 types: Rc::new(validate_expression_list(
-                    scope,
+                    fun,
                     &vec![slice.operand.as_ref().clone()],
                 )?),
             }),
         }],
         ExpressionType::FunctionCall(fun_call) => {
-            let file = scope.file();
-            let fun = match file.functions.get(&fun_call.name) {
+            let file = fun.file();
+            let file = file.borrow();
+            let fun_declaration = match file.lookup_function(&fun_call.name) {
                 Some(fun) => fun,
                 None => return Err(format!("No fun with name {} found", fun_call.name)),
             };
-            if fun.parameters.len() != fun_call.arguments.len() {
+
+            if fun_declaration.parameters.len() != fun_call.arguments.len() {
                 return Err(format!(
                     "Expected {} arguments but found {}",
-                    fun.parameters.len(),
+                    fun_declaration.parameters.len(),
                     fun_call.arguments.len()
                 ));
             }
-            for (i, parameter) in fun.parameters.iter().enumerate() {
+
+            for (i, parameter) in fun_declaration.parameters.iter().enumerate() {
                 let arg = fun_call.arguments.get(i).unwrap();
-                let arg = validate_expression(scope, arg)?;
-                if arg
-                    .types
-                    .iter()
-                    .find(|arg_type| parameter.types.contains(arg_type))
-                    .is_none()
-                {
+                let arg_types = validate_expression(&fun, arg)?;
+                let intersection = intersection(&parameter.types, &arg_types);
+                if intersection.is_empty() {
                     return Err(format!(
-                        "Argument as invalid type {:?}; but expected {:?}",
-                        arg.types, parameter.types
+                        "Argument has invalid type {:?}; but expected {:?}",
+                        arg_types, parameter.types
                     ));
                 }
+                let mut m = arg.resolved_types.borrow_mut();
+                *m = Some(intersection);
             }
 
-            fun.return_types.clone().unwrap_or(vec![])
+            fun_declaration.return_types
         }
     };
     Ok(types)
 }
 
+#[derive(Debug, Clone)]
+pub struct TypeNarrowing {
+    pub original_types: Vec<RefType>,
+    pub identifier: String,
+    /// true if in the form (typeof X != bool && typeof X != i32)
+    /// false if in the form (typeof X == bool || typeof X == i32)
+    pub reduction: bool,
+    /// Narrowed types
+    pub types: Vec<RefType>,
+}
+
+fn validate_typeof_expression(
+    fun: &Function,
+    expression: &BinaryExpression,
+) -> Result<Option<TypeNarrowing>, String> {
+    let is_and_or = match expression.operator {
+        BinaryOperator::And => true,
+        BinaryOperator::Or => true,
+        _ => false,
+    };
+    if is_and_or {
+        let (left, right) = match (&expression.left.r#type, &expression.right.r#type) {
+            (ExpressionType::BinaryExpression(left), ExpressionType::BinaryExpression(right)) => {
+                (left, right)
+            }
+            _ => return Ok(None),
+        };
+        let (mut left, mut right) = match (
+            validate_typeof_expression(fun, left)?,
+            validate_typeof_expression(fun, right)?,
+        ) {
+            (None, None) => return Ok(None),
+            (Some(left), Some(right)) => (left, right),
+            _ => return Err("Type narrowing can't be mixed with other expressions".to_string()),
+        };
+        if left.identifier != right.identifier {
+            return Err("Type narrowing identifier missmatch".to_string());
+        }
+        if left.reduction != right.reduction {
+            return Err("Invalid type narrowing".to_string());
+        }
+        left.types.append(&mut right.types);
+        return Ok(Some(left));
+    }
+
+    let unary = match &expression.left.r#type {
+        ExpressionType::UnaryExpression(unary) => unary,
+        _ => return Ok(None),
+    };
+    match unary.operator {
+        UnaryOperator::TypeOf => {}
+        _ => return Ok(None),
+    };
+
+    let identifier = match &unary.operand.r#type {
+        ExpressionType::Identifier(identifier) => identifier,
+        _ => return Err(format!("Invalid typeof identifier")),
+    };
+
+    let equal = match expression.operator {
+        BinaryOperator::Equal => true,
+        BinaryOperator::NotEqual => false,
+        _ => return Err(format!("Invalid typeof operator")),
+    };
+
+    let original_types = validate_expression(fun, &unary.operand)?;
+    for t in &original_types {
+        if let Type::Unresolved(_) = &t.r#type {
+            return Err(format!("Can't narrow resolve unresolved type: {:?}", &t));
+        }
+    }
+    let mut result = TypeNarrowing {
+        original_types,
+        identifier: identifier.clone(),
+        reduction: !equal,
+        types: vec![],
+    };
+    match &expression.right.r#type {
+        // TODO handle unary & case
+        ExpressionType::Identifier(identifier) => match identifier.as_str() {
+            "bool" => result.types.push(RefType {
+                is_reference: false,
+                r#type: Type::Bool,
+            }),
+            "i32" => result.types.push(RefType {
+                is_reference: false,
+                r#type: Type::I32,
+            }),
+            _ => return Err(format!("Invalid typeof identifier: {}", identifier)),
+        },
+        ExpressionType::Null => result.types.push(RefType {
+            is_reference: false,
+            r#type: Type::Null,
+        }),
+        _ => return Err("Invalid typeof expression".to_string()),
+    }
+    Ok(Some(result))
+}
+
 pub fn validate_expression(
-    scope: &mut FunScope,
+    fun: &Function,
     expression: &Expression,
-) -> Result<ExpressionState, String> {
-    let types = expression_type(scope, expression)?;
-    let result = ExpressionState { types };
-    Ok(result)
+) -> Result<Vec<RefType>, String> {
+    let types = expression_type(fun, expression)?;
+    Ok(types)
 }
 
 pub fn validate_var_declaration(
-    scope: &mut FunScope,
+    fun: &mut RefMut<Function>,
     var_declaration: &VarDeclaration,
 ) -> Result<(), String> {
     let mut state = VarState { types: vec![] };
@@ -215,35 +277,32 @@ pub fn validate_var_declaration(
 
         // Add sum type
         if state.types.len() > 1 {
-            scope
-                .file_scope
-                .upgrade()
-                .unwrap()
+            fun.file()
                 .borrow_mut()
                 .sum_types
                 .insert(sum_type_name(&state.types), state.types.clone());
         }
     }
 
-    let expr = validate_expression(scope, &var_declaration.value)?;
+    let expr = validate_expression(fun, &var_declaration.value)?;
     if state.types.is_empty() {
-        for t in expr.types {
+        for t in expr {
             state.types.push(t);
         }
         state.types.sort();
     } else {
-        let overlap = intersection(&state.types, &expr.types);
+        let overlap = intersection(&state.types, &expr);
         if overlap.is_empty() {
             return Err(format!(
                 "Incompatible type in var assignement: var: {}, expr: {}",
                 types_to_string(&state.types),
-                types_to_string(&expr.types),
+                types_to_string(&expr),
             ));
         }
         state.types = overlap;
     }
 
-    if let Some(_) = scope.vars.insert(var_declaration.name.clone(), state) {
+    if let Some(_) = fun.vars.insert(var_declaration.name.clone(), state) {
         return Err(format!(
             "Variable already declared: {:?}",
             var_declaration.name
@@ -253,22 +312,17 @@ pub fn validate_var_declaration(
     Ok(())
 }
 
-pub fn validate_statement(
-    scope: &mut FunScope,
-    fun: &Function,
-    statement: &Statement,
-) -> Result<(), String> {
+pub fn validate_statement(fun: &mut RefMut<Function>, statement: &Statement) -> Result<(), String> {
     match statement {
         Statement::Expression(expression) => {
-            validate_expression(scope, expression)?;
+            validate_expression(fun, expression)?;
         }
         Statement::VarDeclaration(var_declaration) => {
-            validate_var_declaration(scope, var_declaration)?;
+            validate_var_declaration(fun, var_declaration)?;
         }
         Statement::Return(ret) => {
             let ret_types = if let Some(expression) = ret {
-                let expression = validate_expression(scope, expression)?;
-                expression.types
+                validate_expression(fun, expression)?
             } else {
                 vec![]
             };
@@ -291,46 +345,69 @@ pub fn validate_statement(
                 ));
             }
         }
-        _ => {}
+        Statement::IfStatement(if_statement) => validate_if_statement(fun, if_statement)?,
     };
     Ok(())
 }
 
-pub fn validate_fun(
-    file_scope: &Rc<RefCell<FileScope>>,
-    fun: &Rc<Function>,
-) -> Result<FunScope, String> {
-    let mut scope = FunScope {
-        fun: Rc::downgrade(fun),
-        file_scope: Rc::downgrade(file_scope),
-        vars: HashMap::new(),
-    };
-    for par_ref in &fun.parameters {
-        //let parameter = par_ref.get(parser)
-    }
-    for statement in &fun.body.statements {
-        validate_statement(&mut scope, fun, statement)?;
+fn validate_if_statement(
+    fun: &mut RefMut<Function>,
+    if_statement: &Rc<RefCell<IfStatement>>,
+) -> Result<(), String> {
+    let mut statement = if_statement.borrow_mut();
+    if let Some(binary) = match &statement.condition.r#type {
+        ExpressionType::BinaryExpression(binary) => Some(binary),
+        _ => None,
+    } {
+        if let Some(narrowing) = validate_typeof_expression(fun, &binary)? {
+            statement.type_narrowing = Some(narrowing);
+        }
     }
 
-    Ok(scope)
+    validate_block(fun, &statement.consequence)?;
+
+    if let Some(alternative) = &statement.alternative {
+        match alternative {
+            IfAlternative::Else(else_block) => validate_block(fun, else_block)?,
+            IfAlternative::If(nested_if) => validate_if_statement(fun, nested_if)?,
+        }
+    }
+    Ok(())
 }
 
-pub fn validate(file: &Rc<File>) -> Result<FileAnalysis, String> {
-    let file_scope = Rc::new(RefCell::new(FileScope {
-        file: Rc::downgrade(file),
-        sum_types: HashMap::new(),
-    }));
-    let mut file_analysis = FileAnalysis {
-        file_scope,
-        functions: HashMap::new(),
-    };
+fn validate_block(fun: &mut RefMut<Function>, block: &Rc<RefCell<Block>>) -> Result<(), String> {
+    for statement in &block.borrow().statements {
+        validate_statement(fun, statement)?;
+    }
+    Ok(())
+}
 
-    for (_, fun) in &file.functions {
-        let scope = validate_fun(&file_analysis.file_scope, fun)?;
-        file_analysis.functions.insert(fun.name.clone(), scope);
+pub fn validate_fun(fun: &Rc<RefCell<Function>>) -> Result<(), String> {
+    let mut fun = fun.borrow_mut();
+    for par_ref in &fun.parameters {
+        //let parameter = par_ref.get(parser)
+        // Add sum type
+        if par_ref.types.len() > 1 {
+            fun.file()
+                .borrow_mut()
+                .sum_types
+                .insert(sum_type_name(&par_ref.types), par_ref.types.clone());
+        }
+    }
+    let block = fun.body.clone();
+
+    validate_block(&mut fun, &block)?;
+
+    Ok(())
+}
+
+pub fn validate(file: &Rc<RefCell<File>>) -> Result<(), String> {
+    let functions = file.borrow().functions.clone();
+    for (_, fun) in &functions {
+        validate_fun(fun)?;
     }
 
-    Ok(file_analysis)
+    Ok(())
 }
 
 /// types must be sorted
@@ -366,7 +443,7 @@ pub fn sum_type_name(types: &Vec<RefType>) -> String {
                 name += "E";
                 continue;
             }
-            Type::Number(_) => "N",
+            Type::Unresolved(_) => panic!("Internal error"),
         };
         name += part;
     }
@@ -499,6 +576,7 @@ fun main() { test() }
 
     #[test]
     fn type_of_validation() {
+        // invalid type check
         transpile_and_validate_project(
             "test_projects/type_of_validation",
             r#"
@@ -507,6 +585,25 @@ fun main() { test() }
                 if typeof test == bool {
 
                 }
+            }
+        "#,
+        );
+
+        transpile_and_validate_project(
+            "test_projects/type_of_validation_2",
+            r#"
+            fun test_call(arg0 bool | i32) bool {
+                if typeof arg0 == bool {
+                    //println("{arg0}")
+                    return false
+                } else {
+                    //println("{arg0}")
+                    return true
+                }
+            }
+
+            fun main() {
+                test_call(32)
             }
         "#,
         );

@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::fs::create_dir_all;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
@@ -11,7 +12,7 @@ use crate::ast::{
 };
 use crate::buildin::Buildins;
 use crate::tree_sitter::parse;
-use crate::validation::{sum_type_name, validate, FileAnalysis, FunScope};
+use crate::validation::{sum_type_name, validate, TypeNarrowing};
 
 struct Writer<'a> {
     indentation: u16,
@@ -57,12 +58,11 @@ impl<'a> Writer<'a> {
     }
 }
 
-struct RustTranspiler<'a> {
+struct RustTranspiler {
     buildins: Buildins,
-    file_analysis: &'a FileAnalysis,
 }
 
-impl<'a> RustTranspiler<'a> {
+impl RustTranspiler {
     fn transpile_types(&self, types: &Vec<RefType>, writer: &mut Writer) {
         if types.len() > 1 {
             // TODO avoid clone() and sort earlier?
@@ -96,7 +96,7 @@ impl<'a> RustTranspiler<'a> {
             Type::Array(array) => return self.transpile_array(&array, writer),
             Type::Slice(slice) => return self.transpile_slice(&slice, writer),
             Type::Null => "None",
-            Type::Number(_) => todo!(),
+            Type::Unresolved(_) => panic!(),
         };
         writer.write(text);
     }
@@ -117,10 +117,10 @@ impl<'a> RustTranspiler<'a> {
                     Type::I8 => writer.write("I8(i8)"),
                     Type::U32 => writer.write("U32(u32)"),
                     Type::I32 => writer.write("I32(i32)"),
-                    Type::Number(_) => panic!("Validation should have failed"),
                     Type::Identifier(identifier) => writer.write(&identifier),
                     Type::Array(_) => writer.write("todoarray"),
                     Type::Slice(_) => writer.write("todoslice"),
+                    Type::Unresolved(_) => panic!("Validation should have failed"),
                 };
                 writer.write(",");
                 writer.new_line();
@@ -165,7 +165,7 @@ impl<'a> RustTranspiler<'a> {
         &self,
         expression: &Expression,
         target: Option<&Vec<RefType>>,
-        fun_scope: &FunScope,
+        fun: &Rc<RefCell<Function>>,
         writer: &mut Writer,
     ) {
         match &expression.r#type {
@@ -177,12 +177,7 @@ impl<'a> RustTranspiler<'a> {
                         StringTemplatePart::Expression(expression) => {
                             let mut buffer = "".to_string();
                             let mut fmt_writer = Writer::new(&mut buffer);
-                            self.transpile_expression(
-                                expression,
-                                target,
-                                fun_scope,
-                                &mut fmt_writer,
-                            );
+                            self.transpile_expression(expression, target, fun, &mut fmt_writer);
 
                             fmt_params.push(buffer);
                             fmt_string += "{}";
@@ -206,7 +201,32 @@ impl<'a> RustTranspiler<'a> {
                 writer.write(&identifier);
             }
             ExpressionType::IntLiteral(number) => {
-                writer.write(&format!("{}", number));
+                // TODO sort earlier
+                let mut target = target.unwrap().clone();
+                target.sort();
+
+                if target.is_empty() {
+                    writer.write(&format!("{}", number));
+                } else {
+                    writer.write(&sum_type_name(&target));
+                    writer.write("::");
+                    let resolved_type = expression.resolved_types.borrow();
+                    let resolved_type = resolved_type.as_ref().unwrap();
+                    if resolved_type.len() == 1 {
+                        // TODO refactor out:
+                        let t = match resolved_type[0].r#type {
+                            Type::U32 => "U32",
+                            Type::I32 => "I32",
+                            _ => panic!("{}", resolved_type[0]),
+                        };
+                        writer.write(&format!("{}", t));
+                        writer.write("(");
+                        writer.write(&format!("{}", number));
+                        writer.write(")");
+                    } else {
+                        todo!("map sum types")
+                    }
+                }
             }
             ExpressionType::Null => {
                 // TODO sort earlier
@@ -226,7 +246,7 @@ impl<'a> RustTranspiler<'a> {
                     UnaryOperator::TypeOf => "",
                 };
                 writer.write(op);
-                self.transpile_expression(&expr.operand, target, fun_scope, writer);
+                self.transpile_expression(&expr.operand, target, fun, writer);
             }
             ExpressionType::BinaryExpression(expr) => {
                 let op = match expr.operator {
@@ -243,25 +263,25 @@ impl<'a> RustTranspiler<'a> {
                     BinaryOperator::And => "&&",
                     BinaryOperator::Or => "||",
                 };
-                self.transpile_expression(&expr.left, target, fun_scope, writer);
+                self.transpile_expression(&expr.left, target, fun, writer);
                 writer.write(" ");
                 writer.write(op);
                 writer.write(" ");
-                self.transpile_expression(&expr.right, target, fun_scope, writer);
+                self.transpile_expression(&expr.right, target, fun, writer);
             }
             ExpressionType::ParenthesizedExpression(expr) => {
                 writer.write("(");
-                self.transpile_expression(&expr.expression, target, fun_scope, writer);
+                self.transpile_expression(&expr.expression, target, fun, writer);
                 writer.write(")");
             }
             ExpressionType::ArrayExpression(array) => {
-                self.transpile_array_expr(array, target, fun_scope, writer)
+                self.transpile_array_expr(array, target, fun, writer)
             }
             ExpressionType::SliceExpression(slice) => {
-                self.transpile_slice_expr(slice, target, fun_scope, writer)
+                self.transpile_slice_expr(slice, target, fun, writer)
             }
             ExpressionType::FunctionCall(call) => {
-                self.transpile_function_call(call, fun_scope, writer);
+                self.transpile_function_call(call, fun, writer);
             }
         };
     }
@@ -270,13 +290,13 @@ impl<'a> RustTranspiler<'a> {
         &self,
         array: &ArrayExpression,
         target: Option<&Vec<RefType>>,
-        fun_scope: &FunScope,
+        fun: &Rc<RefCell<Function>>,
         writer: &mut Writer,
     ) {
         writer.write("[");
         let mut iter = array.expressions.iter().peekable();
         while let Some(expr) = iter.next() {
-            self.transpile_expression(expr, target, fun_scope, writer);
+            self.transpile_expression(expr, target, fun, writer);
             if iter.peek().is_some() {
                 writer.write(", ");
             }
@@ -288,10 +308,10 @@ impl<'a> RustTranspiler<'a> {
         &self,
         slice: &SliceExpression,
         target: Option<&Vec<RefType>>,
-        fun_scope: &FunScope,
+        fun: &Rc<RefCell<Function>>,
         writer: &mut Writer,
     ) {
-        self.transpile_expression(&slice.operand, target, fun_scope, writer);
+        self.transpile_expression(&slice.operand, target, fun, writer);
         writer.write("[");
         if let Some(start) = slice.start {
             writer.write(&format!("{}", start));
@@ -306,7 +326,7 @@ impl<'a> RustTranspiler<'a> {
     fn transpile_buildin_function_call(
         &self,
         call: &FunctionCall,
-        fun_scope: &FunScope,
+        fun: &Rc<RefCell<Function>>,
         writer: &mut Writer,
     ) -> bool {
         let buildin = match self.buildins.functions.get(&call.name) {
@@ -320,7 +340,7 @@ impl<'a> RustTranspiler<'a> {
                     match arg0.r#type {
                         ExpressionType::String(_) => {
                             writer.write("println!(");
-                            self.transpile_expression(arg0, None, fun_scope, writer);
+                            self.transpile_expression(arg0, None, fun, writer);
                             writer.write(")");
                             return true;
                         }
@@ -330,7 +350,7 @@ impl<'a> RustTranspiler<'a> {
                 writer.write("println!(\"{}\", ");
                 let mut iter = call.arguments.iter().peekable();
                 while let Some(expr) = iter.next() {
-                    self.transpile_expression(expr, None, fun_scope, writer);
+                    self.transpile_expression(expr, None, fun, writer);
                     if iter.peek().is_some() {
                         writer.write(", ");
                     }
@@ -346,10 +366,10 @@ impl<'a> RustTranspiler<'a> {
     fn transpile_function_call(
         &self,
         call: &FunctionCall,
-        fun_scope: &FunScope,
+        fun: &Rc<RefCell<Function>>,
         writer: &mut Writer,
     ) {
-        if self.transpile_buildin_function_call(call, fun_scope, writer) {
+        if self.transpile_buildin_function_call(call, fun, writer) {
             return;
         }
 
@@ -357,13 +377,15 @@ impl<'a> RustTranspiler<'a> {
         writer.write("(");
 
         // TODO make this a query method:
-        let file = fun_scope.file();
-        let fun = file.functions.get(&call.name).unwrap();
+        let file = fun.borrow().file();
+        let file = file.borrow();
+        let function = file.functions.get(&call.name).unwrap();
+        let fun = function.borrow();
 
         let mut iter = call.arguments.iter().enumerate().peekable();
         while let Some((i, expr)) = iter.next() {
             let parameter = fun.parameters.get(i).unwrap();
-            self.transpile_expression(expr, Some(&parameter.types), fun_scope, writer);
+            self.transpile_expression(expr, Some(&parameter.types), function, writer);
             if iter.peek().is_some() {
                 writer.write(", ");
             }
@@ -375,7 +397,7 @@ impl<'a> RustTranspiler<'a> {
     fn transpile_var_declaration(
         &self,
         var_declaration: &VarDeclaration,
-        fun_scope: &FunScope,
+        fun: &Rc<RefCell<Function>>,
         writer: &mut Writer,
     ) {
         writer.write("let ");
@@ -399,7 +421,7 @@ impl<'a> RustTranspiler<'a> {
         self.transpile_expression(
             &var_declaration.value,
             var_declaration.types.as_ref(),
-            fun_scope,
+            fun,
             writer,
         );
         writer.write(";");
@@ -408,26 +430,63 @@ impl<'a> RustTranspiler<'a> {
     fn transpile_return_statement(
         &self,
         expression: &Option<Expression>,
-        fun_scope: &FunScope,
+        fun: &Rc<RefCell<Function>>,
         writer: &mut Writer,
     ) {
         writer.write("return");
         if let Some(expression) = expression {
             writer.write(" ");
-            self.transpile_expression(
-                expression,
-                fun_scope.fun.upgrade().unwrap().return_types.as_ref(),
-                fun_scope,
-                writer,
-            );
+            self.transpile_expression(expression, fun.borrow().return_types.as_ref(), fun, writer);
         }
         writer.write(";");
+    }
+
+    fn transpile_if_type_narrowing(&self, type_narrowing: &TypeNarrowing, writer: &mut Writer) {
+        if type_narrowing.original_types.len() == 1 {
+            // nothing needs to be narrowed
+            writer.write("true");
+            return;
+        }
+
+        //TODO extract correct condition type here (not typeof)
+        let condition_type = sum_type_name(&type_narrowing.original_types);
+        let target_type_name = sum_type_name(&type_narrowing.types);
+
+        writer.write(&format!(
+            "let Some({}) = match {} {{",
+            type_narrowing.identifier, type_narrowing.identifier
+        ));
+        writer.indented(|writer| {
+            if type_narrowing.reduction {
+                // true if in the form (typeof X != bool && typeof X != i32)
+            } else {
+                // false if in the form (typeof X == bool || typeof X == i32)
+                for t in &type_narrowing.types {
+                    writer.new_line();
+                    if type_narrowing.types.len() > 1 {
+                        writer.write(&format!(
+                            "{}::{:?}(v) => Some({}::{:?}(v)),",
+                            condition_type, t.r#type, target_type_name, t.r#type,
+                        ));
+                    } else {
+                        writer.write(&format!(
+                            "{}::{:?}(v) => Some(v),",
+                            condition_type, t.r#type
+                        ));
+                    }
+                }
+                writer.new_line();
+                writer.write("_ => None,");
+            }
+        });
+        writer.new_line();
+        writer.write("}");
     }
 
     fn transpile_if_statement(
         &self,
         if_statement: &IfStatement,
-        fun_scope: &FunScope,
+        fun: &Rc<RefCell<Function>>,
         writer: &mut Writer,
     ) {
         let target_types = vec![RefType {
@@ -435,16 +494,15 @@ impl<'a> RustTranspiler<'a> {
             r#type: Type::Bool,
         }];
         writer.write("if ");
-        self.transpile_expression(
-            &if_statement.condition,
-            Some(&target_types),
-            fun_scope,
-            writer,
-        );
+        if let Some(type_narrowing) = &if_statement.type_narrowing {
+            self.transpile_if_type_narrowing(type_narrowing, writer);
+        } else {
+            self.transpile_expression(&if_statement.condition, Some(&target_types), fun, writer);
+        }
         writer.write(" {");
         writer.new_line();
         writer.indented(|writer| {
-            self.transpile_block(&if_statement.consequence, fun_scope, writer);
+            self.transpile_block(&if_statement.consequence, fun, writer);
         });
         writer.write("}");
         if let Some(alternative) = &if_statement.alternative {
@@ -453,55 +511,62 @@ impl<'a> RustTranspiler<'a> {
                     writer.write(" else {");
                     writer.new_line();
                     writer.indented(|writer| {
-                        self.transpile_block(else_block, fun_scope, writer);
+                        self.transpile_block(else_block, fun, writer);
                     });
                     writer.write("}");
                 }
                 IfAlternative::If(if_statement) => {
                     writer.write(" else ");
-                    self.transpile_if_statement(if_statement, fun_scope, writer);
+                    let statement = if_statement.borrow();
+                    self.transpile_if_statement(&statement, fun, writer);
                 }
             }
         }
     }
 
-    fn transpile_block(&self, block: &Block, fun_scope: &FunScope, writer: &mut Writer) {
-        for statement in &block.statements {
+    fn transpile_block(
+        &self,
+        block: &Rc<RefCell<Block>>,
+        fun: &Rc<RefCell<Function>>,
+        writer: &mut Writer,
+    ) {
+        for statement in &block.borrow().statements {
             match statement {
                 Statement::Expression(expr) => {
-                    self.transpile_expression(expr, None, fun_scope, writer);
+                    self.transpile_expression(expr, None, fun, writer);
                     writer.write(";");
                     writer.new_line();
                 }
                 Statement::VarDeclaration(var) => {
-                    self.transpile_var_declaration(var, fun_scope, writer);
+                    self.transpile_var_declaration(var, fun, writer);
                     writer.new_line();
                 }
                 Statement::Return(expression) => {
-                    self.transpile_return_statement(expression, fun_scope, writer);
+                    self.transpile_return_statement(expression, fun, writer);
                     writer.new_line();
                 }
                 Statement::IfStatement(if_statement) => {
-                    self.transpile_if_statement(if_statement, fun_scope, writer);
+                    let statement = if_statement.borrow();
+                    self.transpile_if_statement(&statement, fun, writer);
                     writer.new_line();
                 }
             }
         }
     }
 
-    fn transpile_function(&self, function: &Function, writer: &mut Writer) {
-        let fun_scope = self.file_analysis.functions.get(&function.name).unwrap();
+    fn transpile_function(&self, function: &Rc<RefCell<Function>>, writer: &mut Writer) {
+        let fun = function.borrow();
 
-        writer.write(&format!("fn {}", function.name));
-        self.transpile_parameters(&function.parameters, writer);
-        if let Some(return_type) = &function.return_types {
+        writer.write(&format!("fn {}", fun.name));
+        self.transpile_parameters(&fun.parameters, writer);
+        if let Some(return_type) = &fun.return_types {
             writer.write(" -> ");
             self.transpile_types(return_type, writer);
         }
         writer.write(" {");
         writer.new_line();
         writer.indented(|writer| {
-            self.transpile_block(&function.body, fun_scope, writer);
+            self.transpile_block(&fun.body, function, writer);
         });
         writer.write("}");
     }
@@ -537,9 +602,10 @@ impl<'a> RustTranspiler<'a> {
         writer.write("}");
     }
 
-    pub fn transpile_file(&self, file: &File, writer: &mut Writer) {
-        for (name, types) in &self.file_analysis.file_scope.borrow().sum_types {
-            self.transpile_sum_type_def(&name, types, writer);
+    pub fn transpile_file(&self, file: &Rc<RefCell<File>>, writer: &mut Writer) {
+        let file = file.borrow();
+        for (name, types) in &file.sum_types {
+            self.transpile_sum_type_def(name, types, writer);
             writer.new_line();
             writer.new_line();
         }
@@ -558,18 +624,13 @@ impl<'a> RustTranspiler<'a> {
     }
 }
 
-pub fn transpile(
-    file: &File,
-    file_analysis: &FileAnalysis,
-    outfile: &PathBuf,
-) -> Result<(), io::Error> {
+pub fn transpile(file: &Rc<RefCell<File>>, outfile: &PathBuf) -> Result<(), io::Error> {
     let mut outfile = std::fs::File::create(outfile)?;
 
     let mut buffer = "".to_string();
     let mut writer = Writer::new(&mut buffer);
     let transpiler = RustTranspiler {
         buildins: Buildins::new(),
-        file_analysis,
     };
     transpiler.transpile_file(file, &mut writer);
 
@@ -590,7 +651,7 @@ pub fn transpile_project(project_dir: &Path) -> Result<(), anyhow::Error> {
 
     let file_path = main_file_path.to_string_lossy();
     let mut file_context = FileContext::new(root_node.clone(), file_path.to_string(), source_code);
-    let file = Rc::new(file_context.parse_file());
+    let file = file_context.parse_file();
     for error in &file_context.errors {
         print_err(&error, &file_context.source);
     }
@@ -601,7 +662,7 @@ pub fn transpile_project(project_dir: &Path) -> Result<(), anyhow::Error> {
         )));
     }
 
-    let file_analysis = match validate(&file) {
+    match validate(&file) {
         Ok(result) => result,
         Err(err) => return Err(anyhow::Error::msg(err)),
     };
@@ -611,7 +672,7 @@ pub fn transpile_project(project_dir: &Path) -> Result<(), anyhow::Error> {
     create_dir_all(&src_rust)?;
     let main_rust = src_rust.join("main.rs");
 
-    transpile(&file, &file_analysis, &main_rust)?;
+    transpile(&file, &main_rust)?;
 
     // write Cargo.toml
     let mut cargo_file = std::fs::File::create(&build_dir.join("Cargo.toml"))?;
