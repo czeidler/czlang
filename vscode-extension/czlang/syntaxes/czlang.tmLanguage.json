@@ -1,0 +1,41 @@
+{
+	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+	"name": "",
+	"patterns": [
+		{
+			"include": "#keywords"
+		},
+		{
+			"include": "#constant"
+		},
+		{
+			"include": "#strings"
+		}
+	],
+	"repository": {
+		"keywords": {
+			"patterns": [{
+				"name": "keyword.control.czlang",
+				"match": "\\b(fun|if|while|for|return|var)\\b"
+			}]
+		},
+		"constant": {
+			"patterns": [{
+				"name": "constant.language.czlang",
+				"match": "\\b(null|true|false)\\b"
+			}]
+		},
+		"strings": {
+			"name": "string.quoted.double.czlang",
+			"begin": "\"",
+			"end": "\"",
+			"patterns": [
+				{
+					"name": "constant.character.escape.czlang",
+					"match": "\\\\."
+				}
+			]
+		}
+	},
+	"scopeName": "source.czlang"
+}

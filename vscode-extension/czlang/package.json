@@ -1,0 +1,29 @@
+{
+  "name": "czlang",
+  "displayName": "czlang",
+  "description": "",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.73.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:czlang"
+  ],
+  "main": "./client/out/extension",
+  "contributes": {
+    "languages": [{
+      "id": "czlang",
+      "aliases": ["", "czlang"],
+      "extensions": [".cz"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "czlang",
+      "scopeName": "source.czlang",
+      "path": "./syntaxes/czlang.tmLanguage.json"
+    }]
+  }
+}
