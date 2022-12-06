@@ -1,0 +1,105 @@
+==================
+Parameter list: no parameters
+==================
+
+fun x() i32 {
+  return 1
+}
+
+---
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameter_list)
+    (primitive_type)
+    (block
+      (return_statement (int_literal)))))
+
+==================
+Parameter list: single parameter
+==================
+
+fun x(para1 bool) i32 {
+  return 1
+}
+
+---
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameter_list
+        (parameter (identifier) (primitive_type)))
+    (primitive_type)
+    (block
+      (return_statement (int_literal)))))
+
+==================
+Parameter list: multiple parameters
+==================
+
+fun x(para1 bool, para2 i32, para3 bool) i32 {
+  return 1
+}
+
+---
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameter_list
+        (parameter (identifier) (primitive_type))
+        (parameter (identifier) (primitive_type))
+        (parameter (identifier) (primitive_type)))
+    (primitive_type)
+    (block
+      (return_statement (int_literal)))))
+
+==================
+Parameter list: mutable + references
+==================
+
+fun x(para1 mut bool, para2 mut &i32, para3 bool) i32 {
+  return 1
+}
+
+---
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameter_list
+        (parameter (identifier) (primitive_type))
+        (parameter (identifier) (reference_type (primitive_type)))
+        (parameter (identifier) (primitive_type)))
+    (primitive_type)
+    (block
+      (return_statement (int_literal)))))
+
+==================
+Parameter list: nullable
+==================
+
+fun x(para1 mut bool, para2 mut &i32, para3 bool, para4 &i32 | null) i32 {
+  return 1
+}
+
+---
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameter_list
+        (parameter (identifier) (primitive_type))
+        (parameter (identifier) (reference_type (primitive_type)))
+        (parameter (identifier) (primitive_type))
+        (parameter (identifier) (sum_type
+          (reference_type
+            (primitive_type))
+          (primitive_type))
+        )
+    )
+    (primitive_type)
+    (block
+      (return_statement (int_literal)))))

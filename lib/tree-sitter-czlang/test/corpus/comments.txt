@@ -1,0 +1,27 @@
+==================
+Comments
+==================
+
+fun x() i32 {
+  // val test = 5
+  /* val test2 bool = true */
+  /**
+  mut test3 = "test"
+  mut test3 i32 = 34
+  */
+}
+
+---
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameter_list)
+    (primitive_type)
+    (block
+        (comment)
+        (comment)
+        (comment)
+    )
+  )
+)

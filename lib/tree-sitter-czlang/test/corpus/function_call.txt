@@ -1,0 +1,36 @@
+==================
+Function call
+==================
+
+fun x() i32 {
+  callFunction()
+  callFunction(argument1, argument2)
+  var test = callFunction()
+}
+
+---
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameter_list)
+    (primitive_type)
+    (block
+      (expression_statement
+        (function_call
+          (identifier)
+          (argument_list)))
+      (expression_statement
+        (function_call
+          (identifier)
+          (argument_list
+            (identifier)
+            (identifier))))
+      (var_declaration
+        (identifier)
+        (function_call
+          (identifier)
+          (argument_list)))
+    )
+  )
+)

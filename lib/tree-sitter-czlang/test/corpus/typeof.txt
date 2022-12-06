@@ -1,0 +1,32 @@
+==================
+Type fo
+==================
+
+fun x() {
+    var test bool = true
+    if typeof test == bool {
+
+    }
+}
+
+---
+
+(source_file
+    (function_definition
+        (identifier)
+        (parameter_list)
+        (block
+            (var_declaration
+                (identifier)
+                (primitive_type)
+                (true))
+            (if_statement
+                (binary_expression
+                (unary_expression
+                    (identifier))
+                (identifier))
+                (block)
+            )
+        )
+    )
+)

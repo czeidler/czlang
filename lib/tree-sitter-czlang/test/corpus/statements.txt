@@ -1,0 +1,40 @@
+==================
+Return statement
+==================
+
+fun x() {
+  return
+}
+
+---
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameter_list)
+    (block
+      (return_statement)
+    )
+  )
+)
+
+==================
+Return statement + Expression
+==================
+
+fun x() i32 {
+  return 0
+}
+
+---
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameter_list)
+    (primitive_type)
+    (block
+      (return_statement (int_literal))
+    )
+  )
+)

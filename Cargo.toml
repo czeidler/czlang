@@ -1,11 +1,6 @@
-[package]
-name = "czlang"
-version = "0.1.0"
-edition = "2021"
+[workspace]
 
-[dependencies]
-tree-sitter = "0.20.4"
-anyhow = "1.0.54"
-
-[build-dependencies]
-cc="*"
+members = [
+    "lib",
+    "language-server",
+]

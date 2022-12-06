@@ -1,0 +1,62 @@
+==================
+interface declaration
+==================
+
+interface TestStruct {
+    method1(test &i32, value2 bool)
+    method2()
+    method3() bool
+    method3() OtherType
+    methodSelf1(self, value2 bool)
+    methodSelf2(&self)
+    methodSelf3(mut &self, value2 mut &i32)
+}
+
+---
+
+(source_file
+  (interface_definition
+    (identifier)
+    (method_spec
+        (identifier)
+        (self_parameter_list
+        (parameter
+            (identifier)
+            (reference_type (primitive_type)))
+        (parameter
+            (identifier)
+            (primitive_type))))
+    (method_spec
+        (identifier)
+        (self_parameter_list))
+    (method_spec
+        (identifier)
+        (self_parameter_list)
+        (primitive_type))
+    (method_spec
+        (identifier)
+        (self_parameter_list)
+        (identifier))
+    (method_spec
+        (identifier)
+        (self_parameter_list
+            (self_parameter)
+            (parameter
+                (identifier)
+                (primitive_type))))
+    (method_spec
+        (identifier)
+        (self_parameter_list
+            (self_parameter)))
+    (method_spec
+        (identifier)
+        (self_parameter_list
+            (self_parameter)
+            (parameter
+                (identifier)
+                (reference_type (primitive_type))
+            )
+        )
+    )
+  )
+)
