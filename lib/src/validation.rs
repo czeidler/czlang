@@ -1,23 +1,21 @@
-use std::{
-    cell::{RefCell, RefMut},
-    rc::Rc,
-};
+use std::{cell::RefCell, rc::Rc};
 
 use crate::{
     ast::{
         Array, BinaryExpression, BinaryOperator, Block, Expression, ExpressionType, File, Function,
         IfAlternative, IfStatement, Parameter, RefType, Slice, Statement, Type, UnaryOperator,
-        VarDeclaration, VarState,
+        VarDeclaration,
     },
     types::{intersection, types_to_string},
 };
 
-enum LookupResult {
+#[derive(Debug, Clone)]
+pub enum LookupResult {
     VarDeclaration(Rc<VarDeclaration>),
     Parameter(Parameter),
 }
 
-fn lookup_identifier(fun: &Function, identifier: &String) -> Option<LookupResult> {
+pub fn lookup_identifier(fun: &Function, identifier: &String) -> Option<LookupResult> {
     if let Some(var) = fun.body.borrow().vars.borrow().get(identifier) {
         return Some(LookupResult::VarDeclaration(var.clone()));
     }

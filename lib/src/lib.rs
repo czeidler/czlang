@@ -3,7 +3,7 @@ mod buildin;
 mod rust_transpiler;
 mod tree_sitter;
 pub mod types;
-mod validation;
+pub mod validation;
 
 pub mod query;
 

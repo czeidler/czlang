@@ -8,7 +8,7 @@ use crate::{
         Parameter, SourcePosition, Statement, VarDeclaration,
     },
     tree_sitter::parse,
-    validation::validate,
+    validation::{lookup_identifier, validate, LookupResult},
 };
 
 #[derive(Debug, Clone)]
@@ -16,7 +16,7 @@ pub enum QueryResult {
     Function(Rc<Function>),
     FunctionCall(FunctionCall),
     Parameter(Parameter),
-    Identifier(Expression),
+    Identifier(LookupResult),
     VarDeclaration(Rc<VarDeclaration>),
 }
 
@@ -93,20 +93,20 @@ fn find_in_function(fun: &Rc<Function>, position: SourcePosition) -> Option<Quer
                     continue;
                 }
                 if if_statement.condition.node.contains(position) {
-                    return find_in_expression(&if_statement.condition, position);
+                    return find_in_expression(fun, &if_statement.condition, position);
                 }
                 // TODO find in block
             }
             Statement::Return(ret) => {
                 if let Some(ret) = ret {
                     if ret.node.contains(position) {
-                        return find_in_expression(ret, position);
+                        return find_in_expression(fun, ret, position);
                     }
                 }
             }
             Statement::Expression(expr) => {
                 if expr.node.contains(position) {
-                    return find_in_expression(expr, position);
+                    return find_in_expression(fun, expr, position);
                 }
             }
         }
@@ -116,21 +116,28 @@ fn find_in_function(fun: &Rc<Function>, position: SourcePosition) -> Option<Quer
     None
 }
 
-fn find_in_expression(expression: &Expression, position: SourcePosition) -> Option<QueryResult> {
+fn find_in_expression(
+    fun: &Rc<Function>,
+    expression: &Expression,
+    position: SourcePosition,
+) -> Option<QueryResult> {
     match &expression.r#type {
-        ExpressionType::Identifier(_) => Some(QueryResult::Identifier(expression.clone())),
+        ExpressionType::Identifier(identifier) => {
+            let Some(identifier) = lookup_identifier(fun, identifier) else {return None;};
+            Some(QueryResult::Identifier(identifier))
+        }
         ExpressionType::BinaryExpression(binary) => {
             if binary.left.node.contains(position) {
-                return find_in_expression(&binary.left, position);
+                return find_in_expression(fun, &binary.left, position);
             }
             if binary.right.node.contains(position) {
-                return find_in_expression(&binary.right, position);
+                return find_in_expression(fun, &binary.right, position);
             }
             None
         }
         ExpressionType::UnaryExpression(unary) => {
             if unary.operand.node.contains(position) {
-                return find_in_expression(&unary.operand, position);
+                return find_in_expression(fun, &unary.operand, position);
             }
             None
         }

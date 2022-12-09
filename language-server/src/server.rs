@@ -5,6 +5,7 @@ use czlanglib::{
     ast::SourcePosition,
     query::{query, QueryResult},
     types::types_to_string,
+    validation::LookupResult,
 };
 use lsp_server::{Connection, Message, RequestId};
 use lsp_types::{notification::*, request::*, *};
@@ -219,16 +220,14 @@ impl Server {
                     format!("fun {}", &fun.name)
                 },
                 QueryResult::Parameter(parameter) => format!("{}", types_to_string(&parameter.types)),
-                QueryResult::Identifier(expr) => {
-                    let resolved_types = expr.resolved_types.borrow();
-                    match resolved_types.as_ref() {
-                        Some(resolved_types) => format!("{}", types_to_string(resolved_types)),
-                        None =>  format!("{:?}", expr),
+                QueryResult::Identifier(lookup) => {
+                    match lookup {
+                        LookupResult::VarDeclaration(var) => format!("identifier: {} {}", var.name, types_to_string(&var.types())),
+                        LookupResult::Parameter(param) => format!("{} {}", param.name, types_to_string(&param.types)),
                     }
-
                 },
                 QueryResult::VarDeclaration(var) => {
-                    format!("{}", types_to_string(&var.types()))
+                    format!("var {} {}", var.name, types_to_string(&var.types()))
                 },
                 QueryResult::FunctionCall(call) => {
                     format!("fun {}", call.name)
