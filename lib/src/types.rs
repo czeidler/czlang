@@ -1,6 +1,8 @@
-use std::{fmt, rc::Rc, vec};
+use std::{cell::RefCell, fmt, rc::Rc, vec};
 
 use crate::ast::{Array, RefType, Slice, Type};
+
+pub type SharedMut<T> = Rc<RefCell<T>>;
 
 pub fn types_to_string(types: &Vec<RefType>) -> String {
     let parts: Vec<String> = types.into_iter().map(|it| format!("{:#}", it)).collect();
@@ -45,9 +47,9 @@ impl fmt::Display for RefType {
                 Ok(())
             }
             Type::Unresolved(types) => {
-                write!(f, "unresolved(")?;
+                write!(f, "unresolved<")?;
                 write!(f, "{}", types_to_string(&types))?;
-                write!(f, ")")
+                write!(f, ">")
             }
         }
     }
@@ -119,8 +121,8 @@ pub fn intersection(left_types: &Vec<RefType>, right_types: &Vec<RefType>) -> Ve
                     });
                 }
                 (Type::Unresolved(l), Type::Unresolved(r)) => {
-                    let mut inter = intersection(&l, &r);
-                    output.append(&mut inter);
+                    let inter = intersection(&l, &r);
+                    output.push(RefType::value(Type::Unresolved(inter)));
                 }
                 (Type::Unresolved(l), r) => {
                     let mut inter = intersection(

@@ -216,7 +216,7 @@ impl Server {
 
             let result = match result {
                 QueryResult::Function(fun) => {
-                    format!("fun {}", &fun.borrow().name)
+                    format!("fun {}", &fun.name)
                 },
                 QueryResult::Parameter(parameter) => format!("{}", types_to_string(&parameter.types)),
                 QueryResult::Identifier(expr) => {
@@ -227,8 +227,8 @@ impl Server {
                     }
 
                 },
-                QueryResult::VarDeclaration(_, state) => {
-                    format!("{}", types_to_string(&state.types))
+                QueryResult::VarDeclaration(var) => {
+                    format!("{}", types_to_string(&var.types()))
                 },
                 QueryResult::FunctionCall(call) => {
                     format!("fun {}", call.name)

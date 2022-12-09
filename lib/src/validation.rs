@@ -6,27 +6,26 @@ use std::{
 use crate::{
     ast::{
         Array, BinaryExpression, BinaryOperator, Block, Expression, ExpressionType, File, Function,
-        IfAlternative, IfStatement, RefType, Slice, Statement, Type, UnaryOperator, VarDeclaration,
-        VarState,
+        IfAlternative, IfStatement, Parameter, RefType, Slice, Statement, Type, UnaryOperator,
+        VarDeclaration, VarState,
     },
     types::{intersection, types_to_string},
 };
 
-pub enum CodeAnalysisItem {
-    VarState(VarState),
+enum LookupResult {
+    VarDeclaration(Rc<VarDeclaration>),
+    Parameter(Parameter),
 }
 
-fn lookup_identifier(fun: &Function, identifier: &String) -> Option<CodeAnalysisItem> {
-    if let Some(var) = fun.vars.get(identifier) {
-        return Some(CodeAnalysisItem::VarState(var.clone()));
+fn lookup_identifier(fun: &Function, identifier: &String) -> Option<LookupResult> {
+    if let Some(var) = fun.body.borrow().vars.borrow().get(identifier) {
+        return Some(LookupResult::VarDeclaration(var.clone()));
     }
     if let Some(param) = (&fun.parameters)
         .into_iter()
         .find(|it| &it.name == identifier)
     {
-        return Some(CodeAnalysisItem::VarState(VarState {
-            types: param.types.clone(),
-        }));
+        return Some(LookupResult::Parameter(param.clone()));
     }
 
     None
@@ -59,7 +58,8 @@ pub fn expression_type(fun: &Function, expression: &Expression) -> Result<Vec<Re
                 None => return Err(format!("Identifier not found: {:?}", identifier)),
             };
             match identifier {
-                CodeAnalysisItem::VarState(var) => var.types.clone(),
+                LookupResult::VarDeclaration(var) => var.types(),
+                LookupResult::Parameter(param) => param.types.clone(),
             }
         }
         ExpressionType::IntLiteral(_) => vec![RefType::value(Type::Unresolved(vec![
@@ -263,46 +263,53 @@ pub fn validate_expression(
 }
 
 pub fn validate_var_declaration(
-    fun: &mut RefMut<Function>,
-    var_declaration: &VarDeclaration,
+    fun: &Function,
+    block: &Block,
+    var_declaration: Rc<VarDeclaration>,
 ) -> Result<(), String> {
-    let mut state = VarState { types: vec![] };
+    let mut var_types = vec![];
     if let Some(types) = &var_declaration.types {
         for t in types {
-            if state.types.iter().find(|v| *v == t).is_none() {
-                state.types.push(t.clone());
+            if var_types.iter().find(|v| *v == t).is_none() {
+                var_types.push(t.clone());
             }
         }
-        state.types.sort();
+        var_types.sort();
 
         // Add sum type
-        if state.types.len() > 1 {
+        if var_types.len() > 1 {
             fun.file()
                 .borrow_mut()
                 .sum_types
-                .insert(sum_type_name(&state.types), state.types.clone());
+                .insert(sum_type_name(&var_types), var_types.clone());
         }
     }
 
     let expr = validate_expression(fun, &var_declaration.value)?;
-    if state.types.is_empty() {
+    if var_types.is_empty() {
         for t in expr {
-            state.types.push(t);
+            var_types.push(t);
         }
-        state.types.sort();
+        var_types.sort();
     } else {
-        let overlap = intersection(&state.types, &expr);
+        let overlap = intersection(&var_types, &expr);
         if overlap.is_empty() {
             return Err(format!(
                 "Incompatible type in var assignement: var: {}, expr: {}",
-                types_to_string(&state.types),
+                types_to_string(&var_types),
                 types_to_string(&expr),
             ));
         }
-        state.types = overlap;
+        var_types = overlap;
     }
 
-    if let Some(_) = fun.vars.insert(var_declaration.name.clone(), state) {
+    *var_declaration.resolved_types.borrow_mut() = Some(var_types);
+
+    if let Some(_) = block
+        .vars
+        .borrow_mut()
+        .insert(var_declaration.name.clone(), var_declaration.clone())
+    {
         return Err(format!(
             "Variable already declared: {:?}",
             var_declaration.name
@@ -312,13 +319,17 @@ pub fn validate_var_declaration(
     Ok(())
 }
 
-pub fn validate_statement(fun: &mut RefMut<Function>, statement: &Statement) -> Result<(), String> {
+pub fn validate_statement(
+    fun: &Function,
+    block: &Block,
+    statement: &Statement,
+) -> Result<(), String> {
     match statement {
         Statement::Expression(expression) => {
             validate_expression(fun, expression)?;
         }
         Statement::VarDeclaration(var_declaration) => {
-            validate_var_declaration(fun, var_declaration)?;
+            validate_var_declaration(fun, block, var_declaration.clone())?;
         }
         Statement::Return(ret) => {
             let ret_types = if let Some(expression) = ret {
@@ -351,7 +362,7 @@ pub fn validate_statement(fun: &mut RefMut<Function>, statement: &Statement) -> 
 }
 
 fn validate_if_statement(
-    fun: &mut RefMut<Function>,
+    fun: &Function,
     if_statement: &Rc<RefCell<IfStatement>>,
 ) -> Result<(), String> {
     let mut statement = if_statement.borrow_mut();
@@ -375,15 +386,15 @@ fn validate_if_statement(
     Ok(())
 }
 
-fn validate_block(fun: &mut RefMut<Function>, block: &Rc<RefCell<Block>>) -> Result<(), String> {
-    for statement in &block.borrow().statements {
-        validate_statement(fun, statement)?;
+fn validate_block(fun: &Function, block: &Rc<RefCell<Block>>) -> Result<(), String> {
+    let block = block.borrow();
+    for statement in &block.statements {
+        validate_statement(fun, &block, statement)?;
     }
     Ok(())
 }
 
-pub fn validate_fun(fun: &Rc<RefCell<Function>>) -> Result<(), String> {
-    let mut fun = fun.borrow_mut();
+pub fn validate_fun(fun: &Function) -> Result<(), String> {
     for par_ref in &fun.parameters {
         //let parameter = par_ref.get(parser)
         // Add sum type
@@ -396,7 +407,7 @@ pub fn validate_fun(fun: &Rc<RefCell<Function>>) -> Result<(), String> {
     }
     let block = fun.body.clone();
 
-    validate_block(&mut fun, &block)?;
+    validate_block(fun, &block)?;
 
     Ok(())
 }

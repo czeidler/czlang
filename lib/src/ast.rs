@@ -9,6 +9,7 @@ use tree_sitter::Node;
 
 use crate::{
     buildin::{Buildins, FunctionDeclaration},
+    types::SharedMut,
     validation::TypeNarrowing,
 };
 
@@ -112,7 +113,7 @@ impl NodeData {
 
 #[derive(Debug, Clone)]
 pub struct File {
-    pub functions: HashMap<String, Rc<RefCell<Function>>>,
+    pub functions: HashMap<String, Rc<Function>>,
     pub struct_defs: HashMap<String, Rc<Struct>>,
 
     /// From validation:
@@ -121,11 +122,7 @@ pub struct File {
 
 impl File {
     pub fn lookup_function(&self, name: &str) -> Option<FunctionDeclaration> {
-        if let Some(declaration) = self
-            .functions
-            .get(name)
-            .map(|f| f.borrow().as_declaration())
-        {
+        if let Some(declaration) = self.functions.get(name).map(|f| f.as_declaration()) {
             return Some(declaration);
         }
 
@@ -165,14 +162,11 @@ pub struct Function {
 
     pub parameters: Vec<Parameter>,
     pub return_types: Option<Vec<RefType>>,
-    pub body: Rc<RefCell<Block>>,
-
-    /// From code analysis
-    pub vars: HashMap<String, VarState>,
+    pub body: SharedMut<Block>,
 }
 
 impl Function {
-    pub fn file(&self) -> Rc<RefCell<File>> {
+    pub fn file(&self) -> SharedMut<File> {
         self.parent.upgrade().unwrap()
     }
 
@@ -193,6 +187,8 @@ pub struct Block {
     pub node: NodeData,
 
     pub statements: Vec<Statement>,
+
+    pub vars: RefCell<HashMap<String, Rc<VarDeclaration>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -277,9 +273,9 @@ pub struct SliceExpression {
 #[derive(Debug, Clone)]
 pub enum Statement {
     Expression(Expression),
-    VarDeclaration(VarDeclaration),
+    VarDeclaration(Rc<VarDeclaration>),
     Return(Option<Expression>),
-    IfStatement(Rc<RefCell<IfStatement>>),
+    IfStatement(SharedMut<IfStatement>),
 }
 
 #[derive(Debug, Clone)]
@@ -291,7 +287,17 @@ pub struct VarDeclaration {
     pub types: Option<Vec<RefType>>,
     pub value: Expression,
 
-    pub origin: SourceSpan,
+    pub resolved_types: RefCell<Option<Vec<RefType>>>,
+}
+
+impl VarDeclaration {
+    /// Either the resolved types or the d
+    pub fn types(&self) -> Vec<RefType> {
+        match self.resolved_types.borrow().as_ref() {
+            Some(resolved_types) => resolved_types.clone(),
+            None => self.types.clone().unwrap_or(vec![]),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -371,15 +377,15 @@ pub struct ParenthesizedExpression {
 
 #[derive(Debug, Clone)]
 pub enum IfAlternative {
-    Else(Rc<RefCell<Block>>),
-    If(Rc<RefCell<IfStatement>>),
+    Else(SharedMut<Block>),
+    If(SharedMut<IfStatement>),
 }
 
 #[derive(Debug, Clone)]
 pub struct IfStatement {
     pub node: NodeData,
     pub condition: Expression,
-    pub consequence: Rc<RefCell<Block>>,
+    pub consequence: SharedMut<Block>,
     pub alternative: Option<IfAlternative>,
 
     /// Type narrowing from the if contition
@@ -410,13 +416,13 @@ impl<'a> FileContext<'a> {
         }
     }
 
-    pub fn parse_file(&mut self) -> Rc<RefCell<File>> {
+    pub fn parse_file(&mut self) -> SharedMut<File> {
         collect_errors(self.root, &self.file_path, &mut self.errors);
         parse_file(self.root, self)
     }
 }
 
-pub fn parse_file<'a>(node: Node<'a>, context: &mut FileContext<'a>) -> Rc<RefCell<File>> {
+pub fn parse_file<'a>(node: Node<'a>, context: &mut FileContext<'a>) -> SharedMut<File> {
     let file = Rc::new(RefCell::new(File {
         functions: HashMap::new(),
         struct_defs: HashMap::new(),
@@ -431,7 +437,7 @@ pub fn parse_file<'a>(node: Node<'a>, context: &mut FileContext<'a>) -> Rc<RefCe
                 if let Some(fun) = parse_fun(context, &file, &child, &node) {
                     file.borrow_mut()
                         .functions
-                        .insert(fun.borrow().name.clone(), fun.clone());
+                        .insert(fun.name.clone(), fun.clone());
                 };
             }
             "struct_definition" => {
@@ -451,10 +457,10 @@ pub fn parse_file<'a>(node: Node<'a>, context: &mut FileContext<'a>) -> Rc<RefCe
 
 fn parse_fun<'a>(
     context: &mut FileContext<'a>,
-    file: &Rc<RefCell<File>>,
+    file: &SharedMut<File>,
     node: &Node<'a>,
     parent: &Node<'a>,
-) -> Option<Rc<RefCell<Function>>> {
+) -> Option<Rc<Function>> {
     let name = child_by_field(&node, "name", context)?;
     let parameter_list = child_by_field(&node, "parameters", context)?;
     let return_type = match node.child_by_field_name("result".as_bytes()) {
@@ -464,7 +470,7 @@ fn parse_fun<'a>(
     let body_node: Node = child_by_field(&node, "body", context)?;
     let body = parse_block(context, body_node, node.clone());
 
-    let fun = Rc::new(RefCell::new(Function {
+    let fun = Rc::new(Function {
         parent: Rc::downgrade(file),
         node: NodeData {
             id: node.id(),
@@ -476,9 +482,7 @@ fn parse_fun<'a>(
         parameters: parse_parameters(context, parameter_list)?,
         return_types: return_type,
         body: body.clone(),
-
-        vars: HashMap::new(),
-    }));
+    });
     body.borrow_mut().parent = Some(BlockParent::Function(Rc::downgrade(&fun)));
     Some(fun)
 }
@@ -541,7 +545,7 @@ fn parse_block<'a>(
     context: &mut FileContext<'a>,
     node: Node<'a>,
     parent_node: Node<'a>,
-) -> Rc<RefCell<Block>> {
+) -> SharedMut<Block> {
     let mut statements: Vec<Statement> = Vec::new();
     for index in 1..node.child_count() - 1 {
         let statement_node = match child(&node, "statement", index, context) {
@@ -561,7 +565,9 @@ fn parse_block<'a>(
             }
             "var_declaration" => {
                 match parse_var_declaration(context, statement_node) {
-                    Some(statement) => statements.push(Statement::VarDeclaration(statement)),
+                    Some(statement) => {
+                        statements.push(Statement::VarDeclaration(Rc::new(statement)))
+                    }
                     None => continue,
                 };
             }
@@ -590,6 +596,7 @@ fn parse_block<'a>(
             parent: parent_node.id(),
             span: SourceSpan::from_node(&node),
         },
+        vars: RefCell::new(HashMap::new()),
     }))
 }
 
@@ -816,7 +823,7 @@ fn parse_var_declaration<'a>(
         types: var_type,
         value,
 
-        origin: SourceSpan::from_node(&node),
+        resolved_types: RefCell::new(None),
     })
 }
 
@@ -835,7 +842,7 @@ fn parse_if<'a>(
     context: &mut FileContext<'a>,
     node: Node<'a>,
     parent: Node<'a>,
-) -> Option<Rc<RefCell<IfStatement>>> {
+) -> Option<SharedMut<IfStatement>> {
     let condition = child_by_field(&node, "condition", context)?;
     let consequence = child_by_field(&node, "consequence", context)?;
     let alternative = node.child_by_field_name("alternative".as_bytes());
@@ -872,8 +879,8 @@ fn parse_if<'a>(
 
 #[derive(Debug, Clone)]
 pub enum BlockParent {
-    Function(Weak<RefCell<Function>>),
-    Block(Weak<RefCell<Block>>),
+    Function(Weak<Function>),
+    Block(Weak<Block>),
 }
 
 fn parse_parameters<'a>(context: &mut FileContext<'a>, node: Node<'a>) -> Option<Vec<Parameter>> {

@@ -165,7 +165,7 @@ impl RustTranspiler {
         &self,
         expression: &Expression,
         target: Option<&Vec<RefType>>,
-        fun: &Rc<RefCell<Function>>,
+        fun: &Rc<Function>,
         writer: &mut Writer,
     ) {
         match &expression.r#type {
@@ -202,18 +202,18 @@ impl RustTranspiler {
             }
             ExpressionType::IntLiteral(number) => {
                 // TODO sort earlier
-                let mut target = target.unwrap().clone();
+                let mut target = target.map(|t| t.clone()).unwrap_or(vec![]);
                 target.sort();
 
                 if target.len() == 1 {
+                    // the target is a simple type, i.e. we can directly assign the number
                     writer.write(&format!("{}", number));
                 } else {
-                    writer.write(&sum_type_name(&target));
-                    writer.write("::");
-
                     let resolved_type = expression.resolved_types.borrow();
-                    let resolved_type = resolved_type.as_ref().unwrap();
+                    let resolved_type = resolved_type.clone().unwrap_or(vec![]);
                     if resolved_type.len() == 1 {
+                        writer.write(&sum_type_name(&target));
+                        writer.write("::");
                         // TODO refactor out:
                         let t = match resolved_type[0].r#type {
                             Type::U32 => "U32",
@@ -225,7 +225,8 @@ impl RustTranspiler {
                         writer.write(&format!("{}", number));
                         writer.write(")");
                     } else {
-                        todo!("map sum types")
+                        // just an int literal
+                        writer.write(&format!("{}", number));
                     }
                 }
             }
@@ -291,7 +292,7 @@ impl RustTranspiler {
         &self,
         array: &ArrayExpression,
         target: Option<&Vec<RefType>>,
-        fun: &Rc<RefCell<Function>>,
+        fun: &Rc<Function>,
         writer: &mut Writer,
     ) {
         writer.write("[");
@@ -309,7 +310,7 @@ impl RustTranspiler {
         &self,
         slice: &SliceExpression,
         target: Option<&Vec<RefType>>,
-        fun: &Rc<RefCell<Function>>,
+        fun: &Rc<Function>,
         writer: &mut Writer,
     ) {
         self.transpile_expression(&slice.operand, target, fun, writer);
@@ -327,7 +328,7 @@ impl RustTranspiler {
     fn transpile_buildin_function_call(
         &self,
         call: &FunctionCall,
-        fun: &Rc<RefCell<Function>>,
+        fun: &Rc<Function>,
         writer: &mut Writer,
     ) -> bool {
         let buildin = match self.buildins.functions.get(&call.name) {
@@ -367,7 +368,7 @@ impl RustTranspiler {
     fn transpile_function_call(
         &self,
         call: &FunctionCall,
-        fun: &Rc<RefCell<Function>>,
+        fun: &Rc<Function>,
         writer: &mut Writer,
     ) {
         if self.transpile_buildin_function_call(call, fun, writer) {
@@ -378,15 +379,14 @@ impl RustTranspiler {
         writer.write("(");
 
         // TODO make this a query method:
-        let file = fun.borrow().file();
+        let file = fun.file();
         let file = file.borrow();
         let function = file.functions.get(&call.name).unwrap();
-        let fun = function.borrow();
 
         let mut iter = call.arguments.iter().enumerate().peekable();
         while let Some((i, expr)) = iter.next() {
-            let parameter = fun.parameters.get(i).unwrap();
-            self.transpile_expression(expr, Some(&parameter.types), function, writer);
+            let parameter = function.parameters.get(i).unwrap();
+            self.transpile_expression(expr, Some(&parameter.types), fun, writer);
             if iter.peek().is_some() {
                 writer.write(", ");
             }
@@ -398,7 +398,7 @@ impl RustTranspiler {
     fn transpile_var_declaration(
         &self,
         var_declaration: &VarDeclaration,
-        fun: &Rc<RefCell<Function>>,
+        fun: &Rc<Function>,
         writer: &mut Writer,
     ) {
         writer.write("let ");
@@ -431,13 +431,13 @@ impl RustTranspiler {
     fn transpile_return_statement(
         &self,
         expression: &Option<Expression>,
-        fun: &Rc<RefCell<Function>>,
+        fun: &Rc<Function>,
         writer: &mut Writer,
     ) {
         writer.write("return");
         if let Some(expression) = expression {
             writer.write(" ");
-            self.transpile_expression(expression, fun.borrow().return_types.as_ref(), fun, writer);
+            self.transpile_expression(expression, fun.return_types.as_ref(), fun, writer);
         }
         writer.write(";");
     }
@@ -487,7 +487,7 @@ impl RustTranspiler {
     fn transpile_if_statement(
         &self,
         if_statement: &IfStatement,
-        fun: &Rc<RefCell<Function>>,
+        fun: &Rc<Function>,
         writer: &mut Writer,
     ) {
         let target_types = vec![RefType {
@@ -525,12 +525,7 @@ impl RustTranspiler {
         }
     }
 
-    fn transpile_block(
-        &self,
-        block: &Rc<RefCell<Block>>,
-        fun: &Rc<RefCell<Function>>,
-        writer: &mut Writer,
-    ) {
+    fn transpile_block(&self, block: &Rc<RefCell<Block>>, fun: &Rc<Function>, writer: &mut Writer) {
         for statement in &block.borrow().statements {
             match statement {
                 Statement::Expression(expr) => {
@@ -539,7 +534,7 @@ impl RustTranspiler {
                     writer.new_line();
                 }
                 Statement::VarDeclaration(var) => {
-                    self.transpile_var_declaration(var, fun, writer);
+                    self.transpile_var_declaration(&var, fun, writer);
                     writer.new_line();
                 }
                 Statement::Return(expression) => {
@@ -555,9 +550,7 @@ impl RustTranspiler {
         }
     }
 
-    fn transpile_function(&self, function: &Rc<RefCell<Function>>, writer: &mut Writer) {
-        let fun = function.borrow();
-
+    fn transpile_function(&self, fun: &Rc<Function>, writer: &mut Writer) {
         writer.write(&format!("fn {}", fun.name));
         self.transpile_parameters(&fun.parameters, writer);
         if let Some(return_type) = &fun.return_types {
@@ -567,7 +560,7 @@ impl RustTranspiler {
         writer.write(" {");
         writer.new_line();
         writer.indented(|writer| {
-            self.transpile_block(&fun.body, function, writer);
+            self.transpile_block(&fun.body, fun, writer);
         });
         writer.write("}");
     }
@@ -681,6 +674,8 @@ pub fn transpile_project(project_dir: &Path) -> Result<(), anyhow::Error> {
 name = "app"
 version = "0.1.0"
 edition = "2021"
+
+[workspace]
 "#;
     cargo_file.write_all(&cargo_content.as_bytes())?;
     Ok(())

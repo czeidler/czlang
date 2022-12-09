@@ -5,7 +5,7 @@ use anyhow::Ok;
 use crate::{
     ast::{
         print_err, Expression, ExpressionType, File, FileContext, Function, FunctionCall,
-        Parameter, SourcePosition, Statement, VarDeclaration, VarState,
+        Parameter, SourcePosition, Statement, VarDeclaration,
     },
     tree_sitter::parse,
     validation::validate,
@@ -13,11 +13,11 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub enum QueryResult {
-    Function(Rc<RefCell<Function>>),
+    Function(Rc<Function>),
     FunctionCall(FunctionCall),
     Parameter(Parameter),
     Identifier(Expression),
-    VarDeclaration(VarDeclaration, VarState),
+    VarDeclaration(Rc<VarDeclaration>),
 }
 
 pub fn query(
@@ -56,26 +56,21 @@ pub fn query(
 fn find_in_file(file: Rc<RefCell<File>>, position: SourcePosition) -> Option<QueryResult> {
     let file = file.as_ref().borrow();
     for (_, fun) in &file.functions {
-        let fun_ref = fun.as_ref().borrow();
-        if !fun_ref.node.contains(position) {
+        if !fun.node.contains(position) {
             continue;
         }
-        if let Some(symbole) = find_in_function(&fun_ref, fun, position) {
+        if let Some(symbole) = find_in_function(fun, position) {
             return Some(symbole);
         }
     }
     None
 }
 
-fn find_in_function(
-    fun_ref: &Function,
-    fun: &Rc<RefCell<Function>>,
-    position: SourcePosition,
-) -> Option<QueryResult> {
-    if fun_ref.name_node.contains(position) {
+fn find_in_function(fun: &Rc<Function>, position: SourcePosition) -> Option<QueryResult> {
+    if fun.name_node.contains(position) {
         return Some(QueryResult::Function(fun.clone()));
     }
-    for param in &fun_ref.parameters {
+    for param in &fun.parameters {
         if !param.node.contains(position) {
             continue;
         }
@@ -83,17 +78,14 @@ fn find_in_function(
         return Some(QueryResult::Parameter(param.clone()));
     }
 
-    let body = fun_ref.body.borrow();
+    let body = fun.body.borrow();
     for statement in &body.statements {
         match statement {
             Statement::VarDeclaration(var) => {
                 if !var.node.contains(position) {
                     continue;
                 }
-                return Some(QueryResult::VarDeclaration(
-                    var.clone(),
-                    fun_ref.vars.get(&var.name).unwrap().clone(),
-                ));
+                return Some(QueryResult::VarDeclaration(var.clone()));
             }
             Statement::IfStatement(if_statement) => {
                 let if_statement = if_statement.borrow();
