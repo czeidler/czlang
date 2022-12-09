@@ -262,6 +262,50 @@ pub fn validate_expression(
     Ok(types)
 }
 
+fn back_propergate_types(fun: &Function, expression: &Expression, types: &Vec<RefType>) {
+    match &expression.r#type {
+        ExpressionType::Identifier(id) => {
+            let Some(id) = lookup_identifier(fun,id) else {return};
+            match id {
+                LookupResult::VarDeclaration(var_declaration) => {
+                    let var_types = var_declaration.types();
+                    let types = var_types.into_iter().fold(vec![], |mut target, item| {
+                        if let Type::Unresolved(unresolved) = &item.r#type {
+                            if !intersection(&unresolved, types).is_empty() {
+                                target.append(&mut types.clone());
+                                return target;
+                            }
+                        }
+                        target.push(item);
+                        target
+                    });
+
+                    // follow the back propergation further
+                    back_propergate_types(fun, &var_declaration.value, &types);
+                    // update resolved types
+                    *(var_declaration.resolved_types.borrow_mut()) = Some(types);
+                }
+                LookupResult::Parameter(_) => {}
+            }
+        }
+        ExpressionType::UnaryExpression(expr) => back_propergate_types(fun, &expr.operand, types),
+        ExpressionType::BinaryExpression(expr) => {
+            back_propergate_types(fun, &expr.left, types);
+            back_propergate_types(fun, &expr.right, types);
+        }
+        ExpressionType::ParenthesizedExpression(expr) => {
+            back_propergate_types(fun, &expr.expression, types)
+        }
+        ExpressionType::IntLiteral(_) => {}
+        ExpressionType::Null => {}
+        ExpressionType::Bool(_) => {}
+        ExpressionType::ArrayExpression(_) => {}
+        ExpressionType::SliceExpression(_) => {}
+        ExpressionType::FunctionCall(_) => {}
+        ExpressionType::String(_) => {}
+    }
+}
+
 pub fn validate_var_declaration(
     fun: &Function,
     block: &Block,
@@ -300,6 +344,8 @@ pub fn validate_var_declaration(
                 types_to_string(&expr),
             ));
         }
+        back_propergate_types(fun, &var_declaration.value, &overlap);
+
         var_types = overlap;
     }
 
