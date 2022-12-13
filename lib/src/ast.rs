@@ -1,15 +1,15 @@
 use std::{
-    cell::RefCell,
     collections::HashMap,
     hash::Hash,
-    rc::{Rc, Weak},
+    ops::Range,
+    sync::{RwLock, Weak},
 };
 
 use tree_sitter::Node;
 
 use crate::{
     buildin::{Buildins, FunctionDeclaration},
-    types::SharedMut,
+    types::{Ptr, PtrMut},
     validation::TypeNarrowing,
 };
 
@@ -31,6 +31,24 @@ pub struct SourcePosition {
 impl SourcePosition {
     pub fn new(row: usize, column: usize) -> Self {
         SourcePosition { row, column }
+    }
+
+    pub fn to_byte_position(&self, source: &str) -> usize {
+        source
+            .split_terminator('\n')
+            .take(self.row + 1)
+            .enumerate()
+            .fold(0, |acc, (row, line)| {
+                if row < self.row {
+                    acc + line.as_bytes().len() + 1
+                } else {
+                    acc + line
+                        .char_indices()
+                        .nth(self.column)
+                        .map(|(byte_index, _)| byte_index)
+                        .unwrap_or(line.len())
+                }
+            })
     }
 }
 
@@ -67,6 +85,80 @@ impl SourceSpan {
             return false;
         }
         return true;
+    }
+
+    pub fn to_byte_range(&self, source: &str) -> (usize, usize) {
+        (
+            self.start.to_byte_position(source),
+            self.end.to_byte_position(source),
+        )
+        /*let mut position = 0;
+        let mut start = 0;
+        let mut end = 0;
+        for char in source.chars() {}
+
+        let mut found_start = false;
+        let mut found_end = false;
+        for (index, line) in source.lines().enumerate() {
+            if self.start.row < index {
+                start += line.bytes().len();
+                continue;
+            }
+            if self.end.row < index {
+                end += line.bytes().len();
+                continue;
+            }
+
+            if !found_start && self.start.row == index {
+                start += line
+                    .chars()
+                    .take(self.start.column)
+                    .fold(0, |agg, char| agg + char.len_utf8());
+                found_start = true;
+            }
+            if !found_end && self.end.row == index {
+                end += line
+                    .chars()
+                    .take(self.end.column + 1)
+                    .fold(0, |agg, char| agg + char.len_utf8());
+                found_end = true;
+            }
+            if found_start && found_end {
+                break;
+            }
+        }
+
+        (start, end)*/
+    }
+
+    pub fn to_char_range(&self, source: &str) -> (usize, usize) {
+        let mut start_char = 0;
+        let mut end_char = 0;
+        let mut found_start = false;
+        let mut found_end = false;
+        for (index, line) in source.split_terminator('\n').enumerate() {
+            if self.start.row > index {
+                start_char += line.len() + 1;
+                end_char += line.len() + 1;
+                continue;
+            }
+            if self.end.row > index {
+                end_char += line.len() + 1;
+                continue;
+            }
+            if !found_start && self.start.row == index {
+                start_char += self.start.column;
+                found_start = true;
+            }
+            if !found_end && self.end.row == index {
+                end_char += self.end.column;
+                found_end = true;
+            }
+            if found_start && found_end {
+                break;
+            }
+        }
+        (start_char, end_char)
     }
 }
 
@@ -113,8 +205,8 @@ impl NodeData {
 
 #[derive(Debug, Clone)]
 pub struct File {
-    pub functions: HashMap<String, Rc<Function>>,
-    pub struct_defs: HashMap<String, Rc<Struct>>,
+    pub functions: HashMap<String, Ptr<Function>>,
+    pub struct_defs: HashMap<String, Ptr<Struct>>,
 
     /// From validation:
     pub sum_types: HashMap<String, Vec<RefType>>,
@@ -153,7 +245,7 @@ pub struct Field {
 
 #[derive(Debug, Clone)]
 pub struct Function {
-    pub parent: Weak<RefCell<File>>,
+    pub parent: Weak<RwLock<File>>,
 
     pub node: NodeData,
 
@@ -162,11 +254,11 @@ pub struct Function {
 
     pub parameters: Vec<Parameter>,
     pub return_types: Option<Vec<RefType>>,
-    pub body: SharedMut<Block>,
+    pub body: PtrMut<Block>,
 }
 
 impl Function {
-    pub fn file(&self) -> SharedMut<File> {
+    pub fn file(&self) -> PtrMut<File> {
         self.parent.upgrade().unwrap()
     }
 
@@ -180,7 +272,7 @@ impl Function {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Block {
     pub parent: Option<BlockParent>,
 
@@ -188,7 +280,7 @@ pub struct Block {
 
     pub statements: Vec<Statement>,
 
-    pub vars: RefCell<HashMap<String, Rc<VarDeclaration>>>,
+    pub vars: RwLock<HashMap<String, Ptr<VarDeclaration>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -249,13 +341,13 @@ impl RefType {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Array {
-    pub types: Rc<Vec<RefType>>,
+    pub types: Ptr<Vec<RefType>>,
     pub length: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Slice {
-    pub types: Rc<Vec<RefType>>,
+    pub types: Ptr<Vec<RefType>>,
 }
 
 #[derive(Debug, Clone)]
@@ -265,7 +357,7 @@ pub struct ArrayExpression {
 
 #[derive(Debug, Clone)]
 pub struct SliceExpression {
-    pub operand: Rc<Expression>,
+    pub operand: Ptr<Expression>,
     pub start: Option<usize>,
     pub end: Option<usize>,
 }
@@ -273,27 +365,28 @@ pub struct SliceExpression {
 #[derive(Debug, Clone)]
 pub enum Statement {
     Expression(Expression),
-    VarDeclaration(Rc<VarDeclaration>),
+    VarDeclaration(Ptr<VarDeclaration>),
     Return(Option<Expression>),
-    IfStatement(SharedMut<IfStatement>),
+    IfStatement(PtrMut<IfStatement>),
 }
 
 #[derive(Debug, Clone)]
 pub struct VarDeclaration {
     pub node: NodeData,
     pub name: String,
+    pub name_node: NodeData,
     pub is_mutable: bool,
     pub is_reference: bool,
     pub types: Option<Vec<RefType>>,
     pub value: Expression,
 
-    pub resolved_types: RefCell<Option<Vec<RefType>>>,
+    pub resolved_types: PtrMut<Option<Vec<RefType>>>,
 }
 
 impl VarDeclaration {
     /// Either the resolved types or the d
     pub fn types(&self) -> Vec<RefType> {
-        match self.resolved_types.borrow().as_ref() {
+        match self.resolved_types.read().unwrap().as_ref() {
             Some(resolved_types) => resolved_types.clone(),
             None => self.types.clone().unwrap_or(vec![]),
         }
@@ -312,7 +405,7 @@ pub struct Expression {
     pub node: NodeData,
     pub r#type: ExpressionType,
 
-    pub resolved_types: RefCell<Option<Vec<RefType>>>,
+    pub resolved_types: PtrMut<Option<Vec<RefType>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -377,15 +470,15 @@ pub struct ParenthesizedExpression {
 
 #[derive(Debug, Clone)]
 pub enum IfAlternative {
-    Else(SharedMut<Block>),
-    If(SharedMut<IfStatement>),
+    Else(PtrMut<Block>),
+    If(PtrMut<IfStatement>),
 }
 
 #[derive(Debug, Clone)]
 pub struct IfStatement {
     pub node: NodeData,
     pub condition: Expression,
-    pub consequence: SharedMut<Block>,
+    pub consequence: PtrMut<Block>,
     pub alternative: Option<IfAlternative>,
 
     /// Type narrowing from the if contition
@@ -402,12 +495,12 @@ pub struct FileData<'a> {
 pub struct FileContext<'a> {
     pub root: Node<'a>,
     pub file_path: String,
-    pub source: String,
+    pub source: &'a String,
     pub errors: Vec<ASTError>,
 }
 
 impl<'a> FileContext<'a> {
-    pub fn new(root: Node<'a>, file_path: String, source: String) -> Self {
+    pub fn new(root: Node<'a>, file_path: String, source: &'a String) -> Self {
         FileContext {
             root,
             file_path,
@@ -416,14 +509,14 @@ impl<'a> FileContext<'a> {
         }
     }
 
-    pub fn parse_file(&mut self) -> SharedMut<File> {
+    pub fn parse_file(&mut self) -> PtrMut<File> {
         collect_errors(self.root, &self.file_path, &mut self.errors);
         parse_file(self.root, self)
     }
 }
 
-pub fn parse_file<'a>(node: Node<'a>, context: &mut FileContext<'a>) -> SharedMut<File> {
-    let file = Rc::new(RefCell::new(File {
+pub fn parse_file<'a>(node: Node<'a>, context: &mut FileContext<'a>) -> PtrMut<File> {
+    let file = Ptr::new(RwLock::new(File {
         functions: HashMap::new(),
         struct_defs: HashMap::new(),
 
@@ -435,14 +528,16 @@ pub fn parse_file<'a>(node: Node<'a>, context: &mut FileContext<'a>) -> SharedMu
         match child.kind() {
             "function_definition" => {
                 if let Some(fun) = parse_fun(context, &file, &child, &node) {
-                    file.borrow_mut()
+                    file.write()
+                        .unwrap()
                         .functions
                         .insert(fun.name.clone(), fun.clone());
                 };
             }
             "struct_definition" => {
                 if let Some(struct_def) = parse_struct(context, &child, &node) {
-                    file.borrow_mut()
+                    file.write()
+                        .unwrap()
                         .struct_defs
                         .insert(struct_def.name.clone(), struct_def);
                 }
@@ -457,10 +552,10 @@ pub fn parse_file<'a>(node: Node<'a>, context: &mut FileContext<'a>) -> SharedMu
 
 fn parse_fun<'a>(
     context: &mut FileContext<'a>,
-    file: &SharedMut<File>,
+    file: &PtrMut<File>,
     node: &Node<'a>,
     parent: &Node<'a>,
-) -> Option<Rc<Function>> {
+) -> Option<Ptr<Function>> {
     let name = child_by_field(&node, "name", context)?;
     let parameter_list = child_by_field(&node, "parameters", context)?;
     let return_type = match node.child_by_field_name("result".as_bytes()) {
@@ -470,8 +565,8 @@ fn parse_fun<'a>(
     let body_node: Node = child_by_field(&node, "body", context)?;
     let body = parse_block(context, body_node, node.clone());
 
-    let fun = Rc::new(Function {
-        parent: Rc::downgrade(file),
+    let fun = Ptr::new(Function {
+        parent: Ptr::downgrade(file),
         node: NodeData {
             id: node.id(),
             parent: parent.id(),
@@ -483,7 +578,7 @@ fn parse_fun<'a>(
         return_types: return_type,
         body: body.clone(),
     });
-    body.borrow_mut().parent = Some(BlockParent::Function(Rc::downgrade(&fun)));
+    body.write().unwrap().parent = Some(BlockParent::Function(Ptr::downgrade(&fun)));
     Some(fun)
 }
 
@@ -491,11 +586,11 @@ fn parse_struct<'a>(
     context: &mut FileContext<'a>,
     node: &Node<'a>,
     parent: &Node<'a>,
-) -> Option<Rc<Struct>> {
+) -> Option<Ptr<Struct>> {
     let name = child_by_field(&node, "name", context)?;
     let fields = child_by_field(&node, "fields", context)?;
     let fields = parse_struct_fields(context, &fields, node)?;
-    Some(Rc::new(Struct {
+    Some(Ptr::new(Struct {
         node: NodeData {
             id: node.id(),
             parent: parent.id(),
@@ -545,7 +640,7 @@ fn parse_block<'a>(
     context: &mut FileContext<'a>,
     node: Node<'a>,
     parent_node: Node<'a>,
-) -> SharedMut<Block> {
+) -> PtrMut<Block> {
     let mut statements: Vec<Statement> = Vec::new();
     for index in 1..node.child_count() - 1 {
         let statement_node = match child(&node, "statement", index, context) {
@@ -566,7 +661,7 @@ fn parse_block<'a>(
             "var_declaration" => {
                 match parse_var_declaration(context, statement_node) {
                     Some(statement) => {
-                        statements.push(Statement::VarDeclaration(Rc::new(statement)))
+                        statements.push(Statement::VarDeclaration(Ptr::new(statement)))
                     }
                     None => continue,
                 };
@@ -588,7 +683,7 @@ fn parse_block<'a>(
             _ => {}
         }
     }
-    Rc::new(RefCell::new(Block {
+    Ptr::new(RwLock::new(Block {
         parent: None,
         statements,
         node: NodeData {
@@ -596,7 +691,7 @@ fn parse_block<'a>(
             parent: parent_node.id(),
             span: SourceSpan::from_node(&node),
         },
-        vars: RefCell::new(HashMap::new()),
+        vars: RwLock::new(HashMap::new()),
     }))
 }
 
@@ -661,7 +756,7 @@ fn parse_expression<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Optio
     Some(Expression {
         node: NodeData::from_node(&node),
         r#type: expression_type,
-        resolved_types: RefCell::new(None),
+        resolved_types: Ptr::new(RwLock::new(None)),
     })
 }
 
@@ -767,7 +862,7 @@ fn parse_slice_expression<'a>(
     };
 
     Some(SliceExpression {
-        operand: Rc::new(parse_expression(context, &operand)?),
+        operand: Ptr::new(parse_expression(context, &operand)?),
         start,
         end,
     })
@@ -818,12 +913,13 @@ fn parse_var_declaration<'a>(
     Some(VarDeclaration {
         node: NodeData::from_node(&node),
         name: node_text(&name, context)?,
+        name_node: NodeData::from_node(&name),
         is_mutable,
         is_reference,
         types: var_type,
         value,
 
-        resolved_types: RefCell::new(None),
+        resolved_types: Ptr::new(RwLock::new(None)),
     })
 }
 
@@ -842,7 +938,7 @@ fn parse_if<'a>(
     context: &mut FileContext<'a>,
     node: Node<'a>,
     parent: Node<'a>,
-) -> Option<SharedMut<IfStatement>> {
+) -> Option<PtrMut<IfStatement>> {
     let condition = child_by_field(&node, "condition", context)?;
     let consequence = child_by_field(&node, "consequence", context)?;
     let alternative = node.child_by_field_name("alternative".as_bytes());
@@ -868,7 +964,7 @@ fn parse_if<'a>(
         }
         None => None,
     };
-    Some(Rc::new(RefCell::new(IfStatement {
+    Some(Ptr::new(RwLock::new(IfStatement {
         node: NodeData::from_node(&node),
         condition,
         consequence,
@@ -1003,7 +1099,7 @@ fn parse_array<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Arr
     let length = parse_usize(context, &length)?;
     let types = parse_types(context, &element)?;
     Some(Array {
-        types: Rc::new(types.into_iter().collect()),
+        types: Ptr::new(types.into_iter().collect()),
         length,
     })
 }
@@ -1012,7 +1108,7 @@ fn parse_slice<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Sli
     let element = child_by_field(&node, "element", context)?;
     let types = parse_types(context, &element)?;
     Some(Slice {
-        types: Rc::new(types.into_iter().collect()),
+        types: Ptr::new(types.into_iter().collect()),
     })
 }
 

@@ -1,13 +1,19 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    collections::HashMap,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
 use anyhow::Result;
 use czlanglib::{
-    ast::SourcePosition,
-    query::{query, QueryResult},
+    ast::{SourcePosition, SourceSpan},
+    init,
+    project::{FileChange, Project},
+    query::{find_in_file, QueryResult},
     types::types_to_string,
     validation::LookupResult,
 };
-use lsp_server::{Connection, Message, RequestId};
+use lsp_server::{Connection, Message, Notification, RequestId};
 use lsp_types::{notification::*, request::*, *};
 use serde::Serialize;
 use threadpool::ThreadPool;
@@ -26,6 +32,7 @@ pub struct FeatureRequest<P> {
 #[derive(Clone)]
 struct ServerFork {
     connection: Arc<Connection>,
+    project: Arc<Mutex<Project>>,
 }
 
 impl ServerFork {
@@ -37,6 +44,7 @@ impl ServerFork {
 pub struct Server {
     connection: Arc<Connection>,
     pool: ThreadPool,
+    project: Arc<Mutex<Project>>,
 }
 
 impl Server {
@@ -44,6 +52,9 @@ impl Server {
         Self {
             connection: Arc::new(connection),
             pool: threadpool::Builder::new().build(),
+            project: Arc::new(Mutex::new(Project {
+                open_files: HashMap::new(),
+            })),
         }
     }
 
@@ -55,6 +66,7 @@ impl Server {
     fn fork(&self) -> ServerFork {
         ServerFork {
             connection: self.connection.clone(),
+            project: self.project.clone(),
         }
     }
 
@@ -102,6 +114,8 @@ impl Server {
     }
 
     fn initialize(&mut self) -> Result<()> {
+        init();
+
         let (id, params) = self.connection.initialize_start()?;
         let params: InitializeParams = serde_json::from_value(params)?;
 
@@ -133,12 +147,38 @@ impl Server {
 
     fn did_open(&mut self, mut params: DidOpenTextDocumentParams) -> Result<()> {
         normalize_uri(&mut params.text_document.uri);
+        let url: String = params.text_document.uri.into();
+
+        let mut project = self.project.lock().unwrap();
+        project.open_file(url.clone(), params.text_document.text);
+        project.validate_file(&url);
 
         Ok(())
     }
 
     fn did_change(&mut self, mut params: DidChangeTextDocumentParams) -> Result<()> {
         normalize_uri(&mut params.text_document.uri);
+        let url: String = params.text_document.uri.into();
+
+        let changes = params
+            .content_changes
+            .into_iter()
+            .map(|c| FileChange {
+                range: c.range.map(|r| SourceSpan {
+                    start: SourcePosition {
+                        row: r.start.line as usize,
+                        column: r.start.character as usize,
+                    },
+                    end: SourcePosition {
+                        row: r.end.line as usize,
+                        column: r.end.character as usize,
+                    },
+                }),
+                text: c.text,
+            })
+            .collect::<Vec<_>>();
+        let mut project = self.project.lock().unwrap();
+        project.edit_file(url.clone(), changes);
 
         Ok(())
     }
@@ -152,6 +192,9 @@ impl Server {
 
     fn did_close(&mut self, mut params: DidCloseTextDocumentParams) -> Result<()> {
         normalize_uri(&mut params.text_document.uri);
+
+        let mut project = self.project.lock().unwrap();
+        project.close_file(&params.text_document.uri.into());
 
         Ok(())
     }
@@ -211,24 +254,34 @@ impl Server {
 
         let position = params.text_document_position_params.position;
 
+        let project = self.project.clone();
         self.handle_feature_request(id, params, uri.clone(), move |request| {
-            let path = uri.to_file_path().unwrap();
-            let Some(result) = query(&path, SourcePosition::new(position.line as usize, position.character as usize)).unwrap() else { return None };
+            let project = project.lock().unwrap();
+            let uri: String = uri.as_ref().clone().into();
+            let file = project.open_files.get(&uri);
+            let Some(file) = file else {return None};
+
+            let position = SourcePosition::new(position.line as usize, position.character as usize);
+            let Some(result) = find_in_file(file.file.clone(), position) else { return None };
 
             let result = match result {
                 QueryResult::Function(fun) => {
                     format!("fun {}", &fun.name)
-                },
-                QueryResult::Parameter(parameter) => format!("{}", types_to_string(&parameter.types)),
-                QueryResult::Identifier(lookup) => {
-                    match lookup {
-                        LookupResult::VarDeclaration(var) => format!("identifier: {} {}", var.name, types_to_string(&var.types())),
-                        LookupResult::Parameter(param) => format!("{} {}", param.name, types_to_string(&param.types)),
+                }
+                QueryResult::Parameter(parameter) => {
+                    format!("{}", types_to_string(&parameter.types))
+                }
+                QueryResult::Identifier(lookup) => match lookup {
+                    LookupResult::VarDeclaration(var) => {
+                        format!("identifier: {} {}", var.name, types_to_string(&var.types()))
+                    }
+                    LookupResult::Parameter(param) => {
+                        format!("{} {}", param.name, types_to_string(&param.types))
                     }
                 },
                 QueryResult::VarDeclaration(var) => {
                     format!("var {} {}", var.name, types_to_string(&var.types()))
-                },
+                }
                 QueryResult::FunctionCall(call) => {
                     format!("fun {}", call.name)
                 }

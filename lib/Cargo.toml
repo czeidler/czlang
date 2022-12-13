@@ -15,5 +15,9 @@ path = "src/lib.rs"
 tree-sitter = "0.20.9"
 anyhow = "1.0.54"
 
+log-panics="2"
+flexi_logger = "0.24"
+log = "0.4"
+
 [build-dependencies]
 cc="*"

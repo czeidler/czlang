@@ -1,4 +1,4 @@
-use std::{cell::RefCell, io::Read, path::PathBuf, rc::Rc};
+use std::{io::Read, path::PathBuf};
 
 use anyhow::Ok;
 
@@ -8,53 +8,21 @@ use crate::{
         Parameter, SourcePosition, Statement, VarDeclaration,
     },
     tree_sitter::parse,
+    types::{Ptr, PtrMut},
     validation::{lookup_identifier, validate, LookupResult},
 };
 
 #[derive(Debug, Clone)]
 pub enum QueryResult {
-    Function(Rc<Function>),
+    Function(Ptr<Function>),
     FunctionCall(FunctionCall),
     Parameter(Parameter),
     Identifier(LookupResult),
-    VarDeclaration(Rc<VarDeclaration>),
+    VarDeclaration(Ptr<VarDeclaration>),
 }
 
-pub fn query(
-    path: &PathBuf,
-    position: SourcePosition,
-) -> Result<Option<QueryResult>, anyhow::Error> {
-    let mut file = std::fs::File::open(path)?;
-    let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer)?;
-
-    let source_code = String::from_utf8(buffer)?;
-    let tree = parse(&source_code);
-    let root_node = tree.root_node();
-
-    let mut file_context = FileContext::new(
-        root_node.clone(),
-        path.to_string_lossy().to_string(),
-        source_code,
-    );
-    let file = file_context.parse_file();
-    for error in &file_context.errors {
-        print_err(&error, &file_context.source);
-    }
-    if !file_context.errors.is_empty() {
-        return Err(anyhow::Error::msg(format!(
-            "{} compile error(s)",
-            file_context.errors.len()
-        )));
-    }
-
-    let val_result = validate(&file);
-
-    Ok(find_in_file(file, position))
-}
-
-fn find_in_file(file: Rc<RefCell<File>>, position: SourcePosition) -> Option<QueryResult> {
-    let file = file.as_ref().borrow();
+pub fn find_in_file(file: PtrMut<File>, position: SourcePosition) -> Option<QueryResult> {
+    let file = file.read().unwrap();
     for (_, fun) in &file.functions {
         if !fun.node.contains(position) {
             continue;
@@ -66,7 +34,7 @@ fn find_in_file(file: Rc<RefCell<File>>, position: SourcePosition) -> Option<Que
     None
 }
 
-fn find_in_function(fun: &Rc<Function>, position: SourcePosition) -> Option<QueryResult> {
+fn find_in_function(fun: &Ptr<Function>, position: SourcePosition) -> Option<QueryResult> {
     if fun.name_node.contains(position) {
         return Some(QueryResult::Function(fun.clone()));
     }
@@ -78,17 +46,20 @@ fn find_in_function(fun: &Rc<Function>, position: SourcePosition) -> Option<Quer
         return Some(QueryResult::Parameter(param.clone()));
     }
 
-    let body = fun.body.borrow();
+    let body = fun.body.read().unwrap();
     for statement in &body.statements {
         match statement {
             Statement::VarDeclaration(var) => {
-                if !var.node.contains(position) {
-                    continue;
+                if var.name_node.contains(position) {
+                    return Some(QueryResult::VarDeclaration(var.clone()));
                 }
-                return Some(QueryResult::VarDeclaration(var.clone()));
+                if var.value.node.contains(position) {
+                    return find_in_expression(fun, &var.value, position);
+                }
+                continue;
             }
             Statement::IfStatement(if_statement) => {
-                let if_statement = if_statement.borrow();
+                let if_statement = if_statement.read().unwrap();
                 if !if_statement.node.contains(position) {
                     continue;
                 }
@@ -117,7 +88,7 @@ fn find_in_function(fun: &Rc<Function>, position: SourcePosition) -> Option<Quer
 }
 
 fn find_in_expression(
-    fun: &Rc<Function>,
+    fun: &Ptr<Function>,
     expression: &Expression,
     position: SourcePosition,
 ) -> Option<QueryResult> {

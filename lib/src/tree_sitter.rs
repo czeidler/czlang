@@ -11,12 +11,12 @@ pub fn language() -> Language {
     unsafe { tree_sitter_czlang() }
 }
 
-pub fn parse(source_code: &str) -> Tree {
+pub fn parse(source_code: &str, old_tree: Option<&Tree>) -> Tree {
     let mut parser = tree_sitter::Parser::new();
     parser
         .set_language(language())
         .expect("Error loading czlang language");
-    let tree = parser.parse(&source_code, None).unwrap();
+    let tree = parser.parse(&source_code, old_tree).unwrap();
     tree
 }
 
@@ -29,13 +29,13 @@ mod tests {
 
     #[test]
     fn test_can_load_grammar() {
-        let source_code = "fun test(test bool, dsf bool) bool { println(\"Hello world\") }";
-        let tree = parse(source_code);
+        let source_code =
+            "fun test(test bool, dsf bool) bool { println(\"Hello world\") }".to_string();
+        let tree = parse(&source_code, None);
         let root_node = tree.root_node();
         println!("Tree sitter {}", root_node.to_sexp());
 
-        let mut file_context =
-            FileContext::new(root_node, "test".to_string(), source_code.to_string());
+        let mut file_context = FileContext::new(root_node, "test".to_string(), &source_code);
         let file = file_context.parse_file();
 
         println!("AST: {:?}", file);

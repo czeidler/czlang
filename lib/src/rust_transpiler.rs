@@ -1,8 +1,6 @@
-use std::cell::RefCell;
 use std::fs::create_dir_all;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 
 use crate::ast::{
     print_err, Array, ArrayExpression, BinaryOperator, Block, Expression, ExpressionType, Field,
@@ -12,6 +10,7 @@ use crate::ast::{
 };
 use crate::buildin::Buildins;
 use crate::tree_sitter::parse;
+use crate::types::{Ptr, PtrMut};
 use crate::validation::{sum_type_name, validate, TypeNarrowing};
 
 struct Writer<'a> {
@@ -165,7 +164,7 @@ impl RustTranspiler {
         &self,
         expression: &Expression,
         target: Option<&Vec<RefType>>,
-        fun: &Rc<Function>,
+        fun: &Ptr<Function>,
         writer: &mut Writer,
     ) {
         match &expression.r#type {
@@ -209,7 +208,7 @@ impl RustTranspiler {
                     // the target is a simple type, i.e. we can directly assign the number
                     writer.write(&format!("{}", number));
                 } else {
-                    let resolved_type = expression.resolved_types.borrow();
+                    let resolved_type = expression.resolved_types.read().unwrap();
                     let resolved_type = resolved_type.clone().unwrap_or(vec![]);
                     if resolved_type.len() == 1 {
                         writer.write(&sum_type_name(&target));
@@ -292,7 +291,7 @@ impl RustTranspiler {
         &self,
         array: &ArrayExpression,
         target: Option<&Vec<RefType>>,
-        fun: &Rc<Function>,
+        fun: &Ptr<Function>,
         writer: &mut Writer,
     ) {
         writer.write("[");
@@ -310,7 +309,7 @@ impl RustTranspiler {
         &self,
         slice: &SliceExpression,
         target: Option<&Vec<RefType>>,
-        fun: &Rc<Function>,
+        fun: &Ptr<Function>,
         writer: &mut Writer,
     ) {
         self.transpile_expression(&slice.operand, target, fun, writer);
@@ -328,7 +327,7 @@ impl RustTranspiler {
     fn transpile_buildin_function_call(
         &self,
         call: &FunctionCall,
-        fun: &Rc<Function>,
+        fun: &Ptr<Function>,
         writer: &mut Writer,
     ) -> bool {
         let buildin = match self.buildins.functions.get(&call.name) {
@@ -368,7 +367,7 @@ impl RustTranspiler {
     fn transpile_function_call(
         &self,
         call: &FunctionCall,
-        fun: &Rc<Function>,
+        fun: &Ptr<Function>,
         writer: &mut Writer,
     ) {
         if self.transpile_buildin_function_call(call, fun, writer) {
@@ -380,7 +379,7 @@ impl RustTranspiler {
 
         // TODO make this a query method:
         let file = fun.file();
-        let file = file.borrow();
+        let file = file.read().unwrap();
         let function = file.functions.get(&call.name).unwrap();
 
         let mut iter = call.arguments.iter().enumerate().peekable();
@@ -398,7 +397,7 @@ impl RustTranspiler {
     fn transpile_var_declaration(
         &self,
         var_declaration: &VarDeclaration,
-        fun: &Rc<Function>,
+        fun: &Ptr<Function>,
         writer: &mut Writer,
     ) {
         writer.write("let ");
@@ -431,7 +430,7 @@ impl RustTranspiler {
     fn transpile_return_statement(
         &self,
         expression: &Option<Expression>,
-        fun: &Rc<Function>,
+        fun: &Ptr<Function>,
         writer: &mut Writer,
     ) {
         writer.write("return");
@@ -487,7 +486,7 @@ impl RustTranspiler {
     fn transpile_if_statement(
         &self,
         if_statement: &IfStatement,
-        fun: &Rc<Function>,
+        fun: &Ptr<Function>,
         writer: &mut Writer,
     ) {
         let target_types = vec![RefType {
@@ -518,15 +517,15 @@ impl RustTranspiler {
                 }
                 IfAlternative::If(if_statement) => {
                     writer.write(" else ");
-                    let statement = if_statement.borrow();
+                    let statement = if_statement.read().unwrap();
                     self.transpile_if_statement(&statement, fun, writer);
                 }
             }
         }
     }
 
-    fn transpile_block(&self, block: &Rc<RefCell<Block>>, fun: &Rc<Function>, writer: &mut Writer) {
-        for statement in &block.borrow().statements {
+    fn transpile_block(&self, block: &PtrMut<Block>, fun: &Ptr<Function>, writer: &mut Writer) {
+        for statement in &block.read().unwrap().statements {
             match statement {
                 Statement::Expression(expr) => {
                     self.transpile_expression(expr, None, fun, writer);
@@ -542,7 +541,7 @@ impl RustTranspiler {
                     writer.new_line();
                 }
                 Statement::IfStatement(if_statement) => {
-                    let statement = if_statement.borrow();
+                    let statement = if_statement.read().unwrap();
                     self.transpile_if_statement(&statement, fun, writer);
                     writer.new_line();
                 }
@@ -550,7 +549,7 @@ impl RustTranspiler {
         }
     }
 
-    fn transpile_function(&self, fun: &Rc<Function>, writer: &mut Writer) {
+    fn transpile_function(&self, fun: &Ptr<Function>, writer: &mut Writer) {
         writer.write(&format!("fn {}", fun.name));
         self.transpile_parameters(&fun.parameters, writer);
         if let Some(return_type) = &fun.return_types {
@@ -596,8 +595,8 @@ impl RustTranspiler {
         writer.write("}");
     }
 
-    pub fn transpile_file(&self, file: &Rc<RefCell<File>>, writer: &mut Writer) {
-        let file = file.borrow();
+    pub fn transpile_file(&self, file: &PtrMut<File>, writer: &mut Writer) {
+        let file = file.read().unwrap();
         for (name, types) in &file.sum_types {
             self.transpile_sum_type_def(name, types, writer);
             writer.new_line();
@@ -618,7 +617,7 @@ impl RustTranspiler {
     }
 }
 
-pub fn transpile(file: &Rc<RefCell<File>>, outfile: &PathBuf) -> Result<(), io::Error> {
+pub fn transpile(file: &PtrMut<File>, outfile: &PathBuf) -> Result<(), io::Error> {
     let mut outfile = std::fs::File::create(outfile)?;
 
     let mut buffer = "".to_string();
@@ -640,11 +639,11 @@ pub fn transpile_project(project_dir: &Path) -> Result<(), anyhow::Error> {
     main_file.read_to_end(&mut buffer)?;
 
     let source_code = String::from_utf8(buffer)?;
-    let tree = parse(&source_code);
+    let tree = parse(&source_code, None);
     let root_node = tree.root_node();
 
     let file_path = main_file_path.to_string_lossy();
-    let mut file_context = FileContext::new(root_node.clone(), file_path.to_string(), source_code);
+    let mut file_context = FileContext::new(root_node.clone(), file_path.to_string(), &source_code);
     let file = file_context.parse_file();
     for error in &file_context.errors {
         print_err(&error, &file_context.source);

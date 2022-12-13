@@ -53,11 +53,11 @@ pub fn validate_project<'a>(test_dir: &str, file_content: &str) -> Result<(), an
     main_file.read_to_end(&mut buffer)?;
 
     let source_code = String::from_utf8(buffer)?;
-    let tree = parse(&source_code);
+    let tree = parse(&source_code, None);
     let root_node = tree.root_node();
 
     let file_path = main_file_path.to_string_lossy();
-    let mut file_context = FileContext::new(root_node.clone(), file_path.to_string(), source_code);
+    let mut file_context = FileContext::new(root_node.clone(), file_path.to_string(), &source_code);
     let file = Rc::new(file_context.parse_file());
     for error in &file_context.errors {
         print_err(&error, &file_context.source);

@@ -1,8 +1,13 @@
-use std::{cell::RefCell, fmt, rc::Rc, vec};
+use std::{
+    fmt,
+    sync::{Arc, RwLock},
+    vec,
+};
 
 use crate::ast::{Array, RefType, Slice, Type};
 
-pub type SharedMut<T> = Rc<RefCell<T>>;
+pub type PtrMut<T> = Arc<RwLock<T>>;
+pub type Ptr<T> = Arc<T>;
 
 pub fn types_to_string(types: &Vec<RefType>) -> String {
     let parts: Vec<String> = types.into_iter().map(|it| format!("{:#}", it)).collect();
@@ -102,7 +107,7 @@ pub fn intersection(left_types: &Vec<RefType>, right_types: &Vec<RefType>) -> Ve
                         output.push(RefType {
                             is_reference: left.is_reference,
                             r#type: Type::Array(Array {
-                                types: Rc::new(inter),
+                                types: Ptr::new(inter),
                                 length: l.length,
                             }),
                         });
@@ -116,7 +121,7 @@ pub fn intersection(left_types: &Vec<RefType>, right_types: &Vec<RefType>) -> Ve
                     output.push(RefType {
                         is_reference: left.is_reference,
                         r#type: Type::Slice(Slice {
-                            types: Rc::new(inter),
+                            types: Ptr::new(inter),
                         }),
                     });
                 }
@@ -158,11 +163,11 @@ pub fn intersection(left_types: &Vec<RefType>, right_types: &Vec<RefType>) -> Ve
 
 #[cfg(test)]
 mod tests {
-    use std::{rc::Rc, vec};
+    use std::vec;
 
     use crate::{
         ast::{Array, RefType, Type},
-        types::{intersection, is_equal},
+        types::{intersection, is_equal, Ptr},
     };
 
     #[test]
@@ -172,7 +177,7 @@ mod tests {
             is_reference: false,
             r#type: Type::Array(Array {
                 length: 3,
-                types: Rc::new(vec![RefType {
+                types: Ptr::new(vec![RefType {
                     is_reference: false,
                     r#type: Type::I32,
                 }]),
@@ -182,7 +187,7 @@ mod tests {
             is_reference: false,
             r#type: Type::Array(Array {
                 length: 3,
-                types: Rc::new(vec![
+                types: Ptr::new(vec![
                     RefType {
                         is_reference: false,
                         r#type: Type::I32,
@@ -206,12 +211,12 @@ mod tests {
             is_reference: false,
             r#type: Type::Array(Array {
                 length: 2,
-                types: Rc::new(vec![
+                types: Ptr::new(vec![
                     RefType {
                         is_reference: false,
                         r#type: Type::Array(Array {
                             length: 3,
-                            types: Rc::new(vec![RefType {
+                            types: Ptr::new(vec![RefType {
                                 is_reference: false,
                                 r#type: Type::I32,
                             }]),
@@ -229,12 +234,12 @@ mod tests {
             is_reference: false,
             r#type: Type::Array(Array {
                 length: 2,
-                types: Rc::new(vec![
+                types: Ptr::new(vec![
                     RefType {
                         is_reference: false,
                         r#type: Type::Array(Array {
                             length: 3,
-                            types: Rc::new(vec![
+                            types: Ptr::new(vec![
                                 RefType {
                                     is_reference: false,
                                     r#type: Type::I32,
@@ -278,7 +283,7 @@ mod tests {
                 is_reference: false,
                 r#type: Type::Array(Array {
                     length: 2,
-                    types: Rc::new(vec![
+                    types: Ptr::new(vec![
                         RefType {
                             is_reference: false,
                             r#type: Type::Bool,
@@ -301,7 +306,7 @@ mod tests {
                 is_reference: false,
                 r#type: Type::Array(Array {
                     length: 2,
-                    types: Rc::new(vec![RefType {
+                    types: Ptr::new(vec![RefType {
                         is_reference: false,
                         r#type: Type::Bool,
                     }]),
@@ -325,7 +330,7 @@ mod tests {
                     is_reference: false,
                     r#type: Type::Array(Array {
                         length: 2,
-                        types: Rc::new(vec![RefType {
+                        types: Ptr::new(vec![RefType {
                             is_reference: false,
                             r#type: Type::Bool,
                         }]),
@@ -343,7 +348,7 @@ mod tests {
             is_reference: false,
             r#type: Type::Array(Array {
                 length: 2,
-                types: Rc::new(vec![
+                types: Ptr::new(vec![
                     RefType {
                         is_reference: false,
                         r#type: Type::I32,
@@ -360,7 +365,7 @@ mod tests {
             is_reference: false,
             r#type: Type::Array(Array {
                 length: 2,
-                types: Rc::new(vec![RefType {
+                types: Ptr::new(vec![RefType {
                     is_reference: false,
                     r#type: Type::Unresolved(vec![
                         RefType::value(Type::I32),
@@ -377,7 +382,7 @@ mod tests {
                 is_reference: false,
                 r#type: Type::Array(Array {
                     length: 2,
-                    types: Rc::new(vec![RefType {
+                    types: Ptr::new(vec![RefType {
                         is_reference: false,
                         r#type: Type::Unresolved(vec![
                             RefType::value(Type::I32),

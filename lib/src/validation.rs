@@ -1,22 +1,28 @@
-use std::{cell::RefCell, rc::Rc};
-
 use crate::{
     ast::{
         Array, BinaryExpression, BinaryOperator, Block, Expression, ExpressionType, File, Function,
         IfAlternative, IfStatement, Parameter, RefType, Slice, Statement, Type, UnaryOperator,
         VarDeclaration,
     },
-    types::{intersection, types_to_string},
+    types::{intersection, types_to_string, Ptr, PtrMut},
 };
 
 #[derive(Debug, Clone)]
 pub enum LookupResult {
-    VarDeclaration(Rc<VarDeclaration>),
+    VarDeclaration(Ptr<VarDeclaration>),
     Parameter(Parameter),
 }
 
 pub fn lookup_identifier(fun: &Function, identifier: &String) -> Option<LookupResult> {
-    if let Some(var) = fun.body.borrow().vars.borrow().get(identifier) {
+    if let Some(var) = fun
+        .body
+        .read()
+        .unwrap()
+        .vars
+        .read()
+        .unwrap()
+        .get(identifier)
+    {
         return Some(LookupResult::VarDeclaration(var.clone()));
     }
     if let Some(param) = (&fun.parameters)
@@ -104,14 +110,14 @@ pub fn expression_type(fun: &Function, expression: &Expression) -> Result<Vec<Re
         ExpressionType::ArrayExpression(array) => vec![RefType {
             is_reference: false,
             r#type: Type::Array(Array {
-                types: Rc::new(validate_expression_list(fun, &array.expressions)?),
+                types: Ptr::new(validate_expression_list(fun, &array.expressions)?),
                 length: array.expressions.len(),
             }),
         }],
         ExpressionType::SliceExpression(slice) => vec![RefType {
             is_reference: false,
             r#type: Type::Slice(Slice {
-                types: Rc::new(validate_expression_list(
+                types: Ptr::new(validate_expression_list(
                     fun,
                     &vec![slice.operand.as_ref().clone()],
                 )?),
@@ -119,7 +125,7 @@ pub fn expression_type(fun: &Function, expression: &Expression) -> Result<Vec<Re
         }],
         ExpressionType::FunctionCall(fun_call) => {
             let file = fun.file();
-            let file = file.borrow();
+            let file = file.read().unwrap();
             let fun_declaration = match file.lookup_function(&fun_call.name) {
                 Some(fun) => fun,
                 None => return Err(format!("No fun with name {} found", fun_call.name)),
@@ -143,7 +149,7 @@ pub fn expression_type(fun: &Function, expression: &Expression) -> Result<Vec<Re
                         fun_call.name, arg_types, parameter.types
                     ));
                 }
-                let mut m = arg.resolved_types.borrow_mut();
+                let mut m = arg.resolved_types.write().unwrap();
                 *m = Some(intersection);
             }
 
@@ -281,7 +287,7 @@ fn back_propergate_types(fun: &Function, expression: &Expression, types: &Vec<Re
                     // follow the back propergation further
                     back_propergate_types(fun, &var_declaration.value, &types);
                     // update resolved types
-                    *(var_declaration.resolved_types.borrow_mut()) = Some(types);
+                    *(var_declaration.resolved_types.write().unwrap()) = Some(types);
                 }
                 LookupResult::Parameter(_) => {}
             }
@@ -307,7 +313,7 @@ fn back_propergate_types(fun: &Function, expression: &Expression, types: &Vec<Re
 pub fn validate_var_declaration(
     fun: &Function,
     block: &Block,
-    var_declaration: Rc<VarDeclaration>,
+    var_declaration: Ptr<VarDeclaration>,
 ) -> Result<(), String> {
     let mut var_types = vec![];
     if let Some(types) = &var_declaration.types {
@@ -321,7 +327,8 @@ pub fn validate_var_declaration(
         // Add sum type
         if var_types.len() > 1 {
             fun.file()
-                .borrow_mut()
+                .write()
+                .unwrap()
                 .sum_types
                 .insert(sum_type_name(&var_types), var_types.clone());
         }
@@ -347,11 +354,12 @@ pub fn validate_var_declaration(
         var_types = overlap;
     }
 
-    *var_declaration.resolved_types.borrow_mut() = Some(var_types);
+    *var_declaration.resolved_types.write().unwrap() = Some(var_types);
 
     if let Some(_) = block
         .vars
-        .borrow_mut()
+        .write()
+        .unwrap()
         .insert(var_declaration.name.clone(), var_declaration.clone())
     {
         return Err(format!(
@@ -405,11 +413,8 @@ pub fn validate_statement(
     Ok(())
 }
 
-fn validate_if_statement(
-    fun: &Function,
-    if_statement: &Rc<RefCell<IfStatement>>,
-) -> Result<(), String> {
-    let mut statement = if_statement.borrow_mut();
+fn validate_if_statement(fun: &Function, if_statement: &PtrMut<IfStatement>) -> Result<(), String> {
+    let mut statement = if_statement.write().unwrap();
     if let Some(binary) = match &statement.condition.r#type {
         ExpressionType::BinaryExpression(binary) => Some(binary),
         _ => None,
@@ -430,8 +435,8 @@ fn validate_if_statement(
     Ok(())
 }
 
-fn validate_block(fun: &Function, block: &Rc<RefCell<Block>>) -> Result<(), String> {
-    let block = block.borrow();
+fn validate_block(fun: &Function, block: &PtrMut<Block>) -> Result<(), String> {
+    let block = block.read().unwrap();
     for statement in &block.statements {
         validate_statement(fun, &block, statement)?;
     }
@@ -444,7 +449,8 @@ pub fn validate_fun(fun: &Function) -> Result<(), String> {
         // Add sum type
         if par_ref.types.len() > 1 {
             fun.file()
-                .borrow_mut()
+                .write()
+                .unwrap()
                 .sum_types
                 .insert(sum_type_name(&par_ref.types), par_ref.types.clone());
         }
@@ -456,8 +462,8 @@ pub fn validate_fun(fun: &Function) -> Result<(), String> {
     Ok(())
 }
 
-pub fn validate(file: &Rc<RefCell<File>>) -> Result<(), String> {
-    let functions = file.borrow().functions.clone();
+pub fn validate(file: &PtrMut<File>) -> Result<(), String> {
+    let functions = file.read().unwrap().functions.clone();
     for (_, fun) in &functions {
         validate_fun(fun)?;
     }
