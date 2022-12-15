@@ -163,16 +163,24 @@ impl SourceSpan {
 }
 
 #[derive(Debug, Clone)]
-pub struct ASTError {
+pub enum LangErrorKind {
+    SyntaxError,
+    TypeError,
+}
+
+#[derive(Debug, Clone)]
+pub struct LangError {
+    pub kind: LangErrorKind,
     pub node: NodeData,
     pub msg: String,
     /// file path
     pub file_path: String,
 }
 
-impl ASTError {
-    fn from_node(node: &Node, file_path: &str, msg: &str) -> Self {
-        ASTError {
+impl LangError {
+    fn syntax_err(node: &Node, file_path: &str, msg: &str) -> Self {
+        LangError {
+            kind: LangErrorKind::SyntaxError,
             node: NodeData::from_node(node),
             msg: msg.to_string(),
             file_path: file_path.to_string(),
@@ -494,7 +502,7 @@ pub struct FileContext<'a> {
     pub root: Node<'a>,
     pub file_path: String,
     pub source: &'a String,
-    pub errors: Vec<ASTError>,
+    pub errors: Vec<LangError>,
 }
 
 impl<'a> FileContext<'a> {
@@ -743,7 +751,7 @@ fn parse_expression<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Optio
         }
         "function_call" => ExpressionType::FunctionCall(parse_function_call(context, &node)?),
         _ => {
-            context.errors.push(ASTError::from_node(
+            context.errors.push(LangError::syntax_err(
                 node,
                 &context.file_path,
                 &format!("Unknown expression kind: {}", node.kind()),
@@ -770,7 +778,7 @@ fn parse_unary_expression<'a>(
         "&" => UnaryOperator::Reference,
         "typeof" => UnaryOperator::TypeOf,
         unknown => {
-            context.errors.push(ASTError::from_node(
+            context.errors.push(LangError::syntax_err(
                 node,
                 &context.file_path,
                 &format!("Unknown unary operator: {}", unknown),
@@ -805,7 +813,7 @@ fn parse_binary_expression<'a>(
         "&&" => BinaryOperator::And,
         "||" => BinaryOperator::Or,
         unknown => {
-            context.errors.push(ASTError::from_node(
+            context.errors.push(LangError::syntax_err(
                 node,
                 &context.file_path,
                 &format!("Unknown binary operator: {}", unknown),
@@ -1023,7 +1031,7 @@ fn parse_type<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Type
                 "u32" => Type::U32,
                 "null" => Type::Null,
                 _ => {
-                    context.errors.push(ASTError::from_node(
+                    context.errors.push(LangError::syntax_err(
                         node,
                         &context.file_path,
                         &format!("Unsupported primitve type: {}", type_text),
@@ -1039,7 +1047,7 @@ fn parse_type<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Type
         "array_type" => Type::Array(parse_array(context, &node)?),
         "slice_type" => Type::Slice(parse_slice(context, &node)?),
         _ => {
-            context.errors.push(ASTError::from_node(
+            context.errors.push(LangError::syntax_err(
                 node,
                 &context.file_path,
                 &format!("Unsupported type: {}", node.kind()),
@@ -1062,7 +1070,7 @@ fn parse_types<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Vec
             let mut types = parse_types(context, &left)?;
             for t in parse_types(context, &right)? {
                 if types.contains(&t) {
-                    context.errors.push(ASTError::from_node(
+                    context.errors.push(LangError::syntax_err(
                         node,
                         &context.file_path,
                         &format!("Duplicated sum type: {:?}", t),
@@ -1132,7 +1140,7 @@ fn node_text<'a>(node: &Node, context: &mut FileContext<'a>) -> Option<String> {
     let text = node
         .utf8_text(context.source.as_bytes())
         .map_err(|err| {
-            context.errors.push(ASTError::from_node(
+            context.errors.push(LangError::syntax_err(
                 node,
                 &context.file_path,
                 &format!("{}", err),
@@ -1153,7 +1161,7 @@ fn child<'a>(
     match node.child(index) {
         Some(node) => Some(node),
         None => {
-            context.errors.push(ASTError::from_node(
+            context.errors.push(LangError::syntax_err(
                 &node,
                 &context.file_path,
                 &format!("{} expected", name),
@@ -1171,7 +1179,7 @@ fn child_by_field<'a>(
     match node.child_by_field_name(field.as_bytes()) {
         Some(node) => Some(node),
         None => {
-            context.errors.push(ASTError::from_node(
+            context.errors.push(LangError::syntax_err(
                 &node,
                 &context.file_path,
                 &format!("{} field expected in parser tree", field),
@@ -1186,7 +1194,7 @@ fn parse_usize<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<usi
     string
         .parse::<usize>()
         .map_err(|err| {
-            context.errors.push(ASTError::from_node(
+            context.errors.push(LangError::syntax_err(
                 node,
                 &context.file_path,
                 &format!("Failed to parse integer: {}", err),
@@ -1196,7 +1204,7 @@ fn parse_usize<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<usi
         .ok()
 }
 
-fn collect_errors(node: Node, file_path: &str, source: &str, errors: &mut Vec<ASTError>) {
+fn collect_errors(node: Node, file_path: &str, source: &str, errors: &mut Vec<LangError>) {
     if !node.has_error() && !node.is_missing() {
         return;
     }
@@ -1205,7 +1213,7 @@ fn collect_errors(node: Node, file_path: &str, source: &str, errors: &mut Vec<AS
     queue.push(node);
     while let Some(current) = queue.pop() {
         if current.is_error() || current.is_missing() {
-            errors.push(ASTError::from_node(
+            errors.push(LangError::syntax_err(
                 &current,
                 file_path,
                 &error_to_string(&current, source),
@@ -1220,7 +1228,7 @@ fn collect_errors(node: Node, file_path: &str, source: &str, errors: &mut Vec<AS
     }
 }
 
-pub fn print_err(err: &ASTError, source: &str) {
+pub fn print_err(err: &LangError, source: &str) {
     let start = &err.node.span.start;
     let end = &err.node.span.end;
 

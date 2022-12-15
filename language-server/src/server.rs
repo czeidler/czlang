@@ -185,7 +185,7 @@ impl Server {
                                             character: end.column as u32,
                                         },
                                     },
-                                    error.msg.clone(),
+                                    format!("{:?}: {}", error.kind, error.msg.clone()),
                                 )],
                                 version: None,
                             },
