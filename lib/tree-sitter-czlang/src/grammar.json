@@ -1,5 +1,6 @@
 {
   "name": "czlang",
+  "word": "identifier",
   "rules": {
     "source_file": {
       "type": "REPEAT",
@@ -9,19 +10,28 @@
       }
     },
     "_definition": {
-      "type": "CHOICE",
+      "type": "SEQ",
       "members": [
         {
-          "type": "SYMBOL",
-          "name": "function_definition"
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "SYMBOL",
+              "name": "function_definition"
+            },
+            {
+              "type": "SYMBOL",
+              "name": "struct_definition"
+            },
+            {
+              "type": "SYMBOL",
+              "name": "interface_definition"
+            }
+          ]
         },
         {
-          "type": "SYMBOL",
-          "name": "struct_definition"
-        },
-        {
-          "type": "SYMBOL",
-          "name": "interface_definition"
+          "type": "STRING",
+          "value": "\n"
         }
       ]
     },
