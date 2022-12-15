@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use tree_sitter::{InputEdit, Point, Tree};
 
 use crate::{
-    ast::{File, FileContext, SourceSpan},
+    ast::{ASTError, File, FileContext, SourceSpan},
     tree_sitter::parse,
     types::PtrMut,
     validation::validate,
@@ -13,6 +13,7 @@ pub struct ProjectFile {
     pub source: String,
     pub tree: Tree,
     pub file: PtrMut<File>,
+    pub errors: Vec<ASTError>,
 }
 
 pub struct FileChange {
@@ -25,8 +26,14 @@ impl ProjectFile {
         let tree = parse(&source, None);
         let mut file_context = FileContext::new(tree.root_node(), path, &source);
         let file = file_context.parse_file();
+        let errors = file_context.errors;
 
-        let project_file = ProjectFile { source, tree, file };
+        let project_file = ProjectFile {
+            source,
+            tree,
+            file,
+            errors,
+        };
 
         project_file
     }
@@ -71,6 +78,7 @@ impl ProjectFile {
 
         let mut file_context = FileContext::new(self.tree.root_node(), url, &self.source);
         self.file = file_context.parse_file();
+        self.errors = file_context.errors;
     }
 }
 

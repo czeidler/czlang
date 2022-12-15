@@ -164,20 +164,18 @@ impl SourceSpan {
 
 #[derive(Debug, Clone)]
 pub struct ASTError {
-    id: usize,
-    msg: String,
+    pub node: NodeData,
+    pub msg: String,
     /// file path
-    file_path: String,
-    span: SourceSpan,
+    pub file_path: String,
 }
 
 impl ASTError {
     fn from_node(node: &Node, file_path: &str, msg: &str) -> Self {
         ASTError {
-            id: node.id(),
+            node: NodeData::from_node(node),
             msg: msg.to_string(),
             file_path: file_path.to_string(),
-            span: SourceSpan::from_node(node),
         }
     }
 }
@@ -510,7 +508,7 @@ impl<'a> FileContext<'a> {
     }
 
     pub fn parse_file(&mut self) -> PtrMut<File> {
-        collect_errors(self.root, &self.file_path, &mut self.errors);
+        collect_errors(self.root, &self.file_path, self.source, &mut self.errors);
         parse_file(self.root, self)
     }
 }
@@ -1112,13 +1110,22 @@ fn parse_slice<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Sli
     })
 }
 
-fn error_to_string(err: &Node) -> String {
+fn error_to_string(err: &Node, source: &str) -> String {
     let mut cursor = err.walk();
-    let mut out = "".to_string();
+    let mut children = "".to_string();
     for child in err.children(&mut cursor) {
-        out = format!("{}{}", out, &child.to_sexp());
+        children = format!("{}\nchild: {}", children, &child.to_sexp());
     }
-    out
+
+    let error_type = if err.is_missing() { "Missing" } else { "Error" };
+
+    let text = err
+        .utf8_text(source.as_bytes())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+
+    format!("{}: {},,{}{}", error_type, text, &err.to_sexp(), children)
 }
 
 fn node_text<'a>(node: &Node, context: &mut FileContext<'a>) -> Option<String> {
@@ -1189,32 +1196,33 @@ fn parse_usize<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<usi
         .ok()
 }
 
-fn collect_errors(node: Node, file_path: &str, errors: &mut Vec<ASTError>) {
-    if !node.has_error() {
+fn collect_errors(node: Node, file_path: &str, source: &str, errors: &mut Vec<ASTError>) {
+    if !node.has_error() && !node.is_missing() {
         return;
     }
 
     let mut queue: Vec<Node> = Vec::new();
     queue.push(node);
     while let Some(current) = queue.pop() {
+        if current.is_error() || current.is_missing() {
+            errors.push(ASTError::from_node(
+                &current,
+                file_path,
+                &error_to_string(&current, source),
+            ));
+            continue;
+        }
+
         let mut cursor = node.walk();
         for child in current.children(&mut cursor) {
-            if child.is_error() {
-                errors.push(ASTError::from_node(
-                    &child,
-                    file_path,
-                    &error_to_string(&child),
-                ));
-                continue;
-            }
             queue.push(child);
         }
     }
 }
 
 pub fn print_err(err: &ASTError, source: &str) {
-    let start = &err.span.start;
-    let end = &err.span.end;
+    let start = &err.node.span.start;
+    let end = &err.node.span.end;
 
     println!("");
     let lines: Vec<&str> = source.lines().take(start.row + 1).collect();

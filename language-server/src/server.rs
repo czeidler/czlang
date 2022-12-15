@@ -145,20 +145,72 @@ impl Server {
         Ok(())
     }
 
+    fn publish_errors(&self, project: &Project, uri: &Url) {
+        let url: String = uri.clone().into();
+        if let Some(errors) = project.open_files.get(&url).map(|f| &f.errors) {
+            if errors.is_empty() {
+                self.connection
+                    .sender
+                    .send(
+                        Notification::new(
+                            "textDocument/publishDiagnostics".to_string(),
+                            PublishDiagnosticsParams {
+                                uri: uri.clone(),
+                                diagnostics: vec![],
+                                version: None,
+                            },
+                        )
+                        .into(),
+                    )
+                    .unwrap();
+            }
+            for error in errors {
+                let start = error.node.span.start;
+                let end = error.node.span.end;
+                self.connection
+                    .sender
+                    .send(
+                        Notification::new(
+                            "textDocument/publishDiagnostics".to_string(),
+                            PublishDiagnosticsParams {
+                                uri: uri.clone(),
+                                diagnostics: vec![Diagnostic::new_simple(
+                                    Range {
+                                        start: Position {
+                                            line: start.row as u32,
+                                            character: start.column as u32,
+                                        },
+                                        end: Position {
+                                            line: end.row as u32,
+                                            character: end.column as u32,
+                                        },
+                                    },
+                                    error.msg.clone(),
+                                )],
+                                version: None,
+                            },
+                        )
+                        .into(),
+                    )
+                    .unwrap();
+            }
+        }
+    }
+
     fn did_open(&mut self, mut params: DidOpenTextDocumentParams) -> Result<()> {
         normalize_uri(&mut params.text_document.uri);
-        let url: String = params.text_document.uri.into();
+        let url: String = params.text_document.uri.clone().into();
 
         let mut project = self.project.lock().unwrap();
         project.open_file(url.clone(), params.text_document.text);
         project.validate_file(&url);
-
+        self.publish_errors(&project, &params.text_document.uri);
         Ok(())
     }
 
     fn did_change(&mut self, mut params: DidChangeTextDocumentParams) -> Result<()> {
         normalize_uri(&mut params.text_document.uri);
-        let url: String = params.text_document.uri.into();
+        let url: String = params.text_document.uri.clone().into();
 
         let changes = params
             .content_changes
@@ -179,6 +231,8 @@ impl Server {
             .collect::<Vec<_>>();
         let mut project = self.project.lock().unwrap();
         project.edit_file(url.clone(), changes);
+        project.validate_file(&url);
+        self.publish_errors(&project, &params.text_document.uri);
 
         Ok(())
     }
