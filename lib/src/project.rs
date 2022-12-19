@@ -105,11 +105,8 @@ impl Project {
         entry.edit_file(url, changes);
     }
 
-    pub fn validate_file(&self, url: &String) {
-        let Some(file) = self.open_files.get(url) else {return;};
-        match validate(&file.file) {
-            Ok(result) => result,
-            Err(_) => {}
-        };
+    pub fn validate_file(&mut self, url: &String) {
+        let Some(file) = self.open_files.get_mut(url) else {return;};
+        validate(&file.file, &mut file.errors);
     }
 }

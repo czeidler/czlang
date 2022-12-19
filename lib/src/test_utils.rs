@@ -69,10 +69,10 @@ pub fn validate_project<'a>(test_dir: &str, file_content: &str) -> Result<(), an
         )));
     }
 
-    let _ = match validate(&file) {
-        Ok(result) => result,
-        Err(err) => return Err(anyhow::Error::msg(err)),
-    };
+    validate(&file, &mut file_context.errors);
+    if !file_context.errors.is_empty() {
+        return Err(anyhow::Error::msg(file_context.errors[0].msg.clone()));
+    }
 
     Ok(())
 }

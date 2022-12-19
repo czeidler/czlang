@@ -173,17 +173,22 @@ pub struct LangError {
     pub kind: LangErrorKind,
     pub node: NodeData,
     pub msg: String,
-    /// file path
-    pub file_path: String,
 }
 
 impl LangError {
-    fn syntax_err(node: &Node, file_path: &str, msg: &str) -> Self {
+    fn syntax_err(node: &Node, msg: &str) -> Self {
         LangError {
             kind: LangErrorKind::SyntaxError,
             node: NodeData::from_node(node),
             msg: msg.to_string(),
-            file_path: file_path.to_string(),
+        }
+    }
+
+    pub fn type_error(node: &NodeData, msg: String) -> Self {
+        LangError {
+            kind: LangErrorKind::TypeError,
+            node: node.clone(),
+            msg,
         }
     }
 }
@@ -564,8 +569,8 @@ fn parse_fun<'a>(
 ) -> Option<Ptr<Function>> {
     let name = child_by_field(&node, "name", context)?;
     let parameter_list = child_by_field(&node, "parameters", context)?;
-    let return_type = match node.child_by_field_name("result".as_bytes()) {
-        Some(return_type) => parse_types(context, &return_type),
+    let return_types = match node.child_by_field_name("result".as_bytes()) {
+        Some(return_node) => parse_types(context, &return_node),
         None => None,
     };
     let body_node: Node = child_by_field(&node, "body", context)?;
@@ -581,7 +586,7 @@ fn parse_fun<'a>(
         name: node_text(&name, context)?,
         name_node: NodeData::from_node(&name),
         parameters: parse_parameters(context, parameter_list)?,
-        return_types: return_type,
+        return_types,
         body: body.clone(),
     });
     body.write().unwrap().parent = Some(BlockParent::Function(Ptr::downgrade(&fun)));
@@ -753,7 +758,6 @@ fn parse_expression<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Optio
         _ => {
             context.errors.push(LangError::syntax_err(
                 node,
-                &context.file_path,
                 &format!("Unknown expression kind: {}", node.kind()),
             ));
             return None;
@@ -780,7 +784,6 @@ fn parse_unary_expression<'a>(
         unknown => {
             context.errors.push(LangError::syntax_err(
                 node,
-                &context.file_path,
                 &format!("Unknown unary operator: {}", unknown),
             ));
             return None;
@@ -815,7 +818,6 @@ fn parse_binary_expression<'a>(
         unknown => {
             context.errors.push(LangError::syntax_err(
                 node,
-                &context.file_path,
                 &format!("Unknown binary operator: {}", unknown),
             ));
             return None;
@@ -1033,7 +1035,6 @@ fn parse_type<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Type
                 _ => {
                     context.errors.push(LangError::syntax_err(
                         node,
-                        &context.file_path,
                         &format!("Unsupported primitve type: {}", type_text),
                     ));
                     return None;
@@ -1049,7 +1050,6 @@ fn parse_type<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Type
         _ => {
             context.errors.push(LangError::syntax_err(
                 node,
-                &context.file_path,
                 &format!("Unsupported type: {}", node.kind()),
             ));
             return None;
@@ -1072,7 +1072,6 @@ fn parse_types<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Vec
                 if types.contains(&t) {
                     context.errors.push(LangError::syntax_err(
                         node,
-                        &context.file_path,
                         &format!("Duplicated sum type: {:?}", t),
                     ));
                     return None;
@@ -1140,11 +1139,9 @@ fn node_text<'a>(node: &Node, context: &mut FileContext<'a>) -> Option<String> {
     let text = node
         .utf8_text(context.source.as_bytes())
         .map_err(|err| {
-            context.errors.push(LangError::syntax_err(
-                node,
-                &context.file_path,
-                &format!("{}", err),
-            ))
+            context
+                .errors
+                .push(LangError::syntax_err(node, &format!("{}", err)))
         })
         .ok()?
         .trim()
@@ -1161,11 +1158,9 @@ fn child<'a>(
     match node.child(index) {
         Some(node) => Some(node),
         None => {
-            context.errors.push(LangError::syntax_err(
-                &node,
-                &context.file_path,
-                &format!("{} expected", name),
-            ));
+            context
+                .errors
+                .push(LangError::syntax_err(&node, &format!("{} expected", name)));
             return None;
         }
     }
@@ -1181,7 +1176,6 @@ fn child_by_field<'a>(
         None => {
             context.errors.push(LangError::syntax_err(
                 &node,
-                &context.file_path,
                 &format!("{} field expected in parser tree", field),
             ));
             None
@@ -1196,7 +1190,6 @@ fn parse_usize<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<usi
         .map_err(|err| {
             context.errors.push(LangError::syntax_err(
                 node,
-                &context.file_path,
                 &format!("Failed to parse integer: {}", err),
             ));
             err
@@ -1215,7 +1208,6 @@ fn collect_errors(node: Node, file_path: &str, source: &str, errors: &mut Vec<La
         if current.is_error() || current.is_missing() {
             errors.push(LangError::syntax_err(
                 &current,
-                file_path,
                 &error_to_string(&current, source),
             ));
             continue;
@@ -1251,7 +1243,7 @@ pub fn print_err(err: &LangError, source: &str) {
     }
     println!("");
     println!(
-        "Error in {} line {}, column {}: {}",
-        err.file_path, start.row, start.column, err.msg
+        "Error at line {}, column {}: {}",
+        start.row, start.column, err.msg
     );
 }
