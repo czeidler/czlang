@@ -475,10 +475,11 @@ pub fn validate_statement(
         }
         Statement::Return(ret) => {
             let (ret_types, expression) = if let Some(expression) = ret {
-                (
-                    validate_expression(fun, expression, errors).unwrap_or(vec![]),
-                    Some(expression),
-                )
+                let Some(ret_types) = validate_expression(fun, expression, errors) else {
+                    // error validating the return expression
+                    return;
+                };
+                (ret_types, Some(expression))
             } else {
                 (vec![], None)
             };
