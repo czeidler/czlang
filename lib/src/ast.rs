@@ -1,7 +1,6 @@
 use std::{
     collections::HashMap,
     hash::Hash,
-    ops::Range,
     sync::{RwLock, Weak},
 };
 

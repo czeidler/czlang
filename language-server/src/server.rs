@@ -32,7 +32,6 @@ pub struct FeatureRequest<P> {
 #[derive(Clone)]
 struct ServerFork {
     connection: Arc<Connection>,
-    project: Arc<Mutex<Project>>,
 }
 
 impl ServerFork {
@@ -48,7 +47,7 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn new(connection: Connection, current_dir: PathBuf) -> Self {
+    pub fn new(connection: Connection, _current_dir: PathBuf) -> Self {
         Self {
             connection: Arc::new(connection),
             pool: threadpool::Builder::new().build(),
@@ -66,7 +65,6 @@ impl Server {
     fn fork(&self) -> ServerFork {
         ServerFork {
             connection: self.connection.clone(),
-            project: self.project.clone(),
         }
     }
 
@@ -117,7 +115,7 @@ impl Server {
         init();
 
         let (id, params) = self.connection.initialize_start()?;
-        let params: InitializeParams = serde_json::from_value(params)?;
+        let _params: InitializeParams = serde_json::from_value(params)?;
 
         let result = InitializeResult {
             capabilities: self.capabilities(),
@@ -141,7 +139,7 @@ impl Server {
         Ok(())
     }
 
-    fn did_change_configuration(&mut self, params: DidChangeConfigurationParams) -> Result<()> {
+    fn did_change_configuration(&mut self, _params: DidChangeConfigurationParams) -> Result<()> {
         Ok(())
     }
 
@@ -253,10 +251,6 @@ impl Server {
         Ok(())
     }
 
-    fn feature_request<P>(&self, uri: Arc<Url>, params: P) -> FeatureRequest<P> {
-        FeatureRequest { params, uri }
-    }
-
     fn handle_feature_request<P, R, H>(
         &self,
         id: RequestId,
@@ -281,18 +275,18 @@ impl Server {
         Ok(())
     }
 
-    fn workspace_symbols(&self, id: RequestId, params: WorkspaceSymbolParams) -> Result<()> {
+    fn workspace_symbols(&self, _id: RequestId, _params: WorkspaceSymbolParams) -> Result<()> {
         Ok(())
     }
 
-    fn completion(&self, id: RequestId, mut params: CompletionParams) -> Result<()> {
+    fn completion(&self, _id: RequestId, mut params: CompletionParams) -> Result<()> {
         normalize_uri(&mut params.text_document_position.text_document.uri);
-        let uri = Arc::new(params.text_document_position.text_document.uri.clone());
+        let _uri = Arc::new(params.text_document_position.text_document.uri.clone());
 
         Ok(())
     }
 
-    fn completion_resolve(&self, id: RequestId, mut item: CompletionItem) -> Result<()> {
+    fn completion_resolve(&self, _id: RequestId, mut _item: CompletionItem) -> Result<()> {
         Ok(())
     }
 
@@ -309,7 +303,7 @@ impl Server {
         let position = params.text_document_position_params.position;
 
         let project = self.project.clone();
-        self.handle_feature_request(id, params, uri.clone(), move |request| {
+        self.handle_feature_request(id, params, uri.clone(), move |_request| {
             let project = project.lock().unwrap();
             let uri: String = uri.as_ref().clone().into();
             let file = project.open_files.get(&uri);
@@ -348,9 +342,9 @@ impl Server {
         Ok(())
     }
 
-    fn goto_definition(&self, id: RequestId, mut params: GotoDefinitionParams) -> Result<()> {
+    fn goto_definition(&self, _id: RequestId, mut params: GotoDefinitionParams) -> Result<()> {
         normalize_uri(&mut params.text_document_position_params.text_document.uri);
-        let uri = Arc::new(
+        let _uri = Arc::new(
             params
                 .text_document_position_params
                 .text_document
@@ -360,21 +354,25 @@ impl Server {
         Ok(())
     }
 
-    fn prepare_rename(&self, id: RequestId, mut params: TextDocumentPositionParams) -> Result<()> {
+    fn prepare_rename(&self, _id: RequestId, mut params: TextDocumentPositionParams) -> Result<()> {
         normalize_uri(&mut params.text_document.uri);
-        let uri = Arc::new(params.text_document.uri.clone());
+        let _uri = Arc::new(params.text_document.uri.clone());
         Ok(())
     }
 
-    fn rename(&self, id: RequestId, mut params: RenameParams) -> Result<()> {
+    fn rename(&self, _id: RequestId, mut params: RenameParams) -> Result<()> {
         normalize_uri(&mut params.text_document_position.text_document.uri);
-        let uri = Arc::new(params.text_document_position.text_document.uri.clone());
+        let _uri = Arc::new(params.text_document_position.text_document.uri.clone());
         Ok(())
     }
 
-    fn document_highlight(&self, id: RequestId, mut params: DocumentHighlightParams) -> Result<()> {
+    fn document_highlight(
+        &self,
+        _id: RequestId,
+        mut params: DocumentHighlightParams,
+    ) -> Result<()> {
         normalize_uri(&mut params.text_document_position_params.text_document.uri);
-        let uri = Arc::new(
+        let _uri = Arc::new(
             params
                 .text_document_position_params
                 .text_document
@@ -384,19 +382,19 @@ impl Server {
         Ok(())
     }
 
-    fn formatting(&self, id: RequestId, mut params: DocumentFormattingParams) -> Result<()> {
+    fn formatting(&self, _id: RequestId, mut params: DocumentFormattingParams) -> Result<()> {
         normalize_uri(&mut params.text_document.uri);
-        let uri = Arc::new(params.text_document.uri.clone());
+        let _uri = Arc::new(params.text_document.uri.clone());
         Ok(())
     }
 
-    fn execute_command(&self, id: RequestId, params: ExecuteCommandParams) -> Result<()> {
+    fn execute_command(&self, _id: RequestId, _params: ExecuteCommandParams) -> Result<()> {
         Ok(())
     }
 
-    fn inlay_hints(&self, id: RequestId, mut params: InlayHintParams) -> Result<()> {
+    fn inlay_hints(&self, _id: RequestId, mut params: InlayHintParams) -> Result<()> {
         normalize_uri(&mut params.text_document.uri);
-        let uri = Arc::new(params.text_document.uri.clone());
+        let _uri = Arc::new(params.text_document.uri.clone());
         Ok(())
     }
 
@@ -411,14 +409,6 @@ impl Server {
         _id: RequestId,
         _params: SemanticTokensRangeParams,
     ) -> Result<()> {
-        Ok(())
-    }
-
-    fn forward_search(&self, id: RequestId, mut params: TextDocumentPositionParams) -> Result<()> {
-        Ok(())
-    }
-
-    fn reparse_all(&mut self) -> Result<()> {
         Ok(())
     }
 

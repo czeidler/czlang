@@ -1,15 +1,10 @@
-use std::{io::Read, path::PathBuf};
-
-use anyhow::Ok;
-
 use crate::{
     ast::{
-        print_err, Expression, ExpressionType, File, FileContext, Function, FunctionCall,
-        Parameter, SourcePosition, Statement, VarDeclaration,
+        Expression, ExpressionType, File, Function, FunctionCall, Parameter, SourcePosition,
+        Statement, VarDeclaration,
     },
-    tree_sitter::parse,
     types::{Ptr, PtrMut},
-    validation::{lookup_identifier, validate, LookupResult},
+    validation::{lookup_identifier, LookupResult},
 };
 
 #[derive(Debug, Clone)]
