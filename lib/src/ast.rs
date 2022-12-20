@@ -520,7 +520,7 @@ impl<'a> FileContext<'a> {
     }
 
     pub fn parse_file(&mut self) -> PtrMut<File> {
-        collect_errors(self.root, &self.file_path, self.source, &mut self.errors);
+        collect_errors(self.root, self.source, &mut self.errors);
         parse_file(self.root, self)
     }
 }
@@ -1196,7 +1196,7 @@ fn parse_usize<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<usi
         .ok()
 }
 
-fn collect_errors(node: Node, file_path: &str, source: &str, errors: &mut Vec<LangError>) {
+fn collect_errors(node: Node, source: &str, errors: &mut Vec<LangError>) {
     if !node.has_error() && !node.is_missing() {
         return;
     }
