@@ -60,35 +60,38 @@ impl fmt::Display for RefType {
     }
 }
 
-fn is_equal(left_types: &Vec<RefType>, right_types: &Vec<RefType>) -> bool {
-    if left_types.len() != right_types.len() {
-        return false;
-    }
-    for left in left_types {
-        let found = right_types.iter().any(|right| {
-            if left.is_reference != right.is_reference {
-                return false;
-            }
-            match (&left.r#type, &right.r#type) {
-                (Type::Array(l), Type::Array(r)) => {
-                    if l.length != r.length {
-                        false
-                    } else {
-                        is_equal(&l.types, &r.types)
-                    }
+pub fn intersection(left_types: &Vec<RefType>, right_types: &Vec<RefType>) -> Vec<RefType> {
+    if left_types.len() == 1 {
+        if let Some(l) = left_types.get(0) {
+            if let Type::Unresolved(types) = &l.r#type {
+                let inter = intersection(types, right_types);
+                if inter.len() <= 1 {
+                    return inter;
                 }
-                (Type::Slice(l), Type::Slice(r)) => is_equal(&l.types, &r.types),
-                _ => left.r#type == right.r#type,
+                // still unresolved
+                return vec![RefType {
+                    is_reference: false,
+                    r#type: Type::Unresolved(inter),
+                }];
             }
-        });
-        if !found {
-            return false;
         }
     }
-    return true;
-}
+    if right_types.len() == 1 {
+        if let Some(r) = right_types.get(0) {
+            if let Type::Unresolved(types) = &r.r#type {
+                let inter = intersection(left_types, types);
+                if inter.len() <= 1 {
+                    return inter;
+                }
+                // still unresolved
+                return vec![RefType {
+                    is_reference: false,
+                    r#type: Type::Unresolved(inter),
+                }];
+            }
+        }
+    }
 
-pub fn intersection(left_types: &Vec<RefType>, right_types: &Vec<RefType>) -> Vec<RefType> {
     let mut output = Vec::new();
     for left in left_types {
         for right in right_types {
@@ -125,30 +128,6 @@ pub fn intersection(left_types: &Vec<RefType>, right_types: &Vec<RefType>) -> Ve
                         }),
                     });
                 }
-                (Type::Unresolved(l), Type::Unresolved(r)) => {
-                    let inter = intersection(&l, &r);
-                    output.push(RefType::value(Type::Unresolved(inter)));
-                }
-                (Type::Unresolved(l), r) => {
-                    let mut inter = intersection(
-                        &l,
-                        &vec![RefType {
-                            is_reference: false,
-                            r#type: r.clone(),
-                        }],
-                    );
-                    output.append(&mut inter);
-                }
-                (l, Type::Unresolved(r)) => {
-                    let mut inter = intersection(
-                        &r,
-                        &vec![RefType {
-                            is_reference: false,
-                            r#type: l.clone(),
-                        }],
-                    );
-                    output.append(&mut inter);
-                }
                 _ => {
                     if left.r#type == right.r#type {
                         output.push(left.clone());
@@ -167,8 +146,36 @@ mod tests {
 
     use crate::{
         ast::{Array, RefType, Type},
-        types::{intersection, is_equal, Ptr},
+        types::{intersection, Ptr},
     };
+
+    fn is_equal(left_types: &Vec<RefType>, right_types: &Vec<RefType>) -> bool {
+        if left_types.len() != right_types.len() {
+            return false;
+        }
+        for left in left_types {
+            let found = right_types.iter().any(|right| {
+                if left.is_reference != right.is_reference {
+                    return false;
+                }
+                match (&left.r#type, &right.r#type) {
+                    (Type::Array(l), Type::Array(r)) => {
+                        if l.length != r.length {
+                            false
+                        } else {
+                            is_equal(&l.types, &r.types)
+                        }
+                    }
+                    (Type::Slice(l), Type::Slice(r)) => is_equal(&l.types, &r.types),
+                    _ => left.r#type == right.r#type,
+                }
+            });
+            if !found {
+                return false;
+            }
+        }
+        return true;
+    }
 
     #[test]
     fn test_intersection_1() {
@@ -340,7 +347,8 @@ mod tests {
         ));
     }
 
-    // [](i32 | u32) intersection []number(i32 | u32 | u8)] => []number(i32 | u32)
+    // [](i32 | u32) intersection []unresolved(i32 | u32 | u8)] => []unresolved(i32 | u32)
+    // e.g.[](i32|u32) intersects typeof [1, 2, 3, 4]
     #[test]
     fn test_intersection_4() {
         // u32 | i32 | [2](bool | string)
@@ -360,7 +368,7 @@ mod tests {
                 ]),
             }),
         }];
-        // []number
+        // []unresolved
         let right = vec![RefType {
             is_reference: false,
             r#type: Type::Array(Array {
