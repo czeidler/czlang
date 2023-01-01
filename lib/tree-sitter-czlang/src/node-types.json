@@ -56,6 +56,10 @@
             "named": true
           },
           {
+            "type": "struct_initialization",
+            "named": true
+          },
+          {
             "type": "true",
             "named": true
           },
@@ -121,6 +125,10 @@
           },
           {
             "type": "slice_expression",
+            "named": true
+          },
+          {
+            "type": "struct_initialization",
             "named": true
           },
           {
@@ -226,6 +234,10 @@
             "named": true
           },
           {
+            "type": "struct_initialization",
+            "named": true
+          },
+          {
             "type": "true",
             "named": true
           },
@@ -291,6 +303,10 @@
           },
           {
             "type": "slice_expression",
+            "named": true
+          },
+          {
+            "type": "struct_initialization",
             "named": true
           },
           {
@@ -438,6 +454,10 @@
             "named": true
           },
           {
+            "type": "struct_initialization",
+            "named": true
+          },
+          {
             "type": "true",
             "named": true
           },
@@ -533,6 +553,10 @@
             "named": true
           },
           {
+            "type": "struct_initialization",
+            "named": true
+          },
+          {
             "type": "true",
             "named": true
           },
@@ -598,6 +622,10 @@
           },
           {
             "type": "slice_expression",
+            "named": true
+          },
+          {
+            "type": "struct_initialization",
             "named": true
           },
           {
@@ -845,6 +873,10 @@
             "named": true
           },
           {
+            "type": "struct_initialization",
+            "named": true
+          },
+          {
             "type": "true",
             "named": true
           },
@@ -913,6 +945,77 @@
       "types": [
         {
           "type": "escape_sequence",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "keyed_element",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "array_expression",
+          "named": true
+        },
+        {
+          "type": "binary_expression",
+          "named": true
+        },
+        {
+          "type": "false",
+          "named": true
+        },
+        {
+          "type": "float_literal",
+          "named": true
+        },
+        {
+          "type": "function_call",
+          "named": true
+        },
+        {
+          "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "int_literal",
+          "named": true
+        },
+        {
+          "type": "interpreted_string_literal",
+          "named": true
+        },
+        {
+          "type": "null",
+          "named": true
+        },
+        {
+          "type": "parenthesized_expression",
+          "named": true
+        },
+        {
+          "type": "selector_expression",
+          "named": true
+        },
+        {
+          "type": "slice_expression",
+          "named": true
+        },
+        {
+          "type": "struct_initialization",
+          "named": true
+        },
+        {
+          "type": "true",
+          "named": true
+        },
+        {
+          "type": "unary_expression",
           "named": true
         }
       ]
@@ -1125,6 +1228,10 @@
             "named": true
           },
           {
+            "type": "struct_initialization",
+            "named": true
+          },
+          {
             "type": "true",
             "named": true
           },
@@ -1288,6 +1395,10 @@
             "named": true
           },
           {
+            "type": "struct_initialization",
+            "named": true
+          },
+          {
             "type": "true",
             "named": true
           },
@@ -1373,6 +1484,10 @@
           },
           {
             "type": "slice_expression",
+            "named": true
+          },
+          {
+            "type": "struct_initialization",
             "named": true
           },
           {
@@ -1493,6 +1608,10 @@
             "named": true
           },
           {
+            "type": "struct_initialization",
+            "named": true
+          },
+          {
             "type": "true",
             "named": true
           },
@@ -1555,6 +1674,10 @@
             "named": true
           },
           {
+            "type": "struct_initialization",
+            "named": true
+          },
+          {
             "type": "true",
             "named": true
           },
@@ -1614,6 +1737,10 @@
           },
           {
             "type": "slice_expression",
+            "named": true
+          },
+          {
+            "type": "struct_initialization",
             "named": true
           },
           {
@@ -1715,6 +1842,36 @@
           }
         ]
       }
+    }
+  },
+  {
+    "type": "struct_initialization",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    },
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "keyed_element",
+          "named": true
+        }
+      ]
     }
   },
   {
@@ -1845,6 +2002,10 @@
           },
           {
             "type": "slice_expression",
+            "named": true
+          },
+          {
+            "type": "struct_initialization",
             "named": true
           },
           {
@@ -1989,6 +2150,10 @@
           },
           {
             "type": "slice_expression",
+            "named": true
+          },
+          {
+            "type": "struct_initialization",
             "named": true
           },
           {
