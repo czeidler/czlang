@@ -401,18 +401,13 @@ impl RustTranspiler {
         writer: &mut Writer,
     ) {
         writer.write("let ");
-        if var_declaration.is_mutable && !var_declaration.is_reference {
+        if var_declaration.is_mutable {
             writer.write("mut ");
         }
         writer.write(&var_declaration.name);
         match &var_declaration.types {
             Some(t) => {
                 writer.write(": ");
-                if var_declaration.is_reference && var_declaration.is_mutable {
-                    writer.write("&mut ");
-                } else if var_declaration.is_reference {
-                    writer.write("& ");
-                }
                 self.transpile_types(t, writer);
             }
             None => {}
@@ -567,7 +562,7 @@ impl RustTranspiler {
     fn transpile_struct_field(&self, field: &Field, writer: &mut Writer) {
         writer.write(&field.name);
         writer.write(": ");
-        if field.is_reference {
+        if field.has_reference() {
             writer.write("&'a ");
         }
         self.transpile_types(&field.types, writer);
@@ -584,7 +579,7 @@ impl RustTranspiler {
 
     fn transpile_struct(&self, struct_def: &Struct, writer: &mut Writer) {
         writer.write(&format!("struct {}", struct_def.name));
-        if struct_def.fields.iter().any(|it| it.is_reference) {
+        if struct_def.has_reference() {
             writer.write("<'a>");
         }
         writer.write(" {");

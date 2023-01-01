@@ -2,7 +2,7 @@ use flexi_logger::{FileSpec, Logger, WriteMode};
 
 pub mod ast;
 mod buildin;
-mod rust_transpiler;
+pub mod rust_transpiler;
 mod tree_sitter;
 pub mod types;
 pub mod validation;

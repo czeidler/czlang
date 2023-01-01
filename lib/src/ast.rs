@@ -91,43 +91,6 @@ impl SourceSpan {
             self.start.to_byte_position(source),
             self.end.to_byte_position(source),
         )
-        /*let mut position = 0;
-        let mut start = 0;
-        let mut end = 0;
-        for char in source.chars() {}
-
-        let mut found_start = false;
-        let mut found_end = false;
-        for (index, line) in source.lines().enumerate() {
-            if self.start.row < index {
-                start += line.bytes().len();
-                continue;
-            }
-            if self.end.row < index {
-                end += line.bytes().len();
-                continue;
-            }
-
-            if !found_start && self.start.row == index {
-                start += line
-                    .chars()
-                    .take(self.start.column)
-                    .fold(0, |agg, char| agg + char.len_utf8());
-                found_start = true;
-            }
-            if !found_end && self.end.row == index {
-                end += line
-                    .chars()
-                    .take(self.end.column + 1)
-                    .fold(0, |agg, char| agg + char.len_utf8());
-                found_end = true;
-            }
-            if found_start && found_end {
-                break;
-            }
-        }
-
-        (start, end)*/
     }
 
     pub fn to_char_range(&self, source: &str) -> (usize, usize) {
@@ -244,13 +207,24 @@ pub struct Struct {
     pub fields: Vec<Field>,
 }
 
+impl Struct {
+    pub fn has_reference(&self) -> bool {
+        self.fields.iter().any(|it| it.has_reference())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Field {
     pub node: NodeData,
 
     pub name: String,
-    pub is_reference: bool,
     pub types: Vec<RefType>,
+}
+
+impl Field {
+    pub fn has_reference(&self) -> bool {
+        self.types.iter().any(|it| it.is_reference)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -386,7 +360,6 @@ pub struct VarDeclaration {
     pub name: String,
     pub name_node: NodeData,
     pub is_mutable: bool,
-    pub is_reference: bool,
     pub types: Option<Vec<RefType>>,
     pub value: Expression,
 
@@ -630,7 +603,6 @@ fn parse_struct_field<'a>(
     parent: &Node<'a>,
 ) -> Option<Field> {
     let name = child_by_field(&node, "name", context)?;
-    let is_reference = node.child_by_field_name("reference".as_bytes()).is_some();
     let field_type = child_by_field(&node, "type", context)?;
 
     Some(Field {
@@ -641,7 +613,6 @@ fn parse_struct_field<'a>(
         },
 
         name: node_text(&name, context)?,
-        is_reference,
         types: parse_types(context, &field_type)?,
     })
 }
@@ -908,7 +879,6 @@ fn parse_var_declaration<'a>(
     node: Node<'a>,
 ) -> Option<VarDeclaration> {
     let is_mutable = node.child_by_field_name("mutable".as_bytes()).is_some();
-    let is_reference = node.child_by_field_name("reference".as_bytes()).is_some();
 
     let name = child_by_field(&node, "name", context)?;
     let var_type = match node.child_by_field_name("type") {
@@ -922,7 +892,6 @@ fn parse_var_declaration<'a>(
         name: node_text(&name, context)?,
         name_node: NodeData::from_node(&name),
         is_mutable,
-        is_reference,
         types: var_type,
         value,
 

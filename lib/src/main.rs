@@ -10,7 +10,7 @@ mod types;
 mod validation;
 
 #[cfg(test)]
-mod test_utils;
+pub mod test_utils;
 
 fn main() {
     transpile_project(&Path::new("./test_project")).unwrap();
