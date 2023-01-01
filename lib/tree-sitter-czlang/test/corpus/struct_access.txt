@@ -1,0 +1,28 @@
+==================
+struct access
+==================
+
+fun main() {
+    var test = myStruct.field1.field2
+}
+
+---
+
+(source_file
+      (function_definition
+        (identifier)
+        (parameter_list)
+        (block
+          (var_declaration
+            (identifier)
+            (selector_expression
+              (selector_expression
+                (identifier)
+                (identifier)
+              )
+              (identifier)
+            )
+          )
+        )
+    )
+)
