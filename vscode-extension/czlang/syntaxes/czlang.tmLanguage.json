@@ -16,7 +16,7 @@
 		"keywords": {
 			"patterns": [{
 				"name": "keyword.control.czlang",
-				"match": "\\b(fun|if|while|for|return|var)\\b"
+				"match": "\\b(fun|if|while|for|return|var|struct)\\b"
 			}]
 		},
 		"constant": {
