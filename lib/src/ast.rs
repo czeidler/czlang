@@ -186,7 +186,7 @@ pub struct File {
 }
 
 impl File {
-    pub fn lookup_function(&self, name: &str) -> Option<FunctionDeclaration> {
+    pub fn lookup_function_declaration(&self, name: &str) -> Option<FunctionDeclaration> {
         if let Some(declaration) = self.functions.get(name).map(|f| f.as_declaration()) {
             return Some(declaration);
         }
@@ -204,6 +204,7 @@ pub struct Struct {
     pub node: NodeData,
 
     pub name: String,
+    pub name_node: NodeData,
     pub fields: Vec<Field>,
 }
 
@@ -378,8 +379,9 @@ impl VarDeclaration {
 
 #[derive(Debug, Clone)]
 pub struct FunctionCall {
-    pub id: usize,
+    pub node: NodeData,
     pub name: String,
+    pub name_node: NodeData,
     pub arguments: Vec<Expression>,
 }
 
@@ -510,7 +512,7 @@ pub fn parse_file<'a>(node: Node<'a>, context: &mut FileContext<'a>) -> PtrMut<F
     for child in node.children(&mut cursor) {
         match child.kind() {
             "function_definition" => {
-                if let Some(fun) = parse_fun(context, &file, &child, &node) {
+                if let Some(fun) = parse_fun(context, &file, &child) {
                     file.write()
                         .unwrap()
                         .functions
@@ -518,7 +520,7 @@ pub fn parse_file<'a>(node: Node<'a>, context: &mut FileContext<'a>) -> PtrMut<F
                 };
             }
             "struct_definition" => {
-                if let Some(struct_def) = parse_struct(context, &child, &node) {
+                if let Some(struct_def) = parse_struct(context, &child) {
                     file.write()
                         .unwrap()
                         .struct_defs
@@ -537,7 +539,6 @@ fn parse_fun<'a>(
     context: &mut FileContext<'a>,
     file: &PtrMut<File>,
     node: &Node<'a>,
-    parent: &Node<'a>,
 ) -> Option<Ptr<Function>> {
     let name = child_by_field(&node, "name", context)?;
     let parameter_list = child_by_field(&node, "parameters", context)?;
@@ -550,11 +551,7 @@ fn parse_fun<'a>(
 
     let fun = Ptr::new(Function {
         parent: Ptr::downgrade(file),
-        node: NodeData {
-            id: node.id(),
-            parent: parent.id(),
-            span: SourceSpan::from_node(&node),
-        },
+        node: NodeData::from_node(&node),
         name: node_text(&name, context)?,
         name_node: NodeData::from_node(&name),
         parameters: parse_parameters(context, parameter_list)?,
@@ -565,21 +562,14 @@ fn parse_fun<'a>(
     Some(fun)
 }
 
-fn parse_struct<'a>(
-    context: &mut FileContext<'a>,
-    node: &Node<'a>,
-    parent: &Node<'a>,
-) -> Option<Ptr<Struct>> {
+fn parse_struct<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Ptr<Struct>> {
     let name = child_by_field(&node, "name", context)?;
     let fields = child_by_field(&node, "fields", context)?;
     let fields = parse_struct_fields(context, &fields, node)?;
     Some(Ptr::new(Struct {
-        node: NodeData {
-            id: node.id(),
-            parent: parent.id(),
-            span: SourceSpan::from_node(&node),
-        },
+        node: NodeData::from_node(&node),
         name: node_text(&name, context)?,
+        name_node: NodeData::from_node(&name),
         fields,
     }))
 }
@@ -682,8 +672,9 @@ fn parse_function_call<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Op
     let arguments = parse_function_call_arguments(context, &arguments_list)?;
 
     Some(FunctionCall {
-        id: node.id(),
+        node: NodeData::from_node(node),
         name: node_text(&name, context)?,
+        name_node: NodeData::from_node(&name),
         arguments,
     })
 }

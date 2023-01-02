@@ -1,8 +1,8 @@
 use crate::{
     ast::{
         Array, BinaryExpression, BinaryOperator, Block, Expression, ExpressionType, File, Function,
-        IfAlternative, IfStatement, LangError, Parameter, RefType, Slice, Statement, Type,
-        UnaryOperator, VarDeclaration,
+        FunctionCall, IfAlternative, IfStatement, LangError, Parameter, RefType, Slice, Statement,
+        Type, UnaryOperator, VarDeclaration,
     },
     types::{intersection, types_to_string, Ptr, PtrMut},
 };
@@ -33,6 +33,12 @@ pub fn lookup_identifier(fun: &Function, identifier: &String) -> Option<LookupRe
     }
 
     None
+}
+
+pub fn lookup_function(fun: &Function, fun_call: &FunctionCall) -> Option<Ptr<Function>> {
+    let file = fun.file();
+    let file = file.read().unwrap();
+    file.functions.get(&fun_call.name).map(|f| f.clone())
 }
 
 fn validate_expression_list(
@@ -147,9 +153,7 @@ pub fn expression_type(
             }),
         }],
         ExpressionType::FunctionCall(fun_call) => {
-            let file = fun.file();
-            let file = file.read().unwrap();
-            let fun_declaration = match file.lookup_function(&fun_call.name) {
+            let fun_declaration = match lookup_function(fun, fun_call) {
                 Some(fun) => fun,
                 None => {
                     errors.push(LangError::type_error(
@@ -190,7 +194,7 @@ pub fn expression_type(
                 *m = Some(intersection);
             }
 
-            fun_declaration.return_types
+            fun_declaration.return_types.clone().unwrap_or(vec![])
         }
     };
     Some(types)

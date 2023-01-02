@@ -1,19 +1,21 @@
 use crate::{
     ast::{
-        Expression, ExpressionType, File, Function, FunctionCall, Parameter, SourcePosition,
-        Statement, VarDeclaration,
+        Expression, ExpressionType, Field, File, Function, Parameter, SourcePosition, Statement,
+        Struct, VarDeclaration,
     },
     types::{Ptr, PtrMut},
-    validation::{lookup_identifier, LookupResult},
+    validation::{lookup_function, lookup_identifier, LookupResult},
 };
 
 #[derive(Debug, Clone)]
 pub enum QueryResult {
     Function(Ptr<Function>),
-    FunctionCall(FunctionCall),
+    FunctionCall(Ptr<Function>),
     Parameter(Parameter),
     Identifier(LookupResult),
     VarDeclaration(Ptr<VarDeclaration>),
+    StructDeclaration(Ptr<Struct>),
+    StructFieldDeclaration(Field),
 }
 
 pub fn find_in_file(file: PtrMut<File>, position: SourcePosition) -> Option<QueryResult> {
@@ -22,8 +24,29 @@ pub fn find_in_file(file: PtrMut<File>, position: SourcePosition) -> Option<Quer
         if !fun.node.contains(position) {
             continue;
         }
-        if let Some(symbole) = find_in_function(fun, position) {
-            return Some(symbole);
+        if let Some(result) = find_in_function(fun, position) {
+            return Some(result);
+        }
+    }
+
+    if let Some(result) = find_in_structs(&file, position) {
+        return Some(result);
+    }
+    None
+}
+
+fn find_in_structs(file: &File, position: SourcePosition) -> Option<QueryResult> {
+    for (_, struct_def) in &file.struct_defs {
+        if !struct_def.node.contains(position) {
+            continue;
+        }
+        if struct_def.name_node.contains(position) {
+            return Some(QueryResult::StructDeclaration(struct_def.clone()));
+        }
+        for field in &struct_def.fields {
+            if field.node.contains(position) {
+                return Some(QueryResult::StructFieldDeclaration(field.clone()));
+            }
         }
     }
     None
@@ -107,7 +130,10 @@ fn find_in_expression(
             }
             None
         }
-        ExpressionType::FunctionCall(call) => Some(QueryResult::FunctionCall(call.clone())),
+        ExpressionType::FunctionCall(call) => match lookup_function(fun, call) {
+            Some(fun_declaration) => Some(QueryResult::FunctionCall(fun_declaration)),
+            None => None,
+        },
         _ => None,
     }
 }

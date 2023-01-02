@@ -330,8 +330,14 @@ impl Server {
                 QueryResult::VarDeclaration(var) => {
                     format!("var {} {}", var.name, types_to_string(&var.types()))
                 }
-                QueryResult::FunctionCall(call) => {
-                    format!("fun {}", call.name)
+                QueryResult::FunctionCall(fun) => {
+                    format!("fun {}", fun.name)
+                }
+                QueryResult::StructDeclaration(struct_dec) => {
+                    format!("struct {}", struct_dec.name)
+                }
+                QueryResult::StructFieldDeclaration(field) => {
+                    format!("{} {}", field.name, types_to_string(&field.types))
                 }
             };
             Some(Hover {
@@ -342,15 +348,43 @@ impl Server {
         Ok(())
     }
 
-    fn goto_definition(&self, _id: RequestId, mut params: GotoDefinitionParams) -> Result<()> {
+    fn goto_definition(&self, id: RequestId, mut params: GotoDefinitionParams) -> Result<()> {
         normalize_uri(&mut params.text_document_position_params.text_document.uri);
-        let _uri = Arc::new(
+        let url = Arc::new(
             params
                 .text_document_position_params
                 .text_document
                 .uri
                 .clone(),
         );
+        let position = params.text_document_position_params.position;
+        let project = self.project.clone();
+        self.handle_feature_request(id, params, url.clone(), move |_request| {
+            let project = project.lock().unwrap();
+            let uri: String = url.as_ref().clone().into();
+            let file = project.open_files.get(&uri);
+            let Some(file) = file else {return None};
+
+            let position = SourcePosition::new(position.line as usize, position.character as usize);
+            let Some(result) = find_in_file(file.file.clone(), position) else { return None };
+
+            let target = match result {
+                QueryResult::Identifier(lookup) => match lookup {
+                    LookupResult::VarDeclaration(var) => var.name_node.span.clone(),
+                    LookupResult::Parameter(_) => return None,
+                },
+                QueryResult::FunctionCall(fun) => fun.name_node.span.clone(),
+                _ => return None,
+            };
+            let target = Range::new(
+                Position::new(target.start.row as u32, target.start.column as u32),
+                Position::new(target.end.row as u32, target.end.column as u32),
+            );
+            Some(GotoDefinitionResponse::Scalar(Location {
+                uri: url.as_ref().clone(),
+                range: target,
+            }))
+        })?;
         Ok(())
     }
 
