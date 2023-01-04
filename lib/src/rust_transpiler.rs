@@ -634,6 +634,7 @@ impl RustTranspiler {
             let struct_def = lookup_struct(fun, &struct_init.name).unwrap();
             for field in &struct_init.fields {
                 self.transpile_struct_field_init(field, &struct_def, fun, writer);
+                writer.write(",");
                 writer.new_line();
             }
         });

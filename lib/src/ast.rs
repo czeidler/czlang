@@ -735,14 +735,18 @@ fn parse_struct_initialization(
     let name = child(node, "name", 0, context)?;
 
     let mut fields: Vec<StructFieldInitialization> = Vec::new();
-    for index in 1..node.child_count() - 1 {
-        let Some(keyed_element_node) = child(&node, "keyed_element", index, context) else {
-            continue
-        };
-        let Some(field) = parse_struct_field_initialization(context, &keyed_element_node) else {
-            continue;
-        };
-        fields.push(field);
+    let mut cursor = node.walk();
+    for field_init in node.children_by_field_name("field_init", &mut cursor) {
+        match field_init.kind() {
+            "keyed_element" => {
+                let Some(field) = parse_struct_field_initialization(context, &field_init) else {
+                    continue;
+                };
+                fields.push(field);
+            }
+            "identifier" => todo!(),
+            _ => {}
+        }
     }
     Some(StructInitialization {
         node: NodeData::from_node(&node),
@@ -771,10 +775,8 @@ fn parse_selector_expression(context: &mut FileContext, node: &Node) -> Option<S
     let operand = child(node, "operand", 0, context)?;
     let root = Box::new(parse_expression(context, &operand)?);
     let mut fields: Vec<SelectorField> = Vec::new();
-    for index in 1..node.child_count() - 1 {
-        let Some(selector_field) = child(&node, "selector_field", index, context) else {
-            continue
-        };
+    let mut cursor = node.walk();
+    for selector_field in node.children_by_field_name("selector_field", &mut cursor) {
         let Some(field) = parse_selector_field(context, &selector_field) else {
             continue;
         };

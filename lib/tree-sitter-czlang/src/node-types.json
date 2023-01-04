@@ -1490,17 +1490,17 @@
             "named": true
           }
         ]
+      },
+      "selector_field": {
+        "multiple": true,
+        "required": true,
+        "types": [
+          {
+            "type": "selector_field",
+            "named": true
+          }
+        ]
       }
-    },
-    "children": {
-      "multiple": true,
-      "required": true,
-      "types": [
-        {
-          "type": "selector_field",
-          "named": true
-        }
-      ]
     }
   },
   {
@@ -1883,6 +1883,20 @@
     "type": "struct_initialization",
     "named": true,
     "fields": {
+      "field_init": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "keyed_element",
+            "named": true
+          }
+        ]
+      },
       "name": {
         "multiple": false,
         "required": true,
@@ -1893,20 +1907,6 @@
           }
         ]
       }
-    },
-    "children": {
-      "multiple": true,
-      "required": false,
-      "types": [
-        {
-          "type": "identifier",
-          "named": true
-        },
-        {
-          "type": "keyed_element",
-          "named": true
-        }
-      ]
     }
   },
   {

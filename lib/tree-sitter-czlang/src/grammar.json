@@ -576,14 +576,22 @@
             }
           },
           {
-            "type": "SYMBOL",
-            "name": "selector_field"
+            "type": "FIELD",
+            "name": "selector_field",
+            "content": {
+              "type": "SYMBOL",
+              "name": "selector_field"
+            }
           },
           {
             "type": "REPEAT",
             "content": {
-              "type": "SYMBOL",
-              "name": "selector_field"
+              "type": "FIELD",
+              "name": "selector_field",
+              "content": {
+                "type": "SYMBOL",
+                "name": "selector_field"
+              }
             }
           }
         ]
@@ -1744,17 +1752,21 @@
                         "type": "SEQ",
                         "members": [
                           {
-                            "type": "CHOICE",
-                            "members": [
-                              {
-                                "type": "SYMBOL",
-                                "name": "identifier"
-                              },
-                              {
-                                "type": "SYMBOL",
-                                "name": "keyed_element"
-                              }
-                            ]
+                            "type": "FIELD",
+                            "name": "field_init",
+                            "content": {
+                              "type": "CHOICE",
+                              "members": [
+                                {
+                                  "type": "SYMBOL",
+                                  "name": "identifier"
+                                },
+                                {
+                                  "type": "SYMBOL",
+                                  "name": "keyed_element"
+                                }
+                              ]
+                            }
                           },
                           {
                             "type": "REPEAT",
@@ -1766,17 +1778,21 @@
                                   "value": ","
                                 },
                                 {
-                                  "type": "CHOICE",
-                                  "members": [
-                                    {
-                                      "type": "SYMBOL",
-                                      "name": "identifier"
-                                    },
-                                    {
-                                      "type": "SYMBOL",
-                                      "name": "keyed_element"
-                                    }
-                                  ]
+                                  "type": "FIELD",
+                                  "name": "field_init",
+                                  "content": {
+                                    "type": "CHOICE",
+                                    "members": [
+                                      {
+                                        "type": "SYMBOL",
+                                        "name": "identifier"
+                                      },
+                                      {
+                                        "type": "SYMBOL",
+                                        "name": "keyed_element"
+                                      }
+                                    ]
+                                  }
                                 }
                               ]
                             }
