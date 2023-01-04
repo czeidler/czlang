@@ -395,6 +395,7 @@ pub enum SelectorFieldType {
 
 #[derive(Debug, Clone)]
 pub struct SelectorField {
+    pub node: NodeData,
     pub optional_chaining: bool,
     pub field: SelectorFieldType,
 }
@@ -766,6 +767,7 @@ fn parse_selector_field(context: &mut FileContext, node: &Node) -> Option<Select
         _ => return None,
     };
     Some(SelectorField {
+        node: NodeData::from_node(node),
         optional_chaining: chaining_text == "?.",
         field,
     })
