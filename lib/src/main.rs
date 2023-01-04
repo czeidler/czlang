@@ -2,7 +2,7 @@ use std::path::Path;
 
 use rust_transpiler::transpile_project;
 
-mod ast;
+pub mod ast;
 mod buildin;
 mod rust_transpiler;
 mod tree_sitter;
