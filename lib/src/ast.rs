@@ -7,7 +7,7 @@ use std::{
 use tree_sitter::Node;
 
 use crate::{
-    buildin::{Buildins, FunctionDeclaration},
+    buildin::FunctionDeclaration,
     types::{Ptr, PtrMut},
     validation::TypeNarrowing,
 };
@@ -183,20 +183,6 @@ pub struct File {
 
     /// From validation:
     pub sum_types: HashMap<String, Vec<RefType>>,
-}
-
-impl File {
-    pub fn lookup_function_declaration(&self, name: &str) -> Option<FunctionDeclaration> {
-        if let Some(declaration) = self.functions.get(name).map(|f| f.as_declaration()) {
-            return Some(declaration);
-        }
-
-        let buildins = Buildins::new();
-        match buildins.functions.get(name) {
-            Some(fun_declaration) => Some(fun_declaration.clone()),
-            None => None,
-        }
-    }
 }
 
 #[derive(Debug, Clone)]

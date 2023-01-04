@@ -4,6 +4,7 @@ use crate::{
         FunctionCall, IfAlternative, IfStatement, LangError, Parameter, RefType, Slice, Statement,
         Type, UnaryOperator, VarDeclaration,
     },
+    buildin::{Buildins, FunctionDeclaration},
     types::{intersection, types_to_string, Ptr, PtrMut},
 };
 
@@ -39,6 +40,21 @@ pub fn lookup_function(fun: &Function, fun_call: &FunctionCall) -> Option<Ptr<Fu
     let file = fun.file();
     let file = file.read().unwrap();
     file.functions.get(&fun_call.name).map(|f| f.clone())
+}
+
+pub fn lookup_function_declaration(fun: &Function, name: &str) -> Option<FunctionDeclaration> {
+    let file = fun.file();
+    let file = file.read().unwrap();
+
+    if let Some(declaration) = file.functions.get(name).map(|f| f.as_declaration()) {
+        return Some(declaration);
+    }
+
+    let buildins = Buildins::new();
+    match buildins.functions.get(name) {
+        Some(fun_declaration) => Some(fun_declaration.clone()),
+        None => None,
+    }
 }
 
 fn validate_expression_list(
@@ -153,7 +169,7 @@ pub fn expression_type(
             }),
         }],
         ExpressionType::FunctionCall(fun_call) => {
-            let fun_declaration = match lookup_function(fun, fun_call) {
+            let fun_declaration = match lookup_function_declaration(fun, &fun_call.name) {
                 Some(fun) => fun,
                 None => {
                     errors.push(LangError::type_error(
@@ -194,7 +210,7 @@ pub fn expression_type(
                 *m = Some(intersection);
             }
 
-            fun_declaration.return_types.clone().unwrap_or(vec![])
+            fun_declaration.return_types
         }
     };
     Some(types)
