@@ -372,6 +372,40 @@ pub struct FunctionCall {
 }
 
 #[derive(Debug, Clone)]
+pub struct StructFieldInitialization {
+    pub node: NodeData,
+    pub name: String,
+    pub value: Expression,
+}
+
+#[derive(Debug, Clone)]
+pub struct StructInitialization {
+    pub node: NodeData,
+    pub name: String,
+    pub name_node: NodeData,
+    pub fields: Vec<StructFieldInitialization>,
+}
+
+#[derive(Debug, Clone)]
+pub enum SelectorFieldType {
+    Identifier(String),
+    // TODO:
+    Call,
+}
+
+#[derive(Debug, Clone)]
+pub struct SelectorField {
+    pub optional_chaining: bool,
+    pub field: SelectorFieldType,
+}
+
+#[derive(Debug, Clone)]
+pub struct SelectorExpression {
+    pub root: Box<Expression>,
+    pub fields: Vec<SelectorField>,
+}
+
+#[derive(Debug, Clone)]
 pub struct Expression {
     pub node: NodeData,
     pub r#type: ExpressionType,
@@ -392,6 +426,8 @@ pub enum ExpressionType {
     ArrayExpression(ArrayExpression),
     SliceExpression(SliceExpression),
     FunctionCall(FunctionCall),
+    StructInitialization(StructInitialization),
+    SelectorExpression(SelectorExpression),
 }
 
 #[derive(Debug, Clone)]
@@ -652,7 +688,7 @@ fn parse_block<'a>(
     }))
 }
 
-fn parse_function_call<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<FunctionCall> {
+fn parse_function_call(context: &mut FileContext, node: &Node) -> Option<FunctionCall> {
     let name = child(node, "function name", 0, context)?;
     let arguments_list = child(node, "arguments", 1, context)?;
     let arguments = parse_function_call_arguments(context, &arguments_list)?;
@@ -665,9 +701,9 @@ fn parse_function_call<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Op
     })
 }
 
-fn parse_function_call_arguments<'a>(
-    context: &mut FileContext<'a>,
-    node: &Node<'a>,
+fn parse_function_call_arguments(
+    context: &mut FileContext,
+    node: &Node,
 ) -> Option<Vec<Expression>> {
     let mut arguments = Vec::new();
     let mut cursor = node.walk();
@@ -678,7 +714,76 @@ fn parse_function_call_arguments<'a>(
     Some(arguments)
 }
 
-fn parse_expression<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Expression> {
+fn parse_struct_field_initialization(
+    context: &mut FileContext,
+    node: &Node,
+) -> Option<StructFieldInitialization> {
+    let name = child(node, "name", 0, context)?;
+    let value_node = child(node, "value", 2, context)?;
+
+    Some(StructFieldInitialization {
+        node: NodeData::from_node(&node),
+        name: node_text(&name, context)?,
+        value: parse_expression(context, &value_node)?,
+    })
+}
+
+fn parse_struct_initialization(
+    context: &mut FileContext,
+    node: &Node,
+) -> Option<StructInitialization> {
+    let name = child(node, "name", 0, context)?;
+
+    let mut fields: Vec<StructFieldInitialization> = Vec::new();
+    for index in 1..node.child_count() - 1 {
+        let Some(keyed_element_node) = child(&node, "keyed_element", index, context) else {
+            continue
+        };
+        let Some(field) = parse_struct_field_initialization(context, &keyed_element_node) else {
+            continue;
+        };
+        fields.push(field);
+    }
+    Some(StructInitialization {
+        node: NodeData::from_node(&node),
+        name: node_text(&name, context)?,
+        name_node: NodeData::from_node(&name),
+        fields,
+    })
+}
+
+fn parse_selector_field(context: &mut FileContext, node: &Node) -> Option<SelectorField> {
+    let chaining = child(node, "chaining", 0, context)?;
+    let chaining_text = node_text(&chaining, context)?;
+    let field = child(node, "field", 1, context)?;
+    let field = match field.kind() {
+        "identifier" => SelectorFieldType::Identifier(node_text(&field, context)?),
+        "function_call" => SelectorFieldType::Call,
+        _ => return None,
+    };
+    Some(SelectorField {
+        optional_chaining: chaining_text == "?.",
+        field,
+    })
+}
+
+fn parse_selector_expression(context: &mut FileContext, node: &Node) -> Option<SelectorExpression> {
+    let operand = child(node, "operand", 0, context)?;
+    let root = Box::new(parse_expression(context, &operand)?);
+    let mut fields: Vec<SelectorField> = Vec::new();
+    for index in 1..node.child_count() - 1 {
+        let Some(selector_field) = child(&node, "selector_field", index, context) else {
+            continue
+        };
+        let Some(field) = parse_selector_field(context, &selector_field) else {
+            continue;
+        };
+        fields.push(field);
+    }
+    Some(SelectorExpression { root, fields })
+}
+
+fn parse_expression(context: &mut FileContext, node: &Node) -> Option<Expression> {
     let expression_type = match node.kind() {
         "identifier" => ExpressionType::Identifier(node_text(&node, context)?),
         "int_literal" => ExpressionType::IntLiteral(parse_usize(context, node)?),
@@ -702,6 +807,12 @@ fn parse_expression<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Optio
             ExpressionType::SliceExpression(parse_slice_expression(context, node)?)
         }
         "function_call" => ExpressionType::FunctionCall(parse_function_call(context, &node)?),
+        "struct_initialization" => {
+            ExpressionType::StructInitialization(parse_struct_initialization(context, &node)?)
+        }
+        "selector_expression" => {
+            ExpressionType::SelectorExpression(parse_selector_expression(context, &node)?)
+        }
         _ => {
             context.errors.push(LangError::syntax_err(
                 node,
@@ -717,10 +828,7 @@ fn parse_expression<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Optio
     })
 }
 
-fn parse_unary_expression<'a>(
-    context: &mut FileContext<'a>,
-    node: &Node<'a>,
-) -> Option<UnaryExpression> {
+fn parse_unary_expression(context: &mut FileContext, node: &Node) -> Option<UnaryExpression> {
     let operator = child_by_field(&node, "operator", context)?;
     let string = node_text(&operator, context)?;
     let operator = match string.as_str() {
@@ -743,10 +851,7 @@ fn parse_unary_expression<'a>(
     })
 }
 
-fn parse_binary_expression<'a>(
-    context: &mut FileContext<'a>,
-    node: &Node<'a>,
-) -> Option<BinaryExpression> {
+fn parse_binary_expression(context: &mut FileContext, node: &Node) -> Option<BinaryExpression> {
     let operator = child_by_field(&node, "operator", context)?;
     let string = node_text(&operator, context)?;
     let operator = match string.as_str() {
@@ -779,9 +884,9 @@ fn parse_binary_expression<'a>(
     })
 }
 
-fn parse_parenthesized_expression<'a>(
-    context: &mut FileContext<'a>,
-    node: &Node<'a>,
+fn parse_parenthesized_expression(
+    context: &mut FileContext,
+    node: &Node,
 ) -> Option<ParenthesizedExpression> {
     let expression = child_by_field(&node, "expression", context)?;
     Some(ParenthesizedExpression {
@@ -789,10 +894,7 @@ fn parse_parenthesized_expression<'a>(
     })
 }
 
-fn parse_array_expression<'a>(
-    context: &mut FileContext<'a>,
-    node: &Node<'a>,
-) -> Option<ArrayExpression> {
+fn parse_array_expression(context: &mut FileContext, node: &Node) -> Option<ArrayExpression> {
     let mut expressions = Vec::new();
     let mut cursor = node.walk();
     for child in node.children_by_field_name("expression", &mut cursor) {
@@ -802,10 +904,7 @@ fn parse_array_expression<'a>(
     Some(ArrayExpression { expressions })
 }
 
-fn parse_slice_expression<'a>(
-    context: &mut FileContext<'a>,
-    node: &Node<'a>,
-) -> Option<SliceExpression> {
+fn parse_slice_expression(context: &mut FileContext, node: &Node) -> Option<SliceExpression> {
     let operand = child_by_field(&node, "operand", context)?;
     let start = match node.child_by_field_name("start".as_bytes()) {
         Some(n) => Some(parse_usize(context, &n)?),
@@ -823,7 +922,7 @@ fn parse_slice_expression<'a>(
     })
 }
 
-fn parse_string<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<StringTemplate> {
+fn parse_string(context: &mut FileContext, node: &Node) -> Option<StringTemplate> {
     let start_column = node.start_position().column;
     let string = node_text(&node, context)?;
     let string = string.as_str()[1..string.len() - 1].to_string();
@@ -1098,7 +1197,7 @@ fn child<'a>(
     node: &Node<'a>,
     name: &str,
     index: usize,
-    context: &mut FileContext<'a>,
+    context: &mut FileContext,
 ) -> Option<Node<'a>> {
     match node.child(index) {
         Some(node) => Some(node),
@@ -1111,11 +1210,7 @@ fn child<'a>(
     }
 }
 
-fn child_by_field<'a>(
-    node: &Node<'a>,
-    field: &str,
-    context: &mut FileContext<'a>,
-) -> Option<Node<'a>> {
+fn child_by_field<'a>(node: &Node<'a>, field: &str, context: &mut FileContext) -> Option<Node<'a>> {
     match node.child_by_field_name(field.as_bytes()) {
         Some(node) => Some(node),
         None => {
@@ -1128,7 +1223,7 @@ fn child_by_field<'a>(
     }
 }
 
-fn parse_usize<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<usize> {
+fn parse_usize(context: &mut FileContext, node: &Node) -> Option<usize> {
     let string = node_text(&node, context)?;
     string
         .parse::<usize>()

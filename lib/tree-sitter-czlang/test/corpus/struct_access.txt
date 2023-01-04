@@ -16,13 +16,90 @@ fun main() {
           (var_declaration
             (identifier)
             (selector_expression
-              (selector_expression
-                (identifier)
-                (identifier)
-              )
               (identifier)
-            )
-          )
-        )
-    )
-)
+              (selector_field
+                (identifier))
+              (selector_field
+                (identifier)))))))
+
+==================
+struct access 2
+==================
+
+fun main() {
+    var test = myStruct.field1.field2.field3
+}
+
+---
+
+(source_file
+      (function_definition
+        (identifier)
+        (parameter_list)
+        (block
+          (var_declaration
+            (identifier)
+            (selector_expression
+              (identifier)
+              (selector_field
+                (identifier))
+              (selector_field
+                (identifier))
+              (selector_field
+                (identifier)))))))
+
+==================
+struct access 3
+==================
+
+fun main() {
+    var test = myStruct.field1.field2().field3().field4
+}
+
+---
+
+(source_file
+      (function_definition
+        (identifier)
+        (parameter_list)
+        (block
+          (var_declaration
+            (identifier)
+            (selector_expression
+              (identifier)
+              (selector_field
+                (identifier))
+              (selector_field
+                (function_call
+                  (identifier)
+                  (argument_list)))
+              (selector_field
+                (function_call
+                  (identifier)
+                  (argument_list)))
+              (selector_field
+                (identifier)))))))
+
+==================
+struct access 4
+==================
+
+fun main() {
+    var test = myStruct.field1()
+}
+
+---
+
+(source_file
+      (function_definition
+        (identifier)
+        (parameter_list)
+        (block
+          (var_declaration
+            (identifier)
+            (selector_expression
+              (identifier)
+              (selector_field
+                (function_call
+                  (identifier)
+                  (argument_list))))))))

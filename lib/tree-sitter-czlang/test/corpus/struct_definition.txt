@@ -76,3 +76,52 @@ fun main() {
     )
   )
 )
+
+==================
+struct init reference
+==================
+
+fun main() {
+    var test = &Struct1 {
+      field1 = 1,
+      field2 = "string",
+      field3 = Struct2 {
+        field4 = true,
+      }
+    }
+}
+
+---
+
+(source_file
+      (function_definition
+        (identifier)
+        (parameter_list)
+        (block
+          (var_declaration
+            (identifier)
+            (unary_expression
+              (struct_initialization
+                (identifier)
+                (keyed_element
+                  (identifier)
+                  (int_literal))
+                (keyed_element
+                  (identifier)
+                  (interpreted_string_literal))
+                (keyed_element
+                  (identifier)
+                  (struct_initialization
+                    (identifier)
+                    (keyed_element
+                      (identifier)
+                      (true)
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+)

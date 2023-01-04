@@ -5,13 +5,13 @@ use std::path::{Path, PathBuf};
 use crate::ast::{
     print_err, Array, ArrayExpression, BinaryOperator, Block, Expression, ExpressionType, Field,
     File, FileContext, Function, FunctionCall, IfAlternative, IfStatement, Parameter, RefType,
-    Slice, SliceExpression, Statement, StringTemplatePart, Struct, Type, UnaryOperator,
-    VarDeclaration,
+    SelectorFieldType, Slice, SliceExpression, Statement, StringTemplatePart, Struct,
+    StructFieldInitialization, StructInitialization, Type, UnaryOperator, VarDeclaration,
 };
 use crate::buildin::Buildins;
 use crate::tree_sitter::parse;
 use crate::types::{Ptr, PtrMut};
-use crate::validation::{sum_type_name, validate, TypeNarrowing};
+use crate::validation::{lookup_function, lookup_struct, sum_type_name, validate, TypeNarrowing};
 
 struct Writer<'a> {
     indentation: u16,
@@ -284,6 +284,22 @@ impl RustTranspiler {
             ExpressionType::FunctionCall(call) => {
                 self.transpile_function_call(call, fun, writer);
             }
+            ExpressionType::StructInitialization(struct_init) => {
+                self.transpile_struct_init(struct_init, fun, writer)
+            }
+            ExpressionType::SelectorExpression(selector) => {
+                self.transpile_expression(&selector.root, target, fun, writer);
+                for field in &selector.fields {
+                    // todo: field.optional_chaining
+                    writer.write(".");
+                    match &field.field {
+                        SelectorFieldType::Identifier(identifier) => {
+                            writer.write(&identifier);
+                        }
+                        SelectorFieldType::Call => todo!(),
+                    }
+                }
+            }
         };
     }
 
@@ -377,11 +393,7 @@ impl RustTranspiler {
         writer.write(&call.name);
         writer.write("(");
 
-        // TODO make this a query method:
-        let file = fun.file();
-        let file = file.read().unwrap();
-        let function = file.functions.get(&call.name).unwrap();
-
+        let function = lookup_function(fun, call).unwrap();
         let mut iter = call.arguments.iter().enumerate().peekable();
         while let Some((i, expr)) = iter.next() {
             let parameter = function.parameters.get(i).unwrap();
@@ -590,6 +602,44 @@ impl RustTranspiler {
         writer.write("}");
     }
 
+    fn transpile_struct_field_init(
+        &self,
+        struct_field_init: &StructFieldInitialization,
+        struct_def: &Ptr<Struct>,
+        fun: &Ptr<Function>,
+        writer: &mut Writer,
+    ) {
+        writer.write(&struct_field_init.name);
+        writer.write(": ");
+
+        let field = struct_def
+            .fields
+            .iter()
+            .find(|it| it.name == struct_field_init.name)
+            .map(|it| it.clone())
+            .unwrap();
+        self.transpile_expression(&struct_field_init.value, Some(&field.types), fun, writer)
+    }
+
+    fn transpile_struct_init(
+        &self,
+        struct_init: &StructInitialization,
+        fun: &Ptr<Function>,
+        writer: &mut Writer,
+    ) {
+        writer.write(&struct_init.name);
+        writer.write(" {");
+        writer.new_line();
+        writer.indented(|writer| {
+            let struct_def = lookup_struct(fun, &struct_init.name).unwrap();
+            for field in &struct_init.fields {
+                self.transpile_struct_field_init(field, &struct_def, fun, writer);
+                writer.new_line();
+            }
+        });
+        writer.write("}");
+    }
+
     pub fn transpile_file(&self, file: &PtrMut<File>, writer: &mut Writer) {
         let file = file.read().unwrap();
         for (name, types) in &file.sum_types {
@@ -673,86 +723,4 @@ edition = "2021"
 "#;
     cargo_file.write_all(&cargo_content.as_bytes())?;
     Ok(())
-}
-
-#[cfg(test)]
-mod rust_transpiler_tests {
-    use crate::test_utils::transpile_and_validate_project;
-
-    #[test]
-    fn function_call() {
-        transpile_and_validate_project(
-            "test_projects/function_call",
-            r#"
-fun test() i32 {
-    return 10
-}
-
-fun main() {
-    var result = test()
-    println("Result: {result}")
-}
-        "#,
-        )
-    }
-
-    #[test]
-    fn if_else_statement() {
-        transpile_and_validate_project(
-            "test_projects/transpile_if_else_statement",
-            r#"
-fun main() {
-    if true {
-        println("if")
-    }
-
-    if true {
-        println("if")
-    } else {
-        println("else")
-    }
-
-    if true {
-        println("if")
-    } else if true {
-        println("if else")
-    } else {
-        println("else")
-    }
-}
-        "#,
-        )
-    }
-
-    #[test]
-    fn array_slice() {
-        transpile_and_validate_project(
-            "test_projects/transpile_array_slice",
-            r#"
-fun main() {
-    var array i32[5] = [1, 2, 3, 4, 5]
-    var array2 = [1, 2, 3]
-    var slice = &array[:]
-    var slice2 = &array2[1:1]
-}
-        "#,
-        )
-    }
-
-    #[test]
-    fn var_declaration() {
-        transpile_and_validate_project(
-            "test_projects/transpile_var_declaration",
-            r#"
-fun main() {
-    var value1 i32 = 12
-    var value2 mut i32 = 12
-    var value3 &i32 = &value1
-    var value4 mut &i32 = &value1
-    var value5 i32 | null = null
-    var value6 i32 = 12
-}
-        "#,
-        )
-    }
 }

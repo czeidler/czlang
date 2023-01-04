@@ -2,7 +2,7 @@ use crate::{
     ast::{
         Array, BinaryExpression, BinaryOperator, Block, Expression, ExpressionType, File, Function,
         FunctionCall, IfAlternative, IfStatement, LangError, Parameter, RefType, Slice, Statement,
-        Type, UnaryOperator, VarDeclaration,
+        Struct, Type, UnaryOperator, VarDeclaration,
     },
     buildin::{Buildins, FunctionDeclaration},
     types::{intersection, types_to_string, Ptr, PtrMut},
@@ -55,6 +55,12 @@ pub fn lookup_function_declaration(fun: &Function, name: &str) -> Option<Functio
         Some(fun_declaration) => Some(fun_declaration.clone()),
         None => None,
     }
+}
+
+pub fn lookup_struct(fun: &Function, name: &str) -> Option<Ptr<Struct>> {
+    let file = fun.file();
+    let file = file.read().unwrap();
+    file.struct_defs.get(name).map(|f| f.clone())
 }
 
 fn validate_expression_list(
@@ -212,6 +218,10 @@ pub fn expression_type(
 
             fun_declaration.return_types
         }
+        ExpressionType::StructInitialization(struct_init) => {
+            vec![RefType::value(Type::Identifier(struct_init.name.clone()))]
+        }
+        ExpressionType::SelectorExpression(_) => todo!(),
     };
     Some(types)
 }
@@ -371,6 +381,7 @@ pub fn validate_expression(
     types
 }
 
+/// If the expression narrowed down the types of a variable, back propergated this up to previous useage.
 fn back_propergate_types(fun: &Function, expression: &Expression, types: &Vec<RefType>) {
     match &expression.r#type {
         ExpressionType::Identifier(id) => {
@@ -412,6 +423,8 @@ fn back_propergate_types(fun: &Function, expression: &Expression, types: &Vec<Re
         ExpressionType::SliceExpression(_) => {}
         ExpressionType::FunctionCall(_) => {}
         ExpressionType::String(_) => {}
+        ExpressionType::StructInitialization(_) => {}
+        ExpressionType::SelectorExpression(_) => {}
     }
 }
 
