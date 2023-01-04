@@ -78,4 +78,39 @@ fun main() {
         "#,
         )
     }
+
+    #[test]
+    fn structs() {
+        transpile_and_validate_project(
+            "test_projects/transpile_structs",
+            r#"
+struct TestStruct {
+    field1 u32
+    field2 i32
+}
+
+struct TestStruct2 {
+    field3 bool
+    field4 TestStruct
+}
+
+fun main() {
+    var struct1 = TestStruct {
+        field1 = 1,
+        field2 = -2
+    }
+
+    var struct2 = TestStruct2 {
+        field3 = true,
+        field4 = TestStruct {
+            field1 = 4,
+            field2 = -5,
+        }
+    }
+
+    var field2 i32 = struct2.field4.field2
+}
+        "#,
+        )
+    }
 }
