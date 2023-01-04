@@ -10,6 +10,9 @@
 		},
 		{
 			"include": "#strings"
+		},
+		{
+			"include": "#storage_types"
 		}
 	],
 	"repository": {
@@ -24,6 +27,18 @@
 				"name": "constant.language.czlang",
 				"match": "\\b(null|true|false)\\b"
 			}]
+		},
+		"storage_types": {
+			"patterns": [
+				{
+					"match": "\\bbool\\b",
+					"name": "storage.type.boolean.czlang"
+				},
+				{
+					"match": "\\b(f(32|64)|i(8|16|32|64)|u(8|16|32|64))\\b",
+					"name": "storage.type.numeric.czlang"
+				}
+			]
 		},
 		"strings": {
 			"name": "string.quoted.double.czlang",
