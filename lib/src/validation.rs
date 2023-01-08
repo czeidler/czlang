@@ -71,7 +71,7 @@ fn validate_expression_list(
 ) -> Vec<RefType> {
     let mut output = Vec::new();
     for expression in expressions {
-        if let Some(types) = expression_type(fun, &expression, errors) {
+        if let Some(types) = validate_expression(fun, &expression, errors) {
             for t in types {
                 if !output.contains(&t) {
                     output.push(t);
@@ -121,7 +121,7 @@ fn selector_expression_type(
     select: &SelectorExpression,
     errors: &mut Vec<LangError>,
 ) -> Option<Vec<RefType>> {
-    let root_types = expression_type(fun, &select.root, errors)?;
+    let root_types = validate_expression(fun, &select.root, errors)?;
     let (identifier, nullable) =
         validate_nullable_identifier(&select.root.node, &root_types, errors)?;
     let Some(current_struct) = lookup_struct(fun, &identifier) else {
@@ -206,8 +206,7 @@ fn selector_expression_type(
     return None;
 }
 
-// TODO merge into validate_expression
-pub fn expression_type(
+fn validate_expression(
     fun: &Function,
     expression: &Expression,
     errors: &mut Vec<LangError>,
@@ -253,9 +252,11 @@ pub fn expression_type(
                     return None;
                 }
             },
-            UnaryOperator::Not => expression_type(fun, &unary.operand, errors).unwrap_or(vec![]),
+            UnaryOperator::Not => {
+                validate_expression(fun, &unary.operand, errors).unwrap_or(vec![])
+            }
             UnaryOperator::Reference => {
-                let types = expression_type(fun, &unary.operand, errors).unwrap_or(vec![]);
+                let types = validate_expression(fun, &unary.operand, errors).unwrap_or(vec![]);
 
                 types
                     .into_iter()
@@ -503,15 +504,6 @@ fn validate_typeof_expression(
         }
     }
     Some(result)
-}
-
-pub fn validate_expression(
-    fun: &Function,
-    expression: &Expression,
-    errors: &mut Vec<LangError>,
-) -> Option<Vec<RefType>> {
-    let types = expression_type(fun, expression, errors);
-    types
 }
 
 /// If the expression narrowed down the types of a variable, back propergated this up to previous useage.
