@@ -2,7 +2,8 @@ use crate::{
     ast::{
         Array, BinaryExpression, BinaryOperator, Block, Expression, ExpressionType, File, Function,
         FunctionCall, IfAlternative, IfStatement, LangError, NodeData, Parameter, RefType,
-        SelectorFieldType, Slice, Statement, Struct, Type, UnaryOperator, VarDeclaration,
+        SelectorExpression, SelectorFieldType, Slice, Statement, Struct, Type, UnaryOperator,
+        VarDeclaration,
     },
     buildin::{Buildins, FunctionDeclaration},
     types::{intersection, types_to_string, Ptr, PtrMut},
@@ -114,6 +115,98 @@ fn validate_nullable_identifier(
     Some((identifier.clone(), types.len() == 2))
 }
 
+/// Returns the type of the expression
+fn selector_expression_type(
+    fun: &Function,
+    select: &SelectorExpression,
+    errors: &mut Vec<LangError>,
+) -> Option<Vec<RefType>> {
+    let root_types = expression_type(fun, &select.root, errors)?;
+    let (identifier, nullable) =
+        validate_nullable_identifier(&select.root.node, &root_types, errors)?;
+    let Some(current_struct) = lookup_struct(fun, &identifier) else {
+        errors.push(LangError::type_error(
+            &select.root.node,
+            format!("{} is not a struct", identifier),
+        ));
+        return None;
+    };
+    let mut current_struct = current_struct;
+    let mut current_struct_nullable = nullable;
+    let mut nullable_chain = nullable;
+    for (i, field) in select.fields.iter().enumerate() {
+        if field.optional_chaining {
+            nullable_chain = true;
+        }
+        if current_struct_nullable && !field.optional_chaining {
+            errors.push(LangError::type_error(
+                &field.node,
+                format!(
+                    "{} is potentially null; use optional chaining '?.'",
+                    current_struct.name
+                ),
+            ));
+            return None;
+        }
+        if !current_struct_nullable && field.optional_chaining {
+            errors.push(LangError::type_error(
+                &field.node,
+                format!(
+                    "Optional chaining operator '?.' not allowed on none nullable struct {}",
+                    current_struct.name
+                ),
+            ));
+            return None;
+        }
+        if i == select.fields.len() - 1 {
+            match &field.field {
+                SelectorFieldType::Identifier(field_identifier) => {
+                    let Some(found_field) = current_struct.fields.iter().find(|f|&f.name == field_identifier) else {
+                        errors.push(LangError::type_error(
+                            &field.node,
+                            format!("{} is not field of {}", field_identifier, current_struct.name),
+                        ));
+                        return None;
+                    };
+                    let mut types = found_field.types.clone();
+                    if nullable_chain && !types.iter().any(|t| matches!(t.r#type, Type::Null)) {
+                        types.push(RefType::value(Type::Null));
+                        types.sort();
+                    }
+                    return Some(types);
+                }
+                SelectorFieldType::Call => todo!(),
+            }
+        } else {
+            match &field.field {
+                SelectorFieldType::Identifier(field_identifier) => {
+                    let Some(found_field) = current_struct.fields.iter().find(|f|&f.name == field_identifier) else {
+                        errors.push(LangError::type_error(
+                            &field.node,
+                            format!("{} is not field of {}", field_identifier, current_struct.name),
+                        ));
+                        return None;
+                    };
+                    let (identifier, nullable) =
+                        validate_nullable_identifier(&field.node, &found_field.types, errors)?;
+                    let Some(found_struct) = lookup_struct(fun, &identifier) else {
+                        errors.push(LangError::type_error(
+                            &field.node,
+                            format!("{} is not a struct", identifier),
+                        ));
+                        return None;
+                    };
+                    current_struct = found_struct;
+                    current_struct_nullable = nullable;
+                }
+                SelectorFieldType::Call => todo!(),
+            }
+        }
+    }
+    return None;
+}
+
+// TODO merge into validate_expression
 pub fn expression_type(
     fun: &Function,
     expression: &Expression,
@@ -251,78 +344,18 @@ pub fn expression_type(
             fun_declaration.return_types
         }
         ExpressionType::StructInitialization(struct_init) => {
+            for field in &struct_init.fields {
+                validate_expression(fun, &field.value, errors);
+            }
             vec![RefType::value(Type::Identifier(struct_init.name.clone()))]
         }
         ExpressionType::SelectorExpression(select) => {
-            let root_types = expression_type(fun, &select.root, errors)?;
-            let (identifier, nullable) =
-                validate_nullable_identifier(&select.root.node, &root_types, errors)?;
-            let Some(current_struct) = lookup_struct(fun, &identifier) else {
-                errors.push(LangError::type_error(
-                    &select.root.node,
-                    format!("{} is not a struct", identifier),
-                ));
-                return None;
-            };
-            let mut current_struct = current_struct;
-            let mut current_struct_nullable = nullable;
-            for (i, field) in select.fields.iter().enumerate() {
-                if current_struct_nullable && !field.optional_chaining {
-                    errors.push(LangError::type_error(
-                        &field.node,
-                        format!(
-                            "{} is potentially null; use optional chaining '?.'",
-                            current_struct.name
-                        ),
-                    ));
-                    return None;
-                }
-                if i == select.fields.len() - 1 {
-                    match &field.field {
-                        SelectorFieldType::Identifier(field_identifier) => {
-                            let Some(found_field) = current_struct.fields.iter().find(|f|&f.name == field_identifier) else {
-                                errors.push(LangError::type_error(
-                                    &field.node,
-                                    format!("{} is not field of {}", field_identifier, current_struct.name),
-                                ));
-                                return None;
-                            };
-                            return Some(found_field.types.clone());
-                        }
-                        SelectorFieldType::Call => todo!(),
-                    }
-                } else {
-                    match &field.field {
-                        SelectorFieldType::Identifier(field_identifier) => {
-                            let Some(found_field) = current_struct.fields.iter().find(|f|&f.name == field_identifier) else {
-                                errors.push(LangError::type_error(
-                                    &field.node,
-                                    format!("{} is not field of {}", field_identifier, current_struct.name),
-                                ));
-                                return None;
-                            };
-                            let (identifier, nullable) = validate_nullable_identifier(
-                                &field.node,
-                                &found_field.types,
-                                errors,
-                            )?;
-                            let Some(found_struct) = lookup_struct(fun, &identifier) else {
-                                errors.push(LangError::type_error(
-                                    &field.node,
-                                    format!("{} is not a struct", identifier),
-                                ));
-                                return None;
-                            };
-                            current_struct = found_struct;
-                            current_struct_nullable = nullable;
-                        }
-                        SelectorFieldType::Call => todo!(),
-                    }
-                }
-            }
-            return None;
+            validate_expression(fun, &select.root, errors);
+            selector_expression_type(fun, select, errors)?
         }
     };
+    let mut resolved_types = expression.resolved_types.write().unwrap();
+    *resolved_types = Some(types.clone());
     Some(types)
 }
 
@@ -528,30 +561,45 @@ fn back_propergate_types(fun: &Function, expression: &Expression, types: &Vec<Re
     }
 }
 
+fn validate_declaration_types(
+    file: &PtrMut<File>,
+    node: &NodeData,
+    types: &Vec<RefType>,
+    errors: &mut Vec<LangError>,
+) -> Vec<RefType> {
+    let mut result_types = vec![];
+    for t in types {
+        if result_types.iter().find(|v| *v == t).is_none() {
+            result_types.push(t.clone());
+        } else {
+            errors.push(LangError::type_error(
+                node,
+                format!("Duplicated type: {:?}", t),
+            ))
+        }
+    }
+    result_types.sort();
+
+    // Add sum type
+    if result_types.len() > 1 {
+        file.write()
+            .unwrap()
+            .sum_types
+            .insert(sum_type_name(&result_types), result_types.clone());
+    }
+    result_types
+}
 pub fn validate_var_declaration(
     fun: &Function,
     block: &Block,
     var_declaration: Ptr<VarDeclaration>,
     errors: &mut Vec<LangError>,
 ) {
-    let mut var_types = vec![];
-    if let Some(types) = &var_declaration.types {
-        for t in types {
-            if var_types.iter().find(|v| *v == t).is_none() {
-                var_types.push(t.clone());
-            }
-        }
-        var_types.sort();
-
-        // Add sum type
-        if var_types.len() > 1 {
-            fun.file()
-                .write()
-                .unwrap()
-                .sum_types
-                .insert(sum_type_name(&var_types), var_types.clone());
-        }
-    }
+    let mut var_types = if let Some(types) = &var_declaration.types {
+        validate_declaration_types(&fun.file(), &var_declaration.node, types, errors)
+    } else {
+        vec![]
+    };
 
     let expr = validate_expression(fun, &var_declaration.value, errors).unwrap_or(vec![]);
     if var_types.is_empty() {
@@ -574,11 +622,12 @@ pub fn validate_var_declaration(
         }
         back_propergate_types(fun, &var_declaration.value, &overlap);
 
-        var_types = overlap;
+        if var_types.is_empty() {
+            var_types = overlap;
+        }
     }
 
     *var_declaration.resolved_types.write().unwrap() = Some(var_types);
-
     if let Some(_) = block
         .vars
         .write()
@@ -684,7 +733,9 @@ fn validate_block(fun: &Function, block: &PtrMut<Block>, errors: &mut Vec<LangEr
     }
 }
 
-pub fn validate_fun(fun: &Function, errors: &mut Vec<LangError>) {
+fn validate_fun(fun: &Function, errors: &mut Vec<LangError>) {
+    // TODO: fun name clash with other definitions?
+
     for par_ref in &fun.parameters {
         //let parameter = par_ref.get(parser)
         // Add sum type
@@ -701,7 +752,21 @@ pub fn validate_fun(fun: &Function, errors: &mut Vec<LangError>) {
     validate_block(fun, &block, errors);
 }
 
+fn validate_struct_def(file: &PtrMut<File>, struct_def: &Ptr<Struct>, errors: &mut Vec<LangError>) {
+    // TODO: struct name clash with other definitions?
+
+    for field in &struct_def.fields {
+        validate_declaration_types(file, &field.node, &field.types, errors);
+    }
+}
+
 pub fn validate(file: &PtrMut<File>, errors: &mut Vec<LangError>) {
+    // clone structs in order to release the read lock (write lock is acquired during validation)
+    let struct_defs = file.read().unwrap().struct_defs.clone();
+    for (_, struct_def) in &struct_defs {
+        validate_struct_def(file, struct_def, errors);
+    }
+
     let functions = file.read().unwrap().functions.clone();
     for (_, fun) in &functions {
         validate_fun(fun, errors);

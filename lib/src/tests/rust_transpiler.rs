@@ -113,4 +113,82 @@ fun main() {
         "#,
         )
     }
+
+    #[test]
+    fn structs_optional_chaining() {
+        transpile_and_validate_project(
+            "test_projects/transpile_structs_optional_chaining",
+            r#"
+struct TestStruct {
+    field1 u32
+    field2 i32
+}
+
+fun main() {
+    var struct1 TestStruct | null = TestStruct {
+        field1 = 1,
+        field2 = -2
+    }
+
+    var field2 u32 | null = struct1?.field1
+}
+        "#,
+        )
+    }
+
+    #[test]
+    fn structs_optional_chaining2() {
+        transpile_and_validate_project(
+            "test_projects/transpile_structs_optional_chaining2",
+            r#"
+struct TestStruct {
+    field1 u32
+    field2 i32
+}
+
+struct TestStruct2 {
+    field1 TestStruct
+}
+
+fun main() {
+    var struct2 TestStruct2 | null = TestStruct2 {
+        field1 = TestStruct {
+            field1 = 1,
+            field2 = -2,
+        }
+    }
+
+    var field2 i32 | null = struct2?.field1.field2
+}
+        "#,
+        )
+    }
+
+    #[test]
+    fn structs_optional_chaining3() {
+        transpile_and_validate_project(
+            "test_projects/transpile_structs_optional_chaining3",
+            r#"
+struct TestStruct {
+    field1 u32
+    field2 i32
+}
+
+struct TestStruct2 {
+    field1 TestStruct | null
+}
+
+fun main() {
+    var struct2 = TestStruct2 {
+        field1 = TestStruct {
+            field1 = 1,
+            field2 = -2,
+        }
+    }
+
+    var field2 i32 | null = struct2.field1?.field2
+}
+        "#,
+        )
+    }
 }

@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use crate::ast::{
     print_err, Array, ArrayExpression, BinaryOperator, Block, Expression, ExpressionType, Field,
     File, FileContext, Function, FunctionCall, IfAlternative, IfStatement, Parameter, RefType,
-    SelectorFieldType, Slice, SliceExpression, Statement, StringTemplatePart, Struct,
-    StructFieldInitialization, StructInitialization, Type, UnaryOperator, VarDeclaration,
+    SelectorExpression, SelectorFieldType, Slice, SliceExpression, Statement, StringTemplatePart,
+    Struct, StructFieldInitialization, StructInitialization, Type, UnaryOperator, VarDeclaration,
 };
 use crate::buildin::Buildins;
 use crate::tree_sitter::parse;
@@ -116,7 +116,9 @@ impl RustTranspiler {
                     Type::I8 => writer.write("I8(i8)"),
                     Type::U32 => writer.write("U32(u32)"),
                     Type::I32 => writer.write("I32(i32)"),
-                    Type::Identifier(identifier) => writer.write(&identifier),
+                    Type::Identifier(identifier) => {
+                        writer.write(&format!("{}({})", &identifier, &identifier))
+                    }
                     Type::Array(_) => writer.write("todoarray"),
                     Type::Slice(_) => writer.write("todoslice"),
                     Type::Unresolved(_) => panic!("Validation should have failed"),
@@ -163,7 +165,6 @@ impl RustTranspiler {
     fn transpile_expression(
         &self,
         expression: &Expression,
-        target: Option<&Vec<RefType>>,
         fun: &Ptr<Function>,
         writer: &mut Writer,
     ) {
@@ -176,7 +177,7 @@ impl RustTranspiler {
                         StringTemplatePart::Expression(expression) => {
                             let mut buffer = "".to_string();
                             let mut fmt_writer = Writer::new(&mut buffer);
-                            self.transpile_expression(expression, target, fun, &mut fmt_writer);
+                            self.transpile_expression(expression, fun, &mut fmt_writer);
 
                             fmt_params.push(buffer);
                             fmt_string += "{}";
@@ -200,41 +201,10 @@ impl RustTranspiler {
                 writer.write(&identifier);
             }
             ExpressionType::IntLiteral(number) => {
-                // TODO sort earlier
-                let mut target = target.map(|t| t.clone()).unwrap_or(vec![]);
-                target.sort();
-
-                if target.len() == 1 {
-                    // the target is a simple type, i.e. we can directly assign the number
-                    writer.write(&format!("{}", number));
-                } else {
-                    let resolved_type = expression.resolved_types.read().unwrap();
-                    let resolved_type = resolved_type.clone().unwrap_or(vec![]);
-                    if resolved_type.len() == 1 {
-                        writer.write(&sum_type_name(&target));
-                        writer.write("::");
-                        // TODO refactor out:
-                        let t = match resolved_type[0].r#type {
-                            Type::U32 => "U32",
-                            Type::I32 => "I32",
-                            _ => panic!("{}", resolved_type[0]),
-                        };
-                        writer.write(&format!("{}", t));
-                        writer.write("(");
-                        writer.write(&format!("{}", number));
-                        writer.write(")");
-                    } else {
-                        // just an int literal
-                        writer.write(&format!("{}", number));
-                    }
-                }
+                writer.write(&format!("{}", number));
             }
             ExpressionType::Null => {
-                // TODO sort earlier
-                let mut target = target.unwrap().clone();
-                target.sort();
-                writer.write(&sum_type_name(&target));
-                writer.write("::Null");
+                writer.write("Null");
             }
             ExpressionType::Bool(b) => {
                 writer.write(&format!("{}", b));
@@ -247,7 +217,7 @@ impl RustTranspiler {
                     UnaryOperator::TypeOf => "",
                 };
                 writer.write(op);
-                self.transpile_expression(&expr.operand, target, fun, writer);
+                self.transpile_expression(&expr.operand, fun, writer);
             }
             ExpressionType::BinaryExpression(expr) => {
                 let op = match expr.operator {
@@ -264,56 +234,179 @@ impl RustTranspiler {
                     BinaryOperator::And => "&&",
                     BinaryOperator::Or => "||",
                 };
-                self.transpile_expression(&expr.left, target, fun, writer);
+                self.transpile_expression(&expr.left, fun, writer);
                 writer.write(" ");
                 writer.write(op);
                 writer.write(" ");
-                self.transpile_expression(&expr.right, target, fun, writer);
+                self.transpile_expression(&expr.right, fun, writer);
             }
             ExpressionType::ParenthesizedExpression(expr) => {
                 writer.write("(");
-                self.transpile_expression(&expr.expression, target, fun, writer);
+                self.transpile_expression(&expr.expression, fun, writer);
                 writer.write(")");
             }
-            ExpressionType::ArrayExpression(array) => {
-                self.transpile_array_expr(array, target, fun, writer)
-            }
-            ExpressionType::SliceExpression(slice) => {
-                self.transpile_slice_expr(slice, target, fun, writer)
-            }
+            ExpressionType::ArrayExpression(array) => self.transpile_array_expr(array, fun, writer),
+            ExpressionType::SliceExpression(slice) => self.transpile_slice_expr(slice, fun, writer),
             ExpressionType::FunctionCall(call) => {
                 self.transpile_function_call(call, fun, writer);
             }
             ExpressionType::StructInitialization(struct_init) => {
-                self.transpile_struct_init(struct_init, fun, writer)
+                self.transpile_struct_init(struct_init, fun, writer);
             }
             ExpressionType::SelectorExpression(selector) => {
-                self.transpile_expression(&selector.root, target, fun, writer);
-                for field in &selector.fields {
-                    // todo: field.optional_chaining
-                    writer.write(".");
+                self.transpile_selector_expr(expression, selector, fun, writer);
+            }
+        };
+    }
+
+    fn transpile_selector_expr(
+        &self,
+        expression: &Expression,
+        selector: &SelectorExpression,
+        fun: &Ptr<Function>,
+        writer: &mut Writer,
+    ) {
+        let has_optional_chaining = selector.fields.iter().any(|f| f.optional_chaining);
+        if !has_optional_chaining {
+            self.transpile_expression(&selector.root, fun, writer);
+            for field in &selector.fields {
+                match &field.field {
+                    SelectorFieldType::Identifier(identifier) => {
+                        writer.write(".");
+                        writer.write(identifier);
+                    }
+                    SelectorFieldType::Call => todo!(),
+                }
+            }
+            return;
+        }
+
+        let mut selector_start = String::new();
+        self.transpile_expression(&selector.root, fun, &mut Writer::new(&mut selector_start));
+
+        let mut encountered_first_optional = false;
+        let mut current_types = selector
+            .root
+            .resolved_types
+            .read()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .clone();
+
+        let root_struct_identifier = current_types
+            .iter()
+            .filter_map(|t| match &t.r#type {
+                Type::Identifier(identifier) => Some(identifier),
+                _ => None,
+            })
+            .next()
+            .unwrap();
+        let mut current_struct = lookup_struct(fun, root_struct_identifier).unwrap();
+        for field in &selector.fields {
+            if !encountered_first_optional {
+                if field.optional_chaining {
+                    encountered_first_optional = true;
+                    writer.write(&format!("match {} {{", selector_start));
+                    writer.new_line();
+                    writer.indented(|writer| {
+                        let SelectorFieldType::Identifier(identifier) = &field.field else {
+                                panic!("Field not an identifier; shouldn't have passed validation");
+                            };
+                        current_types.sort();
+                        let sum_type = sum_type_name(&current_types);
+                        let struct_identifier = current_types
+                            .iter()
+                            .filter_map(|t| match &t.r#type {
+                                Type::Identifier(identifier) => Some(identifier),
+                                _ => None,
+                            })
+                            .next()
+                            .unwrap();
+                        writer.write(&format!("{}::Null => None,", sum_type));
+                        writer.new_line();
+                        writer.write(&format!(
+                            "{}::{}(s) => Some(s.{}),",
+                            sum_type, struct_identifier, identifier
+                        ));
+                        writer.new_line();
+                    });
+                    writer.write("}");
+                } else {
                     match &field.field {
                         SelectorFieldType::Identifier(identifier) => {
-                            writer.write(&identifier);
+                            selector_start.push_str(".");
+                            selector_start.push_str(identifier);
+                            current_types = current_struct
+                                .fields
+                                .iter()
+                                .find(|f| &f.name == identifier)
+                                .unwrap()
+                                .types
+                                .clone();
+                            let struct_identifier = current_types
+                                .iter()
+                                .filter_map(|t| match &t.r#type {
+                                    Type::Identifier(identifier) => Some(identifier),
+                                    _ => None,
+                                })
+                                .next()
+                                .unwrap();
+                            current_struct = lookup_struct(fun, struct_identifier).unwrap();
                         }
                         SelectorFieldType::Call => todo!(),
                     }
                 }
+            } else {
+                // map optional
+                match &field.field {
+                    SelectorFieldType::Identifier(identifier) => {
+                        writer.new_line();
+                        writer.write(&format!(".map(|s| s.{})", identifier));
+                    }
+                    SelectorFieldType::Call => todo!(),
+                };
             }
-        };
+        }
+        let mut resolved_types = expression
+            .resolved_types
+            .read()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .clone();
+        resolved_types.sort();
+        let target_sum_type = sum_type_name(&resolved_types);
+        let target_type = resolved_types
+            .iter()
+            .filter_map(|t| match &t.r#type {
+                Type::Null => None,
+                Type::U32 => Some("U32"),
+                Type::I32 => Some("I32"),
+                Type::Identifier(identifier) => Some(identifier),
+                _ => panic!(),
+            })
+            .next()
+            .unwrap();
+        writer.new_line();
+        writer.write(&format!(
+            ".map(|s| {}::{}(s))",
+            target_sum_type, target_type
+        ));
+        writer.new_line();
+        writer.write(&format!(".unwrap_or({}::Null)", target_sum_type));
     }
 
     fn transpile_array_expr(
         &self,
         array: &ArrayExpression,
-        target: Option<&Vec<RefType>>,
         fun: &Ptr<Function>,
         writer: &mut Writer,
     ) {
         writer.write("[");
         let mut iter = array.expressions.iter().peekable();
         while let Some(expr) = iter.next() {
-            self.transpile_expression(expr, target, fun, writer);
+            self.transpile_expression(expr, fun, writer);
             if iter.peek().is_some() {
                 writer.write(", ");
             }
@@ -324,11 +417,10 @@ impl RustTranspiler {
     fn transpile_slice_expr(
         &self,
         slice: &SliceExpression,
-        target: Option<&Vec<RefType>>,
         fun: &Ptr<Function>,
         writer: &mut Writer,
     ) {
-        self.transpile_expression(&slice.operand, target, fun, writer);
+        self.transpile_expression(&slice.operand, fun, writer);
         writer.write("[");
         if let Some(start) = slice.start {
             writer.write(&format!("{}", start));
@@ -357,7 +449,7 @@ impl RustTranspiler {
                     match arg0.r#type {
                         ExpressionType::String(_) => {
                             writer.write("println!(\"{}\", ");
-                            self.transpile_expression(arg0, None, fun, writer);
+                            self.transpile_expression(arg0, fun, writer);
                             writer.write(")");
                             return true;
                         }
@@ -367,7 +459,7 @@ impl RustTranspiler {
                 writer.write("println!(\"{}\", ");
                 let mut iter = call.arguments.iter().peekable();
                 while let Some(expr) = iter.next() {
-                    self.transpile_expression(expr, None, fun, writer);
+                    self.transpile_expression(expr, fun, writer);
                     if iter.peek().is_some() {
                         writer.write(", ");
                     }
@@ -378,6 +470,54 @@ impl RustTranspiler {
             _ => {}
         }
         return false;
+    }
+
+    fn transpile_expression_with_mapping(
+        &self,
+        expression: &Expression,
+        target: Option<&Vec<RefType>>,
+        fun: &Ptr<Function>,
+        writer: &mut Writer,
+    ) {
+        let Some(target) = target else {
+            self.transpile_expression(&expression, fun, writer);
+            return;
+        };
+        // TODO sort earlier?
+        let mut target = target.clone();
+        target.sort();
+        if matches!(expression.r#type, ExpressionType::Null) {
+            writer.write(&sum_type_name(&target));
+            writer.write("::");
+            self.transpile_expression(&expression, fun, writer);
+            return;
+        }
+
+        if target.len() == 1 {
+            // the target is a simple type, i.e. we can directly assign the expression
+            self.transpile_expression(&expression, fun, writer);
+        } else {
+            let resolved_type = expression.resolved_types.read().unwrap();
+            let resolved_type = resolved_type.clone().unwrap_or(vec![]);
+            if resolved_type.len() == 1 {
+                writer.write(&sum_type_name(&target));
+                writer.write("::");
+                // TODO refactor out:
+                let t = match &resolved_type[0].r#type {
+                    Type::U32 => "U32",
+                    Type::I32 => "I32",
+                    Type::Identifier(identifier) => identifier,
+                    _ => panic!("{}", resolved_type[0]),
+                };
+                writer.write(&format!("{}", t));
+                writer.write("(");
+                self.transpile_expression(&expression, fun, writer);
+                writer.write(")");
+            } else {
+                // just the expresion
+                self.transpile_expression(&expression, fun, writer);
+            }
+        }
     }
 
     fn transpile_function_call(
@@ -397,7 +537,7 @@ impl RustTranspiler {
         let mut iter = call.arguments.iter().enumerate().peekable();
         while let Some((i, expr)) = iter.next() {
             let parameter = function.parameters.get(i).unwrap();
-            self.transpile_expression(expr, Some(&parameter.types), fun, writer);
+            self.transpile_expression_with_mapping(expr, Some(&parameter.types), fun, writer);
             if iter.peek().is_some() {
                 writer.write(", ");
             }
@@ -425,7 +565,7 @@ impl RustTranspiler {
             None => {}
         }
         writer.write(" = ");
-        self.transpile_expression(
+        self.transpile_expression_with_mapping(
             &var_declaration.value,
             var_declaration.types.as_ref(),
             fun,
@@ -443,7 +583,12 @@ impl RustTranspiler {
         writer.write("return");
         if let Some(expression) = expression {
             writer.write(" ");
-            self.transpile_expression(expression, fun.return_types.as_ref(), fun, writer);
+            self.transpile_expression_with_mapping(
+                expression,
+                fun.return_types.as_ref(),
+                fun,
+                writer,
+            );
         }
         writer.write(";");
     }
@@ -496,15 +641,11 @@ impl RustTranspiler {
         fun: &Ptr<Function>,
         writer: &mut Writer,
     ) {
-        let target_types = vec![RefType {
-            is_reference: false,
-            r#type: Type::Bool,
-        }];
         writer.write("if ");
         if let Some(type_narrowing) = &if_statement.type_narrowing {
             self.transpile_if_type_narrowing(type_narrowing, writer);
         } else {
-            self.transpile_expression(&if_statement.condition, Some(&target_types), fun, writer);
+            self.transpile_expression(&if_statement.condition, fun, writer);
         }
         writer.write(" {");
         writer.new_line();
@@ -535,7 +676,7 @@ impl RustTranspiler {
         for statement in &block.read().unwrap().statements {
             match statement {
                 Statement::Expression(expr) => {
-                    self.transpile_expression(expr, None, fun, writer);
+                    self.transpile_expression(expr, fun, writer);
                     writer.write(";");
                     writer.new_line();
                 }
@@ -618,7 +759,12 @@ impl RustTranspiler {
             .find(|it| it.name == struct_field_init.name)
             .map(|it| it.clone())
             .unwrap();
-        self.transpile_expression(&struct_field_init.value, Some(&field.types), fun, writer)
+        self.transpile_expression_with_mapping(
+            &struct_field_init.value,
+            Some(&field.types),
+            fun,
+            writer,
+        )
     }
 
     fn transpile_struct_init(
