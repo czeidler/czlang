@@ -1,0 +1,109 @@
+==================
+Function declaration with error
+==================
+
+fun x() i32 | bool, u32 {
+
+}
+
+---
+(source_file
+    (function_definition
+        (identifier)
+        (parameter_list)
+        (sum_type
+          (primitive_type)
+          (primitive_type))
+        (primitive_type)
+        (block)
+    )
+)
+
+==================
+Function call with error catch
+==================
+
+fun x() i32 {
+  callFunction(argument1, argument2) catch (err) {
+
+  }
+}
+
+---
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameter_list)
+    (primitive_type)
+    (block
+      (expression_statement
+        (function_call
+          (identifier)
+          (argument_list
+            (identifier)
+            (identifier))
+          (catch_block
+            (identifier)
+            (block)
+          )
+        )
+      )
+    )
+  )
+)
+
+==================
+Throw statement
+==================
+
+fun x() i32, bool {
+  throw false
+}
+
+---
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameter_list)
+    (primitive_type)
+    (primitive_type)
+    (block
+      (throw_statement
+        (identifier)
+      )
+    )
+  )
+)
+
+
+==================
+Error expression
+==================
+
+fun x() i32, bool {
+  var test = _, false
+  _ , true
+}
+
+---
+(source_file
+  (function_definition
+    (identifier)
+    (parameter_list)
+    (primitive_type)
+    (primitive_type)
+    (block
+      (var_declaration
+        (identifier)
+        (error_expression
+          (false)))
+      (expression_statement
+        (error_expression
+          (true)
+        )
+      )
+    )
+  )
+)
