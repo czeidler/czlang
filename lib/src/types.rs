@@ -1,13 +1,118 @@
 use std::{
     fmt,
+    slice::Iter,
     sync::{Arc, RwLock},
-    vec,
+    vec::IntoIter,
 };
 
 use crate::ast::{Array, RefType, Slice, Type};
 
 pub type PtrMut<T> = Arc<RwLock<T>>;
 pub type Ptr<T> = Arc<T>;
+
+#[derive(Debug, Clone)]
+pub struct SumType {
+    types: Vec<RefType>,
+}
+
+impl SumType {
+    pub fn new(mut types: Vec<RefType>) -> Self {
+        types.sort();
+        SumType { types }
+    }
+
+    pub fn from_type(t: RefType) -> Self {
+        SumType { types: vec![t] }
+    }
+
+    pub fn from_types(types: &Vec<RefType>) -> Self {
+        let mut sum_type = SumType {
+            types: types.clone(),
+        };
+        sum_type.types.sort();
+        sum_type
+    }
+
+    pub fn types(&self) -> &Vec<RefType> {
+        &self.types
+    }
+
+    pub fn len(&self) -> usize {
+        self.types.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.types.is_empty()
+    }
+
+    pub fn push(&mut self, t: RefType) {
+        self.types.push(t);
+        self.types.sort();
+    }
+
+    pub fn append(&mut self, mut t: SumType) {
+        self.types.append(&mut t.types);
+        self.types.sort();
+    }
+
+    pub fn iter(&self) -> Iter<RefType> {
+        self.types.iter()
+    }
+
+    pub fn sum_type_name(&self) -> String {
+        let mut name = "".to_string();
+        for t in &self.types {
+            if t.is_reference {
+                name += "R";
+            }
+            let part = match &t.r#type {
+                Type::Null => "N",
+                Type::Str => "S",
+                Type::String => "St",
+                Type::Bool => "B",
+                Type::U8 => "U8",
+                Type::I8 => "I8",
+                Type::U32 => "U32",
+                Type::I32 => "I32",
+                Type::Identifier(id) => id,
+                Type::Array(array) => {
+                    let types = SumType::from_types(array.types.as_ref());
+                    name += "A";
+                    let part = types.sum_type_name();
+                    name += &part;
+                    name += "E";
+                    continue;
+                }
+                Type::Slice(slice) => {
+                    let types = SumType::from_types(slice.types.as_ref());
+                    name += "As";
+                    let part = types.sum_type_name();
+                    name += &part;
+                    name += "E";
+                    continue;
+                }
+                Type::Unresolved(_) => panic!("Internal error"),
+            };
+            name += part;
+        }
+        name
+    }
+}
+
+impl IntoIterator for SumType {
+    type Item = RefType;
+    type IntoIter = IntoIter<RefType>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.types.into_iter()
+    }
+}
+
+impl FromIterator<RefType> for SumType {
+    fn from_iter<T: IntoIterator<Item = RefType>>(iter: T) -> Self {
+        SumType::new(iter.into_iter().collect())
+    }
+}
 
 pub fn types_to_string(types: &Vec<RefType>) -> String {
     let parts: Vec<String> = types.into_iter().map(|it| format!("{:#}", it)).collect();

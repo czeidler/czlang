@@ -10,8 +10,8 @@ use crate::ast::{
 };
 use crate::buildin::Buildins;
 use crate::tree_sitter::parse;
-use crate::types::{Ptr, PtrMut};
-use crate::validation::{lookup_function, lookup_struct, sum_type_name, validate, TypeNarrowing};
+use crate::types::{Ptr, PtrMut, SumType};
+use crate::validation::{lookup_function, lookup_struct, validate, TypeNarrowing};
 
 struct Writer<'a> {
     indentation: u16,
@@ -64,10 +64,7 @@ struct RustTranspiler {
 impl RustTranspiler {
     fn transpile_types(&self, types: &Vec<RefType>, writer: &mut Writer) {
         if types.len() > 1 {
-            // TODO avoid clone() and sort earlier?
-            let mut sorted_type = types.clone();
-            sorted_type.sort();
-            let name = sum_type_name(&sorted_type);
+            let name = SumType::from_types(types).sum_type_name();
             writer.write(&name);
             return;
         }
@@ -100,13 +97,13 @@ impl RustTranspiler {
         writer.write(text);
     }
 
-    fn transpile_sum_type_def(&self, name: &str, types: &Vec<RefType>, writer: &mut Writer) {
+    fn transpile_sum_type_def(&self, name: &str, types: &SumType, writer: &mut Writer) {
         writer.write("enum ");
         writer.write(name);
         writer.write(" {");
         writer.new_line();
         writer.indented(|writer| {
-            for t in types {
+            for t in types.types() {
                 match &t.r#type {
                     Type::Null => writer.write("Null"),
                     Type::Str => todo!(),
@@ -313,8 +310,7 @@ impl RustTranspiler {
                         let SelectorFieldType::Identifier(identifier) = &field.field else {
                                 panic!("Field not an identifier; shouldn't have passed validation");
                             };
-                        current_types.sort();
-                        let sum_type = sum_type_name(&current_types);
+                        let sum_type = current_types.sum_type_name();
                         let struct_identifier = current_types
                             .iter()
                             .filter_map(|t| match &t.r#type {
@@ -337,13 +333,14 @@ impl RustTranspiler {
                         SelectorFieldType::Identifier(identifier) => {
                             selector_start.push_str(".");
                             selector_start.push_str(identifier);
-                            current_types = current_struct
-                                .fields
-                                .iter()
-                                .find(|f| &f.name == identifier)
-                                .unwrap()
-                                .types
-                                .clone();
+                            current_types = SumType::from_types(
+                                &current_struct
+                                    .fields
+                                    .iter()
+                                    .find(|f| &f.name == identifier)
+                                    .unwrap()
+                                    .types,
+                            );
                             let struct_identifier = current_types
                                 .iter()
                                 .filter_map(|t| match &t.r#type {
@@ -368,15 +365,14 @@ impl RustTranspiler {
                 };
             }
         }
-        let mut resolved_types = expression
+        let resolved_types = expression
             .resolved_types
             .read()
             .unwrap()
             .as_ref()
             .unwrap()
             .clone();
-        resolved_types.sort();
-        let target_sum_type = sum_type_name(&resolved_types);
+        let target_sum_type = resolved_types.sum_type_name();
         let target_type = resolved_types
             .iter()
             .filter_map(|t| match &t.r#type {
@@ -483,11 +479,9 @@ impl RustTranspiler {
             self.transpile_expression(&expression, fun, writer);
             return;
         };
-        // TODO sort earlier?
-        let mut target = target.clone();
-        target.sort();
+        let target = SumType::from_types(&target);
         if matches!(expression.r#type, ExpressionType::Null) {
-            writer.write(&sum_type_name(&target));
+            writer.write(&target.sum_type_name());
             writer.write("::");
             self.transpile_expression(&expression, fun, writer);
             return;
@@ -498,16 +492,16 @@ impl RustTranspiler {
             self.transpile_expression(&expression, fun, writer);
         } else {
             let resolved_type = expression.resolved_types.read().unwrap();
-            let resolved_type = resolved_type.clone().unwrap_or(vec![]);
+            let resolved_type = resolved_type.clone().unwrap_or(SumType::new(vec![]));
             if resolved_type.len() == 1 {
-                writer.write(&sum_type_name(&target));
+                writer.write(&target.sum_type_name());
                 writer.write("::");
                 // TODO refactor out:
-                let t = match &resolved_type[0].r#type {
+                let t = match &resolved_type.types()[0].r#type {
                     Type::U32 => "U32",
                     Type::I32 => "I32",
                     Type::Identifier(identifier) => identifier,
-                    _ => panic!("{}", resolved_type[0]),
+                    _ => panic!("{}", resolved_type.types()[0]),
                 };
                 writer.write(&format!("{}", t));
                 writer.write("(");
@@ -601,8 +595,8 @@ impl RustTranspiler {
         }
 
         //TODO extract correct condition type here (not typeof)
-        let condition_type = sum_type_name(&type_narrowing.original_types);
-        let target_type_name = sum_type_name(&type_narrowing.types);
+        let condition_type = type_narrowing.original_types.sum_type_name();
+        let target_type_name = type_narrowing.types.sum_type_name();
 
         writer.write(&format!(
             "let Some({}) = match {} {{",
@@ -613,7 +607,7 @@ impl RustTranspiler {
                 // true if in the form (typeof X != bool && typeof X != i32)
             } else {
                 // false if in the form (typeof X == bool || typeof X == i32)
-                for t in &type_narrowing.types {
+                for t in type_narrowing.types.types() {
                     writer.new_line();
                     if type_narrowing.types.len() > 1 {
                         writer.write(&format!(

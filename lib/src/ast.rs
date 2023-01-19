@@ -8,7 +8,7 @@ use tree_sitter::Node;
 
 use crate::{
     buildin::FunctionDeclaration,
-    types::{Ptr, PtrMut},
+    types::{Ptr, PtrMut, SumType},
     validation::TypeNarrowing,
 };
 
@@ -182,7 +182,7 @@ pub struct File {
     pub struct_defs: HashMap<String, Ptr<Struct>>,
 
     /// From validation:
-    pub sum_types: HashMap<String, Vec<RefType>>,
+    pub sum_types: HashMap<String, SumType>,
 }
 
 #[derive(Debug, Clone)]
@@ -350,15 +350,19 @@ pub struct VarDeclaration {
     pub types: Option<Vec<RefType>>,
     pub value: Expression,
 
-    pub resolved_types: PtrMut<Option<Vec<RefType>>>,
+    pub resolved_types: PtrMut<Option<SumType>>,
 }
 
 impl VarDeclaration {
-    /// Either the resolved types or the d
-    pub fn types(&self) -> Vec<RefType> {
+    /// Either the resolved types or the declared type
+    pub fn types(&self) -> SumType {
         match self.resolved_types.read().unwrap().as_ref() {
             Some(resolved_types) => resolved_types.clone(),
-            None => self.types.clone().unwrap_or(vec![]),
+            None => self
+                .types
+                .as_ref()
+                .map(|t| SumType::from_types(&t))
+                .unwrap_or(SumType::from_types(&vec![])),
         }
     }
 }
@@ -411,7 +415,7 @@ pub struct Expression {
     pub node: NodeData,
     pub r#type: ExpressionType,
 
-    pub resolved_types: PtrMut<Option<Vec<RefType>>>,
+    pub resolved_types: PtrMut<Option<SumType>>,
 }
 
 #[derive(Debug, Clone)]

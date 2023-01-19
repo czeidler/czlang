@@ -321,14 +321,18 @@ impl Server {
                 }
                 QueryResult::Identifier(lookup) => match lookup {
                     LookupResult::VarDeclaration(var) => {
-                        format!("identifier: {} {}", var.name, types_to_string(&var.types()))
+                        format!(
+                            "identifier: {} {}",
+                            var.name,
+                            types_to_string(&var.types().types())
+                        )
                     }
                     LookupResult::Parameter(param) => {
                         format!("{} {}", param.name, types_to_string(&param.types))
                     }
                 },
                 QueryResult::VarDeclaration(var) => {
-                    format!("var {} {}", var.name, types_to_string(&var.types()))
+                    format!("var {} {}", var.name, types_to_string(&var.types().types()))
                 }
                 QueryResult::FunctionCall(fun) => {
                     format!("fun {}", fun.name)

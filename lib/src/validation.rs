@@ -6,7 +6,7 @@ use crate::{
         VarDeclaration,
     },
     buildin::{Buildins, FunctionDeclaration},
-    types::{intersection, types_to_string, Ptr, PtrMut},
+    types::{intersection, types_to_string, Ptr, PtrMut, SumType},
 };
 
 #[derive(Debug, Clone)]
@@ -87,7 +87,7 @@ fn validate_expression_list(
 /// Returns the identifier and if nullable
 fn validate_nullable_identifier(
     node: &NodeData,
-    types: &Vec<RefType>,
+    types: &SumType,
     errors: &mut Vec<LangError>,
 ) -> Option<(String, bool)> {
     if types.len() > 2 || types.len() > 1 && !types.iter().any(|t| matches!(t.r#type, Type::Null)) {
@@ -120,7 +120,7 @@ fn selector_expression_type(
     fun: &Function,
     select: &SelectorExpression,
     errors: &mut Vec<LangError>,
-) -> Option<Vec<RefType>> {
+) -> Option<SumType> {
     let root_types = validate_expression(fun, &select.root, errors)?;
     let (identifier, nullable) =
         validate_nullable_identifier(&select.root.node, &root_types, errors)?;
@@ -173,7 +173,7 @@ fn selector_expression_type(
                         types.push(RefType::value(Type::Null));
                         types.sort();
                     }
-                    return Some(types);
+                    return Some(SumType::new(types));
                 }
                 SelectorFieldType::Call => todo!(),
             }
@@ -187,8 +187,11 @@ fn selector_expression_type(
                         ));
                         return None;
                     };
-                    let (identifier, nullable) =
-                        validate_nullable_identifier(&field.node, &found_field.types, errors)?;
+                    let (identifier, nullable) = validate_nullable_identifier(
+                        &field.node,
+                        &SumType::from_types(&found_field.types),
+                        errors,
+                    )?;
                     let Some(found_struct) = lookup_struct(fun, &identifier) else {
                         errors.push(LangError::type_error(
                             &field.node,
@@ -210,9 +213,9 @@ fn validate_expression(
     fun: &Function,
     expression: &Expression,
     errors: &mut Vec<LangError>,
-) -> Option<Vec<RefType>> {
+) -> Option<SumType> {
     let types = match &expression.r#type {
-        ExpressionType::String(_) => vec![RefType::value(Type::String)],
+        ExpressionType::String(_) => SumType::from_type(RefType::value(Type::String)),
 
         ExpressionType::Identifier(identifier) => {
             let identifier = match lookup_identifier(fun, &identifier) {
@@ -227,23 +230,23 @@ fn validate_expression(
             };
             match identifier {
                 LookupResult::VarDeclaration(var) => var.types(),
-                LookupResult::Parameter(param) => param.types.clone(),
+                LookupResult::Parameter(param) => SumType::from_types(&param.types),
             }
         }
-        ExpressionType::IntLiteral(_) => vec![RefType::value(Type::Unresolved(vec![
-            RefType::value(Type::I32),
-            RefType::value(Type::U32),
-        ]))],
-        ExpressionType::Null => vec![RefType::value(Type::Null)],
-        ExpressionType::Bool(_) => vec![RefType::value(Type::Bool)],
+        ExpressionType::IntLiteral(_) => {
+            SumType::from_type(RefType::value(Type::Unresolved(vec![
+                RefType::value(Type::I32),
+                RefType::value(Type::U32),
+            ])))
+        }
+        ExpressionType::Null => SumType::from_type(RefType::value(Type::Null)),
+        ExpressionType::Bool(_) => SumType::from_type(RefType::value(Type::Bool)),
 
         ExpressionType::UnaryExpression(unary) => match unary.operator {
             UnaryOperator::Minus => match unary.operand.r#type {
-                ExpressionType::IntLiteral(_) => {
-                    vec![RefType::value(Type::Unresolved(vec![RefType::value(
-                        Type::I32,
-                    )]))]
-                }
+                ExpressionType::IntLiteral(_) => SumType::from_type(RefType::value(
+                    Type::Unresolved(vec![RefType::value(Type::I32)]),
+                )),
                 _ => {
                     errors.push(LangError::type_error(
                         &expression.node,
@@ -253,23 +256,27 @@ fn validate_expression(
                 }
             },
             UnaryOperator::Not => {
-                validate_expression(fun, &unary.operand, errors).unwrap_or(vec![])
+                validate_expression(fun, &unary.operand, errors).unwrap_or(SumType::new(vec![]))
             }
             UnaryOperator::Reference => {
-                let types = validate_expression(fun, &unary.operand, errors).unwrap_or(vec![]);
+                let types = validate_expression(fun, &unary.operand, errors)
+                    .unwrap_or(SumType::new(vec![]));
 
                 types
+                    .types()
                     .into_iter()
-                    .map(|it| RefType::reference(it.r#type))
+                    .map(|it| RefType::reference(it.r#type.clone()))
                     .collect()
             }
             UnaryOperator::TypeOf => todo!(),
         },
         // var u32 i, i + 3
         ExpressionType::BinaryExpression(binary) => {
-            let left = validate_expression(fun, &binary.left, errors).unwrap_or(vec![]);
-            let right = validate_expression(fun, &binary.right, errors).unwrap_or(vec![]);
-            let overlap: Vec<RefType> = intersection(&left, &right);
+            let left =
+                validate_expression(fun, &binary.left, errors).unwrap_or(SumType::new(vec![]));
+            let right =
+                validate_expression(fun, &binary.right, errors).unwrap_or(SumType::new(vec![]));
+            let overlap = intersection(&left.types(), &right.types());
             if overlap.is_empty() {
                 errors.push(LangError::type_error(
                     &expression.node,
@@ -280,17 +287,17 @@ fn validate_expression(
                 ));
                 return None;
             }
-            overlap
+            SumType::new(overlap)
         }
         ExpressionType::ParenthesizedExpression(_) => todo!(),
-        ExpressionType::ArrayExpression(array) => vec![RefType {
+        ExpressionType::ArrayExpression(array) => SumType::from_type(RefType {
             is_reference: false,
             r#type: Type::Array(Array {
                 types: Ptr::new(validate_expression_list(fun, &array.expressions, errors)),
                 length: array.expressions.len(),
             }),
-        }],
-        ExpressionType::SliceExpression(slice) => vec![RefType {
+        }),
+        ExpressionType::SliceExpression(slice) => SumType::from_type(RefType {
             is_reference: false,
             r#type: Type::Slice(Slice {
                 types: Ptr::new(validate_expression_list(
@@ -299,7 +306,7 @@ fn validate_expression(
                     errors,
                 )),
             }),
-        }],
+        }),
         ExpressionType::FunctionCall(fun_call) => {
             let fun_declaration = match lookup_function_declaration(fun, &fun_call.name) {
                 Some(fun) => fun,
@@ -327,7 +334,7 @@ fn validate_expression(
             for (i, parameter) in fun_declaration.parameters.iter().enumerate() {
                 let arg = fun_call.arguments.get(i).unwrap();
                 let arg_types = validate_expression(&fun, arg, errors)?;
-                let intersection = intersection(&parameter.types, &arg_types);
+                let intersection = intersection(&parameter.types, &arg_types.types());
                 if intersection.is_empty() {
                     errors.push(LangError::type_error(
                         &arg.node,
@@ -339,16 +346,16 @@ fn validate_expression(
                     return None;
                 }
                 let mut m = arg.resolved_types.write().unwrap();
-                *m = Some(intersection);
+                *m = Some(SumType::new(intersection));
             }
 
-            fun_declaration.return_types
+            SumType::from_types(&fun_declaration.return_types)
         }
         ExpressionType::StructInitialization(struct_init) => {
             for field in &struct_init.fields {
                 validate_expression(fun, &field.value, errors);
             }
-            vec![RefType::value(Type::Identifier(struct_init.name.clone()))]
+            SumType::from_type(RefType::value(Type::Identifier(struct_init.name.clone())))
         }
         ExpressionType::SelectorExpression(select) => {
             validate_expression(fun, &select.root, errors);
@@ -362,13 +369,13 @@ fn validate_expression(
 
 #[derive(Debug, Clone)]
 pub struct TypeNarrowing {
-    pub original_types: Vec<RefType>,
+    pub original_types: SumType,
     pub identifier: String,
     /// true if in the form (typeof X != bool && typeof X != i32)
     /// false if in the form (typeof X == bool || typeof X == i32)
     pub reduction: bool,
     /// Narrowed types
-    pub types: Vec<RefType>,
+    pub types: SumType,
 }
 
 fn validate_typeof_expression(
@@ -388,7 +395,7 @@ fn validate_typeof_expression(
             }
             _ => return None,
         };
-        let (mut left, mut right) = match (
+        let (mut left, right) = match (
             validate_typeof_expression(fun, left, errors),
             validate_typeof_expression(fun, right, errors),
         ) {
@@ -419,7 +426,7 @@ fn validate_typeof_expression(
             ));
             return None;
         }
-        left.types.append(&mut right.types);
+        left.types.append(right.types);
         return Some(left);
     }
 
@@ -456,8 +463,9 @@ fn validate_typeof_expression(
         }
     };
 
-    let original_types = validate_expression(fun, &unary.operand, errors).unwrap_or(vec![]);
-    for t in &original_types {
+    let original_types =
+        validate_expression(fun, &unary.operand, errors).unwrap_or(SumType::new(vec![]));
+    for t in original_types.types() {
         if let Type::Unresolved(_) = &t.r#type {
             errors.push(LangError::type_error(
                 &unary.operand.node,
@@ -470,7 +478,7 @@ fn validate_typeof_expression(
         original_types,
         identifier: identifier.clone(),
         reduction: !equal,
-        types: vec![],
+        types: SumType::new(vec![]),
     };
     match &expression.right.r#type {
         // TODO handle unary & case
@@ -507,7 +515,7 @@ fn validate_typeof_expression(
 }
 
 /// If the expression narrowed down the types of a variable, back propergated this up to previous useage.
-fn back_propergate_types(fun: &Function, expression: &Expression, types: &Vec<RefType>) {
+fn back_propergate_types(fun: &Function, expression: &Expression, types: &SumType) {
     match &expression.r#type {
         ExpressionType::Identifier(id) => {
             let Some(id) = lookup_identifier(fun,id) else {return};
@@ -516,14 +524,15 @@ fn back_propergate_types(fun: &Function, expression: &Expression, types: &Vec<Re
                     let var_types = var_declaration.types();
                     let types = var_types.into_iter().fold(vec![], |mut target, item| {
                         if let Type::Unresolved(unresolved) = &item.r#type {
-                            if !intersection(&unresolved, types).is_empty() {
-                                target.append(&mut types.clone());
+                            if !intersection(&unresolved, types.types()).is_empty() {
+                                target.append(&mut types.types().clone());
                                 return target;
                             }
                         }
                         target.push(item);
                         target
                     });
+                    let types = SumType::new(types);
 
                     // follow the back propergation further
                     back_propergate_types(fun, &var_declaration.value, &types);
@@ -558,7 +567,7 @@ fn validate_declaration_types(
     node: &NodeData,
     types: &Vec<RefType>,
     errors: &mut Vec<LangError>,
-) -> Vec<RefType> {
+) -> SumType {
     let mut result_types = vec![];
     for t in types {
         if result_types.iter().find(|v| *v == t).is_none() {
@@ -570,14 +579,14 @@ fn validate_declaration_types(
             ))
         }
     }
-    result_types.sort();
+    let result_types = SumType::new(result_types);
 
     // Add sum type
     if result_types.len() > 1 {
         file.write()
             .unwrap()
             .sum_types
-            .insert(sum_type_name(&result_types), result_types.clone());
+            .insert(result_types.sum_type_name(), result_types.clone());
     }
     result_types
 }
@@ -590,31 +599,29 @@ pub fn validate_var_declaration(
     let mut var_types = if let Some(types) = &var_declaration.types {
         validate_declaration_types(&fun.file(), &var_declaration.node, types, errors)
     } else {
-        vec![]
+        SumType::new(vec![])
     };
 
-    let expr = validate_expression(fun, &var_declaration.value, errors).unwrap_or(vec![]);
-    if var_types.is_empty() {
-        for t in expr {
-            var_types.push(t);
-        }
-        var_types.sort();
+    let expr =
+        validate_expression(fun, &var_declaration.value, errors).unwrap_or(SumType::new(vec![]));
+    if var_types.types().is_empty() {
+        var_types = expr
     } else {
-        let overlap = intersection(&var_types, &expr);
-        if overlap.is_empty() {
+        let overlap = SumType::new(intersection(&var_types.types(), &expr.types()));
+        if overlap.len() == 0 {
             errors.push(LangError::type_error(
                 &var_declaration.node,
                 format!(
                     "Incompatible type in var assignement: var: {}, expr: {}",
-                    types_to_string(&var_types),
-                    types_to_string(&expr),
+                    types_to_string(&var_types.types()),
+                    types_to_string(&expr.types()),
                 ),
             ));
             return;
         }
         back_propergate_types(fun, &var_declaration.value, &overlap);
 
-        if var_types.is_empty() {
+        if var_types.types().is_empty() {
             var_types = overlap;
         }
     }
@@ -655,7 +662,7 @@ pub fn validate_statement(
                 };
                 (ret_types, Some(expression))
             } else {
-                (vec![], None)
+                (SumType::new(vec![]), None)
             };
 
             if ret_types.is_empty() && fun.return_types.is_some() {
@@ -675,7 +682,7 @@ pub fn validate_statement(
             } else {
                 vec![]
             };
-            let overlap = intersection(&ret_types, &fun_ret_type);
+            let overlap = intersection(&ret_types.types(), &fun_ret_type);
             if overlap.is_empty() {
                 errors.push(LangError::type_error(
                     &expression
@@ -732,11 +739,12 @@ fn validate_fun(fun: &Function, errors: &mut Vec<LangError>) {
         //let parameter = par_ref.get(parser)
         // Add sum type
         if par_ref.types.len() > 1 {
+            let sum_type = SumType::from_types(&par_ref.types);
             fun.file()
                 .write()
                 .unwrap()
                 .sum_types
-                .insert(sum_type_name(&par_ref.types), par_ref.types.clone());
+                .insert(sum_type.sum_type_name(), sum_type);
         }
     }
     let block = fun.body.clone();
@@ -763,44 +771,4 @@ pub fn validate(file: &PtrMut<File>, errors: &mut Vec<LangError>) {
     for (_, fun) in &functions {
         validate_fun(fun, errors);
     }
-}
-
-/// types must be sorted
-pub fn sum_type_name(types: &Vec<RefType>) -> String {
-    let mut name = "".to_string();
-    for t in types {
-        if t.is_reference {
-            name += "R";
-        }
-        let part = match &t.r#type {
-            Type::Null => "N",
-            Type::Str => "S",
-            Type::String => "St",
-            Type::Bool => "B",
-            Type::U8 => "U8",
-            Type::I8 => "I8",
-            Type::U32 => "U32",
-            Type::I32 => "I32",
-            Type::Identifier(id) => id,
-            Type::Array(array) => {
-                let types = array.types.as_ref().clone();
-                name += "A";
-                let part = sum_type_name(&types);
-                name += &part;
-                name += "E";
-                continue;
-            }
-            Type::Slice(slice) => {
-                let types = slice.types.as_ref().clone();
-                name += "As";
-                let part = sum_type_name(&types);
-                name += &part;
-                name += "E";
-                continue;
-            }
-            Type::Unresolved(_) => panic!("Internal error"),
-        };
-        name += part;
-    }
-    name
 }
