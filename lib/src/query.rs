@@ -134,6 +134,17 @@ fn find_in_expression(
             Some(fun_declaration) => Some(QueryResult::FunctionCall(fun_declaration)),
             None => None,
         },
+        ExpressionType::StructInitialization(struct_init) => {
+            // TODO
+            None
+        }
+        ExpressionType::SelectorExpression(selector) => {
+            if selector.root.node.contains(position) {
+                return find_in_expression(fun, &selector.root, position);
+            }
+            // TODO look in fields:
+            None
+        }
         _ => None,
     }
 }
