@@ -20,8 +20,8 @@ struct IdentifierSemantics {}
 */
 
 pub struct VarDeclarationSemantics {
-    /// Derived types if var types where not declared
-    pub resolved_types: Option<SumType>,
+    /// Inferred variable types if var types where not declared
+    pub inferred_types: Option<SumType>,
 }
 
 pub struct IfStatementSemantics {
@@ -247,7 +247,7 @@ impl FileSemanticAnalyzer {
         self.variable_declarations.insert(
             var_declaration.node.id,
             VarDeclarationSemantics {
-                resolved_types: Some(var_types),
+                inferred_types: Some(var_types),
             },
         );
 
@@ -293,9 +293,9 @@ impl FileSemanticAnalyzer {
                             .variable_declarations
                             .entry(var_declaration.node.id)
                             .or_insert(VarDeclarationSemantics {
-                                resolved_types: None,
+                                inferred_types: None,
                             });
-                        entry.resolved_types = Some(types);
+                        entry.inferred_types = Some(types);
                     }
                     LookupResult::Parameter(_) => {}
                 }
@@ -327,7 +327,7 @@ impl FileSemanticAnalyzer {
         match self
             .variable_declarations
             .get(&var_declaration.node.id)
-            .map(|s| s.resolved_types.as_ref())
+            .map(|s| s.inferred_types.as_ref())
             .flatten()
         {
             Some(resolved_types) => resolved_types.clone(),
