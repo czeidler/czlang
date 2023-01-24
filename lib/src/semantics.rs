@@ -23,6 +23,11 @@ struct BlockSemantics {
 struct IdentifierSemantics {}
 */
 
+pub struct IfStatementSemantics {
+    /// Type narrowing from the if contition
+    pub type_narrowing: Option<TypeNarrowing>,
+}
+
 #[derive(Debug, Clone)]
 pub struct TypeNarrowing {
     pub original_types: SumType,
@@ -37,10 +42,11 @@ pub struct TypeNarrowing {
 pub struct FileSemanticAnalyzer {
     pub file: PtrMut<File>,
     pub sum_types: HashMap<String, SumType>,
-    //identifiers: HashMap<usize, IdentifierSemantics>,
     structs: HashSet<usize>,
     /// Just keep track of analyzed/checked functions
     fun_symbols: HashSet<usize>,
+    pub if_statements: HashMap<usize, IfStatementSemantics>,
+    // identifiers: HashMap<usize, IdentifierSemantics>,
     // variable_declarations: HashMap<usize, VarDeclarationSemantics>,
     // blocks: HashMap<usize, BlockSemantics>,
     pub errors: Vec<LangError>,
@@ -54,6 +60,7 @@ impl FileSemanticAnalyzer {
             //identifier_symbols: HashMap::new(),
             structs: HashSet::new(),
             fun_symbols: HashSet::new(),
+            if_statements: HashMap::new(),
             //var_symbols: HashMap::new(),
             //block_symbols: HashMap::new(),
             errors: Vec::new(),
@@ -552,20 +559,24 @@ impl FileSemanticAnalyzer {
         Some((identifier.clone(), types.len() == 2))
     }
 
-    fn validate_if_statement(&mut self, fun: &Function, if_statement: &PtrMut<IfStatement>) {
-        let mut statement = if_statement.write().unwrap();
-        if let Some(binary) = match &statement.condition.r#type {
+    fn validate_if_statement(&mut self, fun: &Function, if_statement: &Ptr<IfStatement>) {
+        if let Some(binary) = match &if_statement.condition.r#type {
             ExpressionType::BinaryExpression(binary) => Some(binary),
             _ => None,
         } {
             if let Some(narrowing) = self.validate_typeof_expression(fun, &binary) {
-                statement.type_narrowing = Some(narrowing);
+                self.if_statements.insert(
+                    if_statement.node.id,
+                    IfStatementSemantics {
+                        type_narrowing: Some(narrowing),
+                    },
+                );
             }
         }
 
-        self.validate_block(fun, &statement.consequence);
+        self.validate_block(fun, &if_statement.consequence);
 
-        if let Some(alternative) = &statement.alternative {
+        if let Some(alternative) = &if_statement.alternative {
             match alternative {
                 IfAlternative::Else(else_block) => self.validate_block(fun, else_block),
                 IfAlternative::If(nested_if) => self.validate_if_statement(fun, nested_if),

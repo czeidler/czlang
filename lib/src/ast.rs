@@ -8,7 +8,6 @@ use tree_sitter::Node;
 
 use crate::{
     buildin::FunctionDeclaration,
-    semantics::TypeNarrowing,
     types::{Ptr, PtrMut, SumType},
 };
 
@@ -328,7 +327,7 @@ pub enum Statement {
     Expression(Expression),
     VarDeclaration(Ptr<VarDeclaration>),
     Return(Option<Expression>),
-    IfStatement(PtrMut<IfStatement>),
+    IfStatement(Ptr<IfStatement>),
 }
 
 #[derive(Debug, Clone)]
@@ -473,7 +472,7 @@ pub struct ParenthesizedExpression {
 #[derive(Debug, Clone)]
 pub enum IfAlternative {
     Else(PtrMut<Block>),
-    If(PtrMut<IfStatement>),
+    If(Ptr<IfStatement>),
 }
 
 #[derive(Debug, Clone)]
@@ -482,9 +481,6 @@ pub struct IfStatement {
     pub condition: Expression,
     pub consequence: PtrMut<Block>,
     pub alternative: Option<IfAlternative>,
-
-    /// Type narrowing from the if contition
-    pub type_narrowing: Option<TypeNarrowing>,
 }
 
 #[derive(Debug, Clone)]
@@ -986,7 +982,7 @@ fn parse_if<'a>(
     context: &mut FileContext<'a>,
     node: Node<'a>,
     parent: Node<'a>,
-) -> Option<PtrMut<IfStatement>> {
+) -> Option<Ptr<IfStatement>> {
     let condition = child_by_field(&node, "condition", context)?;
     let consequence = child_by_field(&node, "consequence", context)?;
     let alternative = node.child_by_field_name("alternative".as_bytes());
@@ -1012,13 +1008,12 @@ fn parse_if<'a>(
         }
         None => None,
     };
-    Some(Ptr::new(RwLock::new(IfStatement {
+    Some(Ptr::new(IfStatement {
         node: NodeData::from_node(&node),
         condition,
         consequence,
         alternative,
-        type_narrowing: None,
-    })))
+    }))
 }
 
 #[derive(Debug, Clone)]

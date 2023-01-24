@@ -77,7 +77,6 @@ fn find_in_function(fun: &Ptr<Function>, position: SourcePosition) -> Option<Que
                 continue;
             }
             Statement::IfStatement(if_statement) => {
-                let if_statement = if_statement.read().unwrap();
                 if !if_statement.node.contains(position) {
                     continue;
                 }

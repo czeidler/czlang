@@ -632,12 +632,18 @@ impl RustTranspiler {
 
     fn transpile_if_statement(
         &self,
+        analyzer: &FileSemanticAnalyzer,
         if_statement: &IfStatement,
         fun: &Ptr<Function>,
         writer: &mut Writer,
     ) {
         writer.write("if ");
-        if let Some(type_narrowing) = &if_statement.type_narrowing {
+        let type_narrowing = analyzer
+            .if_statements
+            .get(&if_statement.node.id)
+            .map(|s| s.type_narrowing.as_ref())
+            .flatten();
+        if let Some(type_narrowing) = &type_narrowing {
             self.transpile_if_type_narrowing(type_narrowing, writer);
         } else {
             self.transpile_expression(&if_statement.condition, fun, writer);
@@ -645,7 +651,7 @@ impl RustTranspiler {
         writer.write(" {");
         writer.new_line();
         writer.indented(|writer| {
-            self.transpile_block(&if_statement.consequence, fun, writer);
+            self.transpile_block(analyzer, &if_statement.consequence, fun, writer);
         });
         writer.write("}");
         if let Some(alternative) = &if_statement.alternative {
@@ -654,20 +660,25 @@ impl RustTranspiler {
                     writer.write(" else {");
                     writer.new_line();
                     writer.indented(|writer| {
-                        self.transpile_block(else_block, fun, writer);
+                        self.transpile_block(analyzer, else_block, fun, writer);
                     });
                     writer.write("}");
                 }
                 IfAlternative::If(if_statement) => {
                     writer.write(" else ");
-                    let statement = if_statement.read().unwrap();
-                    self.transpile_if_statement(&statement, fun, writer);
+                    self.transpile_if_statement(analyzer, &if_statement, fun, writer);
                 }
             }
         }
     }
 
-    fn transpile_block(&self, block: &PtrMut<Block>, fun: &Ptr<Function>, writer: &mut Writer) {
+    fn transpile_block(
+        &self,
+        analyzer: &FileSemanticAnalyzer,
+        block: &PtrMut<Block>,
+        fun: &Ptr<Function>,
+        writer: &mut Writer,
+    ) {
         for statement in &block.read().unwrap().statements {
             match statement {
                 Statement::Expression(expr) => {
@@ -684,15 +695,19 @@ impl RustTranspiler {
                     writer.new_line();
                 }
                 Statement::IfStatement(if_statement) => {
-                    let statement = if_statement.read().unwrap();
-                    self.transpile_if_statement(&statement, fun, writer);
+                    self.transpile_if_statement(analyzer, &if_statement, fun, writer);
                     writer.new_line();
                 }
             }
         }
     }
 
-    fn transpile_function(&self, fun: &Ptr<Function>, writer: &mut Writer) {
+    fn transpile_function(
+        &self,
+        analyzer: &FileSemanticAnalyzer,
+        fun: &Ptr<Function>,
+        writer: &mut Writer,
+    ) {
         writer.write(&format!("fn {}", fun.name));
         self.transpile_parameters(&fun.parameters, writer);
         if let Some(return_type) = &fun.return_types {
@@ -702,7 +717,7 @@ impl RustTranspiler {
         writer.write(" {");
         writer.new_line();
         writer.indented(|writer| {
-            self.transpile_block(&fun.body, fun, writer);
+            self.transpile_block(analyzer, &fun.body, fun, writer);
         });
         writer.write("}");
     }
@@ -797,7 +812,7 @@ impl RustTranspiler {
         }
 
         for (_, function) in &file.functions {
-            self.transpile_function(function, writer);
+            self.transpile_function(analyzer, function, writer);
             writer.new_line();
             writer.new_line();
         }
