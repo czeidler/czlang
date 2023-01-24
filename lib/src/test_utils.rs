@@ -2,14 +2,13 @@ use std::{
     fs::{create_dir_all, remove_dir_all, File},
     io::{Read, Write},
     path::Path,
-    rc::Rc,
 };
 
 use crate::{
     ast::{print_err, FileContext},
     rust_transpiler::transpile_project,
+    semantics::FileSemanticAnalyzer,
     tree_sitter::parse,
-    validation::validate,
 };
 
 pub fn create_project(test_dir: &str, file_content: &str) {
@@ -58,7 +57,7 @@ pub fn validate_project<'a>(test_dir: &str, file_content: &str) -> Result<(), an
 
     let file_path = main_file_path.to_string_lossy();
     let mut file_context = FileContext::new(root_node.clone(), file_path.to_string(), &source_code);
-    let file = Rc::new(file_context.parse_file());
+    let file = file_context.parse_file();
     for error in &file_context.errors {
         print_err(&error, &file_context.source);
     }
@@ -69,9 +68,10 @@ pub fn validate_project<'a>(test_dir: &str, file_content: &str) -> Result<(), an
         )));
     }
 
-    validate(&file, &mut file_context.errors);
-    if !file_context.errors.is_empty() {
-        return Err(anyhow::Error::msg(file_context.errors[0].msg.clone()));
+    let mut analyzer = FileSemanticAnalyzer::new(file);
+    analyzer.analyze();
+    if !analyzer.errors.is_empty() {
+        return Err(anyhow::Error::msg(analyzer.errors[0].msg.clone()));
     }
 
     Ok(())

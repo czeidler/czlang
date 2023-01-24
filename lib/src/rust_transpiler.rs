@@ -4,14 +4,15 @@ use std::path::{Path, PathBuf};
 
 use crate::ast::{
     print_err, Array, ArrayExpression, BinaryOperator, Block, Expression, ExpressionType, Field,
-    File, FileContext, Function, FunctionCall, IfAlternative, IfStatement, Parameter, RefType,
+    FileContext, Function, FunctionCall, IfAlternative, IfStatement, Parameter, RefType,
     SelectorExpression, SelectorFieldType, Slice, SliceExpression, Statement, StringTemplatePart,
     Struct, StructFieldInitialization, StructInitialization, Type, UnaryOperator, VarDeclaration,
 };
 use crate::buildin::Buildins;
+use crate::semantics::{FileSemanticAnalyzer, TypeNarrowing};
 use crate::tree_sitter::parse;
 use crate::types::{Ptr, PtrMut, SumType};
-use crate::validation::{lookup_function, lookup_struct, validate, TypeNarrowing};
+use crate::validation::{lookup_function, lookup_struct};
 
 struct Writer<'a> {
     indentation: u16,
@@ -781,9 +782,9 @@ impl RustTranspiler {
         writer.write("}");
     }
 
-    pub fn transpile_file(&self, file: &PtrMut<File>, writer: &mut Writer) {
-        let file = file.read().unwrap();
-        for (name, types) in &file.sum_types {
+    pub fn transpile_file(&self, analyzer: &FileSemanticAnalyzer, writer: &mut Writer) {
+        let file = analyzer.file.read().unwrap();
+        for (name, types) in &analyzer.sum_types {
             self.transpile_sum_type_def(name, types, writer);
             writer.new_line();
             writer.new_line();
@@ -803,7 +804,7 @@ impl RustTranspiler {
     }
 }
 
-pub fn transpile(file: &PtrMut<File>, outfile: &PathBuf) -> Result<(), io::Error> {
+pub fn transpile(analyzer: &FileSemanticAnalyzer, outfile: &PathBuf) -> Result<(), io::Error> {
     let mut outfile = std::fs::File::create(outfile)?;
 
     let mut buffer = "".to_string();
@@ -811,7 +812,7 @@ pub fn transpile(file: &PtrMut<File>, outfile: &PathBuf) -> Result<(), io::Error
     let transpiler = RustTranspiler {
         buildins: Buildins::new(),
     };
-    transpiler.transpile_file(file, &mut writer);
+    transpiler.transpile_file(analyzer, &mut writer);
 
     outfile.write(buffer.as_bytes())?;
     outfile.flush()?;
@@ -841,9 +842,10 @@ pub fn transpile_project(project_dir: &Path) -> Result<(), anyhow::Error> {
         )));
     }
 
-    validate(&file, &mut file_context.errors);
-    if !file_context.errors.is_empty() {
-        return Err(anyhow::Error::msg(file_context.errors[0].msg.clone()));
+    let mut analyzer = FileSemanticAnalyzer::new(file.clone());
+    analyzer.analyze();
+    if !analyzer.errors.is_empty() {
+        return Err(anyhow::Error::msg(analyzer.errors[0].msg.clone()));
     }
 
     let build_dir = project_dir.join(".build");
@@ -851,7 +853,7 @@ pub fn transpile_project(project_dir: &Path) -> Result<(), anyhow::Error> {
     create_dir_all(&src_rust)?;
     let main_rust = src_rust.join("main.rs");
 
-    transpile(&file, &main_rust)?;
+    transpile(&analyzer, &main_rust)?;
 
     // write Cargo.toml
     let mut cargo_file = std::fs::File::create(&build_dir.join("Cargo.toml"))?;

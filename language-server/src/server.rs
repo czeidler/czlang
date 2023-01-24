@@ -145,8 +145,13 @@ impl Server {
 
     fn publish_errors(&self, project: &Project, uri: &Url) {
         let url: String = uri.clone().into();
-        if let Some(errors) = project.open_files.get(&url).map(|f| &f.errors) {
-            if errors.is_empty() {
+        if let Some(file) = project.open_files.get(&url) {
+            let mut all_errors = file
+                .parse_errors
+                .iter()
+                .chain(file.file_analyzer.errors.iter())
+                .peekable();
+            if all_errors.peek().is_none() {
                 self.connection
                     .sender
                     .send(
@@ -162,7 +167,7 @@ impl Server {
                     )
                     .unwrap();
             }
-            for error in errors {
+            for error in all_errors {
                 let start = error.node.span.start;
                 let end = error.node.span.end;
                 self.connection

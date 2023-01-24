@@ -8,16 +8,9 @@ use tree_sitter::Node;
 
 use crate::{
     buildin::FunctionDeclaration,
+    semantics::TypeNarrowing,
     types::{Ptr, PtrMut, SumType},
-    validation::TypeNarrowing,
 };
-
-// code analysis:
-
-#[derive(Debug, Clone)]
-pub struct VarState {
-    pub types: Vec<RefType>,
-}
 
 // ast:
 
@@ -180,9 +173,6 @@ impl NodeData {
 pub struct File {
     pub functions: HashMap<String, Ptr<Function>>,
     pub struct_defs: HashMap<String, Ptr<Struct>>,
-
-    /// From validation:
-    pub sum_types: HashMap<String, SumType>,
 }
 
 #[derive(Debug, Clone)]
@@ -531,8 +521,6 @@ pub fn parse_file<'a>(node: Node<'a>, context: &mut FileContext<'a>) -> PtrMut<F
     let file = Ptr::new(RwLock::new(File {
         functions: HashMap::new(),
         struct_defs: HashMap::new(),
-
-        sum_types: HashMap::new(),
     }));
 
     let mut cursor = node.walk();

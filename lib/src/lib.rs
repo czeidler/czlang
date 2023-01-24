@@ -9,6 +9,7 @@ pub mod validation;
 
 pub mod project;
 pub mod query;
+pub mod semantics;
 
 #[cfg(test)]
 mod test_utils;

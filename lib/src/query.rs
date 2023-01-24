@@ -134,7 +134,7 @@ fn find_in_expression(
             Some(fun_declaration) => Some(QueryResult::FunctionCall(fun_declaration)),
             None => None,
         },
-        ExpressionType::StructInitialization(struct_init) => {
+        ExpressionType::StructInitialization(_struct_init) => {
             // TODO
             None
         }

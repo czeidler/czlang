@@ -4,16 +4,17 @@ use tree_sitter::{InputEdit, Point, Tree};
 
 use crate::{
     ast::{File, FileContext, LangError, SourceSpan},
+    semantics::FileSemanticAnalyzer,
     tree_sitter::parse,
     types::PtrMut,
-    validation::validate,
 };
 
 pub struct ProjectFile {
     pub source: String,
     pub tree: Tree,
+    pub parse_errors: Vec<LangError>,
     pub file: PtrMut<File>,
-    pub errors: Vec<LangError>,
+    pub file_analyzer: FileSemanticAnalyzer,
 }
 
 pub struct FileChange {
@@ -26,13 +27,14 @@ impl ProjectFile {
         let tree = parse(&source, None);
         let mut file_context = FileContext::new(tree.root_node(), path, &source);
         let file = file_context.parse_file();
-        let errors = file_context.errors;
+        let parse_errors = file_context.errors;
 
         let project_file = ProjectFile {
             source,
             tree,
-            file,
-            errors,
+            file: file.clone(),
+            parse_errors,
+            file_analyzer: FileSemanticAnalyzer::new(file),
         };
 
         project_file
@@ -78,7 +80,8 @@ impl ProjectFile {
 
         let mut file_context = FileContext::new(self.tree.root_node(), url, &self.source);
         self.file = file_context.parse_file();
-        self.errors = file_context.errors;
+        self.parse_errors = file_context.errors;
+        self.file_analyzer = FileSemanticAnalyzer::new(self.file.clone())
     }
 }
 
@@ -107,6 +110,6 @@ impl Project {
 
     pub fn validate_file(&mut self, url: &String) {
         let Some(file) = self.open_files.get_mut(url) else {return;};
-        validate(&file.file, &mut file.errors);
+        file.file_analyzer.analyze();
     }
 }
