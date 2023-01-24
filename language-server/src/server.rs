@@ -329,7 +329,7 @@ impl Server {
                         format!(
                             "identifier: {} {}",
                             var.name,
-                            types_to_string(&var.types().types())
+                            types_to_string(file.file_analyzer.var_types(&var).types())
                         )
                     }
                     LookupResult::Parameter(param) => {
@@ -337,7 +337,11 @@ impl Server {
                     }
                 },
                 QueryResult::VarDeclaration(var) => {
-                    format!("var {} {}", var.name, types_to_string(&var.types().types()))
+                    format!(
+                        "var {} {}",
+                        var.name,
+                        types_to_string(file.file_analyzer.var_types(&var).types())
+                    )
                 }
                 QueryResult::FunctionCall(fun) => {
                     format!("fun {}", fun.name)

@@ -338,22 +338,6 @@ pub struct VarDeclaration {
     pub is_mutable: bool,
     pub types: Option<Vec<RefType>>,
     pub value: Expression,
-
-    pub resolved_types: PtrMut<Option<SumType>>,
-}
-
-impl VarDeclaration {
-    /// Either the resolved types or the declared type
-    pub fn types(&self) -> SumType {
-        match self.resolved_types.read().unwrap().as_ref() {
-            Some(resolved_types) => resolved_types.clone(),
-            None => self
-                .types
-                .as_ref()
-                .map(|t| SumType::from_types(&t))
-                .unwrap_or(SumType::from_types(&vec![])),
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -962,8 +946,6 @@ fn parse_var_declaration<'a>(
         is_mutable,
         types: var_type,
         value,
-
-        resolved_types: Ptr::new(RwLock::new(None)),
     })
 }
 

@@ -11,10 +11,6 @@ use crate::{
 };
 
 /*
-struct VarDeclarationSemantics {
-    pub resolved_types: PtrMut<Option<SumType>>,
-}
-
 struct BlockSemantics {
     pub vars: RwLock<HashMap<String, Ptr<VarDeclaration>>>,
 }
@@ -22,6 +18,11 @@ struct BlockSemantics {
 
 struct IdentifierSemantics {}
 */
+
+pub struct VarDeclarationSemantics {
+    /// Derived types if var types where not declared
+    pub resolved_types: Option<SumType>,
+}
 
 pub struct IfStatementSemantics {
     /// Type narrowing from the if contition
@@ -46,8 +47,8 @@ pub struct FileSemanticAnalyzer {
     /// Just keep track of analyzed/checked functions
     fun_symbols: HashSet<usize>,
     pub if_statements: HashMap<usize, IfStatementSemantics>,
+    pub variable_declarations: HashMap<usize, VarDeclarationSemantics>,
     // identifiers: HashMap<usize, IdentifierSemantics>,
-    // variable_declarations: HashMap<usize, VarDeclarationSemantics>,
     // blocks: HashMap<usize, BlockSemantics>,
     pub errors: Vec<LangError>,
 }
@@ -61,7 +62,7 @@ impl FileSemanticAnalyzer {
             structs: HashSet::new(),
             fun_symbols: HashSet::new(),
             if_statements: HashMap::new(),
-            //var_symbols: HashMap::new(),
+            variable_declarations: HashMap::new(),
             //block_symbols: HashMap::new(),
             errors: Vec::new(),
         }
@@ -236,14 +237,20 @@ impl FileSemanticAnalyzer {
                 ));
                 return;
             }
-            back_propergate_types(fun, &var_declaration.value, &overlap);
+            self.back_propagate_types(fun, &var_declaration.value, &overlap);
 
             if var_types.types().is_empty() {
                 var_types = overlap;
             }
         }
 
-        *var_declaration.resolved_types.write().unwrap() = Some(var_types);
+        self.variable_declarations.insert(
+            var_declaration.node.id,
+            VarDeclarationSemantics {
+                resolved_types: Some(var_types),
+            },
+        );
+
         if let Some(_) = block
             .vars
             .write()
@@ -255,6 +262,80 @@ impl FileSemanticAnalyzer {
                 format!("Variable already declared: {:?}", var_declaration.name),
             ));
             return;
+        }
+    }
+
+    /// If the expression narrowed down the types of a variable, back propagated this up to previous usage.
+    fn back_propagate_types(&mut self, fun: &Function, expression: &Expression, types: &SumType) {
+        match &expression.r#type {
+            ExpressionType::Identifier(id) => {
+                let Some(id) = lookup_identifier(fun,id) else {return};
+                match id {
+                    LookupResult::VarDeclaration(var_declaration) => {
+                        let var_types = self.var_types(&var_declaration);
+                        let types = var_types.into_iter().fold(vec![], |mut target, item| {
+                            if let Type::Unresolved(unresolved) = &item.r#type {
+                                if !intersection(&unresolved, types.types()).is_empty() {
+                                    target.append(&mut types.types().clone());
+                                    return target;
+                                }
+                            }
+                            target.push(item);
+                            target
+                        });
+                        let types = SumType::new(types);
+
+                        // follow the back propergation further
+                        self.back_propagate_types(fun, &var_declaration.value, &types);
+                        // update resolved types
+
+                        let entry = self
+                            .variable_declarations
+                            .entry(var_declaration.node.id)
+                            .or_insert(VarDeclarationSemantics {
+                                resolved_types: None,
+                            });
+                        entry.resolved_types = Some(types);
+                    }
+                    LookupResult::Parameter(_) => {}
+                }
+            }
+            ExpressionType::UnaryExpression(expr) => {
+                self.back_propagate_types(fun, &expr.operand, types)
+            }
+            ExpressionType::BinaryExpression(expr) => {
+                self.back_propagate_types(fun, &expr.left, types);
+                self.back_propagate_types(fun, &expr.right, types);
+            }
+            ExpressionType::ParenthesizedExpression(expr) => {
+                self.back_propagate_types(fun, &expr.expression, types)
+            }
+            ExpressionType::IntLiteral(_) => {}
+            ExpressionType::Null => {}
+            ExpressionType::Bool(_) => {}
+            ExpressionType::ArrayExpression(_) => {}
+            ExpressionType::SliceExpression(_) => {}
+            ExpressionType::FunctionCall(_) => {}
+            ExpressionType::String(_) => {}
+            ExpressionType::StructInitialization(_) => {}
+            ExpressionType::SelectorExpression(_) => {}
+        }
+    }
+
+    /// Either the resolved types or the declared type
+    pub fn var_types(&self, var_declaration: &Ptr<VarDeclaration>) -> SumType {
+        match self
+            .variable_declarations
+            .get(&var_declaration.node.id)
+            .map(|s| s.resolved_types.as_ref())
+            .flatten()
+        {
+            Some(resolved_types) => resolved_types.clone(),
+            None => var_declaration
+                .types
+                .as_ref()
+                .map(|t| SumType::from_types(&t))
+                .unwrap_or(SumType::from_types(&vec![])),
         }
     }
 
@@ -274,7 +355,7 @@ impl FileSemanticAnalyzer {
                     }
                 };
                 match identifier {
-                    LookupResult::VarDeclaration(var) => var.types(),
+                    LookupResult::VarDeclaration(var) => self.var_types(&var),
                     LookupResult::Parameter(param) => SumType::from_types(&param.types),
                 }
             }
@@ -720,53 +801,5 @@ impl FileSemanticAnalyzer {
             }
         }
         Some(result)
-    }
-}
-
-/// If the expression narrowed down the types of a variable, back propergated this up to previous useage.
-fn back_propergate_types(fun: &Function, expression: &Expression, types: &SumType) {
-    match &expression.r#type {
-        ExpressionType::Identifier(id) => {
-            let Some(id) = lookup_identifier(fun,id) else {return};
-            match id {
-                LookupResult::VarDeclaration(var_declaration) => {
-                    let var_types = var_declaration.types();
-                    let types = var_types.into_iter().fold(vec![], |mut target, item| {
-                        if let Type::Unresolved(unresolved) = &item.r#type {
-                            if !intersection(&unresolved, types.types()).is_empty() {
-                                target.append(&mut types.types().clone());
-                                return target;
-                            }
-                        }
-                        target.push(item);
-                        target
-                    });
-                    let types = SumType::new(types);
-
-                    // follow the back propergation further
-                    back_propergate_types(fun, &var_declaration.value, &types);
-                    // update resolved types
-                    *(var_declaration.resolved_types.write().unwrap()) = Some(types);
-                }
-                LookupResult::Parameter(_) => {}
-            }
-        }
-        ExpressionType::UnaryExpression(expr) => back_propergate_types(fun, &expr.operand, types),
-        ExpressionType::BinaryExpression(expr) => {
-            back_propergate_types(fun, &expr.left, types);
-            back_propergate_types(fun, &expr.right, types);
-        }
-        ExpressionType::ParenthesizedExpression(expr) => {
-            back_propergate_types(fun, &expr.expression, types)
-        }
-        ExpressionType::IntLiteral(_) => {}
-        ExpressionType::Null => {}
-        ExpressionType::Bool(_) => {}
-        ExpressionType::ArrayExpression(_) => {}
-        ExpressionType::SliceExpression(_) => {}
-        ExpressionType::FunctionCall(_) => {}
-        ExpressionType::String(_) => {}
-        ExpressionType::StructInitialization(_) => {}
-        ExpressionType::SelectorExpression(_) => {}
     }
 }
