@@ -19,6 +19,10 @@ struct BlockSemantics {
 struct IdentifierSemantics {}
 */
 
+pub struct ExpressionSemantics {
+    pub resolved_types: Option<SumType>,
+}
+
 pub struct VarDeclarationSemantics {
     /// Inferred variable types if var types where not declared
     pub inferred_types: Option<SumType>,
@@ -47,6 +51,7 @@ pub struct FileSemanticAnalyzer {
     /// Just keep track of analyzed/checked functions
     fun_symbols: HashSet<usize>,
     pub if_statements: HashMap<usize, IfStatementSemantics>,
+    pub expressions: HashMap<usize, ExpressionSemantics>,
     pub variable_declarations: HashMap<usize, VarDeclarationSemantics>,
     // identifiers: HashMap<usize, IdentifierSemantics>,
     // blocks: HashMap<usize, BlockSemantics>,
@@ -62,6 +67,7 @@ impl FileSemanticAnalyzer {
             structs: HashSet::new(),
             fun_symbols: HashSet::new(),
             if_statements: HashMap::new(),
+            expressions: HashMap::new(),
             variable_declarations: HashMap::new(),
             //block_symbols: HashMap::new(),
             errors: Vec::new(),
@@ -461,7 +467,7 @@ impl FileSemanticAnalyzer {
                 for (i, parameter) in fun_declaration.parameters.iter().enumerate() {
                     let arg = fun_call.arguments.get(i).unwrap();
                     let arg_types = self.validate_expression(&fun, arg)?;
-                    let intersection = intersection(&parameter.types, &arg_types.types());
+                    let intersection = intersection(&arg_types.types(), &parameter.types);
                     if intersection.is_empty() {
                         self.errors.push(LangError::type_error(
                             &arg.node,
@@ -472,8 +478,12 @@ impl FileSemanticAnalyzer {
                         ));
                         return None;
                     }
-                    let mut m = arg.resolved_types.write().unwrap();
-                    *m = Some(SumType::new(intersection));
+                    self.expressions.insert(
+                        arg.node.id,
+                        ExpressionSemantics {
+                            resolved_types: Some(SumType::new(intersection)),
+                        },
+                    );
                 }
 
                 SumType::from_types(&fun_declaration.return_types)
@@ -489,8 +499,13 @@ impl FileSemanticAnalyzer {
                 self.selector_expression_type(fun, select)?
             }
         };
-        let mut resolved_types = expression.resolved_types.write().unwrap();
-        *resolved_types = Some(types.clone());
+        self.expressions.insert(
+            expression.node.id,
+            ExpressionSemantics {
+                resolved_types: Some(types.clone()),
+            },
+        );
+
         Some(types)
     }
 

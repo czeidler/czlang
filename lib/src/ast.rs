@@ -8,7 +8,7 @@ use tree_sitter::Node;
 
 use crate::{
     buildin::FunctionDeclaration,
-    types::{Ptr, PtrMut, SumType},
+    types::{Ptr, PtrMut},
 };
 
 // ast:
@@ -387,8 +387,6 @@ pub struct SelectorExpression {
 pub struct Expression {
     pub node: NodeData,
     pub r#type: ExpressionType,
-
-    pub resolved_types: PtrMut<Option<SumType>>,
 }
 
 #[derive(Debug, Clone)]
@@ -800,7 +798,6 @@ fn parse_expression(context: &mut FileContext, node: &Node) -> Option<Expression
     Some(Expression {
         node: NodeData::from_node(&node),
         r#type: expression_type,
-        resolved_types: Ptr::new(RwLock::new(None)),
     })
 }
 
