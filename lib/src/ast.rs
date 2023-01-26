@@ -239,8 +239,6 @@ pub struct Block {
     pub node: NodeData,
 
     pub statements: Vec<Statement>,
-
-    pub vars: RwLock<HashMap<String, Ptr<VarDeclaration>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -655,7 +653,6 @@ fn parse_block<'a>(
             parent: parent_node.id(),
             span: SourceSpan::from_node(&node),
         },
-        vars: RwLock::new(HashMap::new()),
     }))
 }
 

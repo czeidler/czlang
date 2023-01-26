@@ -1,10 +1,11 @@
 use crate::{
     ast::{
-        Expression, ExpressionType, Field, File, Function, Parameter, SourcePosition, Statement,
-        Struct, VarDeclaration,
+        Block, Expression, ExpressionType, Field, File, Function, Parameter, SourcePosition,
+        Statement, Struct, VarDeclaration,
     },
+    semantics::FileSemanticAnalyzer,
     types::{Ptr, PtrMut},
-    validation::{lookup_function, lookup_identifier, LookupResult},
+    validation::{lookup_function, LookupResult},
 };
 
 #[derive(Debug, Clone)]
@@ -18,13 +19,17 @@ pub enum QueryResult {
     StructFieldDeclaration(Field),
 }
 
-pub fn find_in_file(file: PtrMut<File>, position: SourcePosition) -> Option<QueryResult> {
+pub fn find_in_file(
+    analyzer: &mut FileSemanticAnalyzer,
+    file: PtrMut<File>,
+    position: SourcePosition,
+) -> Option<QueryResult> {
     let file = file.read().unwrap();
     for (_, fun) in &file.functions {
         if !fun.node.contains(position) {
             continue;
         }
-        if let Some(result) = find_in_function(fun, position) {
+        if let Some(result) = find_in_function(analyzer, fun, position) {
             return Some(result);
         }
     }
@@ -52,7 +57,11 @@ fn find_in_structs(file: &File, position: SourcePosition) -> Option<QueryResult>
     None
 }
 
-fn find_in_function(fun: &Ptr<Function>, position: SourcePosition) -> Option<QueryResult> {
+fn find_in_function(
+    analyzer: &mut FileSemanticAnalyzer,
+    fun: &Ptr<Function>,
+    position: SourcePosition,
+) -> Option<QueryResult> {
     if fun.name_node.contains(position) {
         return Some(QueryResult::Function(fun.clone()));
     }
@@ -66,13 +75,14 @@ fn find_in_function(fun: &Ptr<Function>, position: SourcePosition) -> Option<Que
 
     let body = fun.body.read().unwrap();
     for statement in &body.statements {
+        let block = FunctionBlock { fun, block: &&body };
         match statement {
             Statement::VarDeclaration(var) => {
                 if var.name_node.contains(position) {
                     return Some(QueryResult::VarDeclaration(var.clone()));
                 }
                 if var.value.node.contains(position) {
-                    return find_in_expression(fun, &var.value, position);
+                    return find_in_expression(analyzer, &block, &var.value, position);
                 }
                 continue;
             }
@@ -81,20 +91,20 @@ fn find_in_function(fun: &Ptr<Function>, position: SourcePosition) -> Option<Que
                     continue;
                 }
                 if if_statement.condition.node.contains(position) {
-                    return find_in_expression(fun, &if_statement.condition, position);
+                    return find_in_expression(analyzer, &block, &if_statement.condition, position);
                 }
                 // TODO find in block
             }
             Statement::Return(ret) => {
                 if let Some(ret) = ret {
                     if ret.node.contains(position) {
-                        return find_in_expression(fun, ret, position);
+                        return find_in_expression(analyzer, &block, ret, position);
                     }
                 }
             }
             Statement::Expression(expr) => {
                 if expr.node.contains(position) {
-                    return find_in_expression(fun, expr, position);
+                    return find_in_expression(analyzer, &block, expr, position);
                 }
             }
         }
@@ -104,32 +114,39 @@ fn find_in_function(fun: &Ptr<Function>, position: SourcePosition) -> Option<Que
     None
 }
 
+// TODO remove:
+struct FunctionBlock<'a> {
+    fun: &'a Function,
+    block: &'a Block,
+}
+
 fn find_in_expression(
-    fun: &Ptr<Function>,
+    analyzer: &mut FileSemanticAnalyzer,
+    block: &FunctionBlock,
     expression: &Expression,
     position: SourcePosition,
 ) -> Option<QueryResult> {
     match &expression.r#type {
         ExpressionType::Identifier(identifier) => {
-            let Some(identifier) = lookup_identifier(fun, identifier) else {return None;};
+            let Some(identifier) = analyzer.lookup_identifier_from_block(block.block, identifier) else {return None;};
             Some(QueryResult::Identifier(identifier))
         }
         ExpressionType::BinaryExpression(binary) => {
             if binary.left.node.contains(position) {
-                return find_in_expression(fun, &binary.left, position);
+                return find_in_expression(analyzer, block, &binary.left, position);
             }
             if binary.right.node.contains(position) {
-                return find_in_expression(fun, &binary.right, position);
+                return find_in_expression(analyzer, block, &binary.right, position);
             }
             None
         }
         ExpressionType::UnaryExpression(unary) => {
             if unary.operand.node.contains(position) {
-                return find_in_expression(fun, &unary.operand, position);
+                return find_in_expression(analyzer, block, &unary.operand, position);
             }
             None
         }
-        ExpressionType::FunctionCall(call) => match lookup_function(fun, call) {
+        ExpressionType::FunctionCall(call) => match lookup_function(block.fun, call) {
             Some(fun_declaration) => Some(QueryResult::FunctionCall(fun_declaration)),
             None => None,
         },
@@ -139,7 +156,7 @@ fn find_in_expression(
         }
         ExpressionType::SelectorExpression(selector) => {
             if selector.root.node.contains(position) {
-                return find_in_expression(fun, &selector.root, position);
+                return find_in_expression(analyzer, block, &selector.root, position);
             }
             // TODO look in fields:
             None

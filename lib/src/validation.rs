@@ -10,28 +10,6 @@ pub enum LookupResult {
     Parameter(Parameter),
 }
 
-pub fn lookup_identifier(fun: &Function, identifier: &String) -> Option<LookupResult> {
-    if let Some(var) = fun
-        .body
-        .read()
-        .unwrap()
-        .vars
-        .read()
-        .unwrap()
-        .get(identifier)
-    {
-        return Some(LookupResult::VarDeclaration(var.clone()));
-    }
-    if let Some(param) = (&fun.parameters)
-        .into_iter()
-        .find(|it| &it.name == identifier)
-    {
-        return Some(LookupResult::Parameter(param.clone()));
-    }
-
-    None
-}
-
 pub fn lookup_function(fun: &Function, fun_call: &FunctionCall) -> Option<Ptr<Function>> {
     let file = fun.file();
     let file = file.read().unwrap();

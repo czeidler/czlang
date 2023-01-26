@@ -309,13 +309,13 @@ impl Server {
 
         let project = self.project.clone();
         self.handle_feature_request(id, params, uri.clone(), move |_request| {
-            let project = project.lock().unwrap();
+            let mut project = project.lock().unwrap();
             let uri: String = uri.as_ref().clone().into();
-            let file = project.open_files.get(&uri);
+            let file = project.open_files.get_mut(&uri);
             let Some(file) = file else {return None};
 
             let position = SourcePosition::new(position.line as usize, position.character as usize);
-            let Some(result) = find_in_file(file.file.clone(), position) else { return None };
+            let Some(result) = find_in_file(&mut file.file_analyzer, file.file.clone(), position) else { return None };
 
             let result = match result {
                 QueryResult::Function(fun) => {
@@ -373,13 +373,13 @@ impl Server {
         let position = params.text_document_position_params.position;
         let project = self.project.clone();
         self.handle_feature_request(id, params, url.clone(), move |_request| {
-            let project = project.lock().unwrap();
+            let mut project = project.lock().unwrap();
             let uri: String = url.as_ref().clone().into();
-            let file = project.open_files.get(&uri);
+            let file = project.open_files.get_mut(&uri);
             let Some(file) = file else {return None};
 
             let position = SourcePosition::new(position.line as usize, position.character as usize);
-            let Some(result) = find_in_file(file.file.clone(), position) else { return None };
+            let Some(result) = find_in_file(&mut file.file_analyzer, file.file.clone(), position) else { return None };
 
             let target = match result {
                 QueryResult::Identifier(lookup) => match lookup {
