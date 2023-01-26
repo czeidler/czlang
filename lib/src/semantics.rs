@@ -3,21 +3,29 @@ use std::collections::{HashMap, HashSet};
 use crate::{
     ast::{
         Array, BinaryExpression, BinaryOperator, Block, BlockParent, Expression, ExpressionType,
-        File, Function, IfAlternative, IfStatement, LangError, NodeData, RefType,
+        File, Function, IfAlternative, IfStatement, LangError, NodeData, Parameter, RefType,
         SelectorExpression, SelectorFieldType, Slice, Statement, Struct, Type, UnaryOperator,
         VarDeclaration,
     },
     types::{intersection, types_to_string, Ptr, PtrMut, SumType},
-    validation::{lookup_function_declaration, lookup_struct, LookupResult},
+    validation::{lookup_function_declaration, lookup_struct},
 };
 
 struct BlockSemantics {
     pub vars: HashMap<String, Ptr<VarDeclaration>>,
 }
 
-/*
-struct IdentifierSemantics {}
-*/
+#[derive(Debug, Clone)]
+pub enum IdentifierBinding {
+    //StructDeclaration(Struct),
+    //FunctionCall(FunctionCall),
+    VarDeclaration(Ptr<VarDeclaration>),
+    Parameter(Parameter),
+}
+
+pub struct IdentifierSemantics {
+    pub binding: Option<IdentifierBinding>,
+}
 
 pub struct ExpressionSemantics {
     pub resolved_types: Option<SumType>,
@@ -53,7 +61,7 @@ pub struct FileSemanticAnalyzer {
     pub if_statements: HashMap<usize, IfStatementSemantics>,
     pub expressions: HashMap<usize, ExpressionSemantics>,
     pub variable_declarations: HashMap<usize, VarDeclarationSemantics>,
-    // identifiers: HashMap<usize, IdentifierSemantics>,
+    pub identifiers: HashMap<usize, IdentifierSemantics>,
     blocks: HashMap<usize, BlockSemantics>,
     pub errors: Vec<LangError>,
 }
@@ -69,7 +77,7 @@ impl FileSemanticAnalyzer {
         FileSemanticAnalyzer {
             file,
             sum_types: HashMap::new(),
-            //identifier_symbols: HashMap::new(),
+            identifiers: HashMap::new(),
             structs: HashSet::new(),
             fun_symbols: HashSet::new(),
             if_statements: HashMap::new(),
@@ -282,10 +290,10 @@ impl FileSemanticAnalyzer {
     /// If the expression narrowed down the types of a variable, back propagated this up to previous usage.
     fn back_propagate_types(&mut self, block: &Block, expression: &Expression, types: &SumType) {
         match &expression.r#type {
-            ExpressionType::Identifier(id) => {
-                let Some(id) = self.lookup_identifier_from_block(block,id) else {return};
+            ExpressionType::Identifier(_) => {
+                let Some(id) = self.identifiers.get(&expression.node.id).map(|s|s.binding.clone()).flatten()  else {return};
                 match id {
-                    LookupResult::VarDeclaration(var_declaration) => {
+                    IdentifierBinding::VarDeclaration(var_declaration) => {
                         let var_types = self.var_types(&var_declaration);
                         let types = var_types.into_iter().fold(vec![], |mut target, item| {
                             if let Type::Unresolved(unresolved) = &item.r#type {
@@ -311,7 +319,7 @@ impl FileSemanticAnalyzer {
                             });
                         entry.inferred_types = Some(types);
                     }
-                    LookupResult::Parameter(_) => {}
+                    IdentifierBinding::Parameter(_) => {}
                 }
             }
             ExpressionType::UnaryExpression(expr) => {
@@ -353,12 +361,12 @@ impl FileSemanticAnalyzer {
         }
     }
 
-    // TODO make private
-    pub fn lookup_identifier_from_block(
+    fn lookup_identifier_from_block(
         &mut self,
         block: &Block,
+        id: usize,
         identifier: &String,
-    ) -> Option<LookupResult> {
+    ) -> Option<IdentifierBinding> {
         let mut current: Option<Ptr<Block>> = None;
         loop {
             let b = match &current {
@@ -371,7 +379,12 @@ impl FileSemanticAnalyzer {
                 .map(|s| s.vars.get(identifier))
                 .flatten();
             if let Some(var) = var {
-                return Some(LookupResult::VarDeclaration(var.clone()));
+                let binding = IdentifierBinding::VarDeclaration(var.clone());
+                self.identifiers
+                    .entry(id)
+                    .or_insert(IdentifierSemantics { binding: None })
+                    .binding = Some(binding.clone());
+                return Some(binding);
             }
             let Some(parent) = b.parent.clone() else {
                 return None;
@@ -383,7 +396,12 @@ impl FileSemanticAnalyzer {
                         .into_iter()
                         .find(|it| &it.name == identifier)
                     {
-                        return Some(LookupResult::Parameter(param.clone()));
+                        let binding = IdentifierBinding::Parameter(param.clone());
+                        self.identifiers
+                            .entry(id)
+                            .or_insert(IdentifierSemantics { binding: None })
+                            .binding = Some(binding.clone());
+                        return Some(binding);
                     } else {
                         return None;
                     }
@@ -404,7 +422,11 @@ impl FileSemanticAnalyzer {
             ExpressionType::String(_) => SumType::from_type(RefType::value(Type::String)),
 
             ExpressionType::Identifier(identifier) => {
-                let identifier = match self.lookup_identifier_from_block(block.block, &identifier) {
+                let identifier = match self.lookup_identifier_from_block(
+                    block.block,
+                    expression.node.id,
+                    &identifier,
+                ) {
                     Some(identifier) => identifier,
                     None => {
                         self.errors.push(LangError::type_error(
@@ -415,8 +437,8 @@ impl FileSemanticAnalyzer {
                     }
                 };
                 match identifier {
-                    LookupResult::VarDeclaration(var) => self.var_types(&var),
-                    LookupResult::Parameter(param) => SumType::from_types(&param.types),
+                    IdentifierBinding::VarDeclaration(var) => self.var_types(&var),
+                    IdentifierBinding::Parameter(param) => SumType::from_types(&param.types),
                 }
             }
             ExpressionType::IntLiteral(_) => {

@@ -1,14 +1,8 @@
 use crate::{
-    ast::{Function, FunctionCall, Parameter, Struct, VarDeclaration},
+    ast::{Function, FunctionCall, Struct},
     buildin::{Buildins, FunctionDeclaration},
     types::Ptr,
 };
-
-#[derive(Debug, Clone)]
-pub enum LookupResult {
-    VarDeclaration(Ptr<VarDeclaration>),
-    Parameter(Parameter),
-}
 
 pub fn lookup_function(fun: &Function, fun_call: &FunctionCall) -> Option<Ptr<Function>> {
     let file = fun.file();

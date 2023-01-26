@@ -1,11 +1,11 @@
 use crate::{
     ast::{
-        Block, Expression, ExpressionType, Field, File, Function, Parameter, SourcePosition,
-        Statement, Struct, VarDeclaration,
+        Expression, ExpressionType, Field, File, Function, Parameter, SourcePosition, Statement,
+        Struct, VarDeclaration,
     },
-    semantics::FileSemanticAnalyzer,
+    semantics::{FileSemanticAnalyzer, IdentifierBinding},
     types::{Ptr, PtrMut},
-    validation::{lookup_function, LookupResult},
+    validation::lookup_function,
 };
 
 #[derive(Debug, Clone)]
@@ -13,7 +13,7 @@ pub enum QueryResult {
     Function(Ptr<Function>),
     FunctionCall(Ptr<Function>),
     Parameter(Parameter),
-    Identifier(LookupResult),
+    Identifier(IdentifierBinding),
     VarDeclaration(Ptr<VarDeclaration>),
     StructDeclaration(Ptr<Struct>),
     StructFieldDeclaration(Field),
@@ -75,7 +75,7 @@ fn find_in_function(
 
     let body = fun.body.read().unwrap();
     for statement in &body.statements {
-        let block = FunctionBlock { fun, block: &&body };
+        let block = FunctionBlock { fun };
         match statement {
             Statement::VarDeclaration(var) => {
                 if var.name_node.contains(position) {
@@ -117,7 +117,6 @@ fn find_in_function(
 // TODO remove:
 struct FunctionBlock<'a> {
     fun: &'a Function,
-    block: &'a Block,
 }
 
 fn find_in_expression(
@@ -127,8 +126,8 @@ fn find_in_expression(
     position: SourcePosition,
 ) -> Option<QueryResult> {
     match &expression.r#type {
-        ExpressionType::Identifier(identifier) => {
-            let Some(identifier) = analyzer.lookup_identifier_from_block(block.block, identifier) else {return None;};
+        ExpressionType::Identifier(_) => {
+            let Some(identifier) = analyzer.identifiers.get(&expression.node.id).map(|s|s.binding.clone()).flatten() else {return None;};
             Some(QueryResult::Identifier(identifier))
         }
         ExpressionType::BinaryExpression(binary) => {

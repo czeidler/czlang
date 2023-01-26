@@ -10,8 +10,8 @@ use czlanglib::{
     init,
     project::{FileChange, Project},
     query::{find_in_file, QueryResult},
+    semantics::IdentifierBinding,
     types::types_to_string,
-    validation::LookupResult,
 };
 use lsp_server::{Connection, Message, Notification, RequestId};
 use lsp_types::{notification::*, request::*, *};
@@ -325,14 +325,14 @@ impl Server {
                     format!("{}", types_to_string(&parameter.types))
                 }
                 QueryResult::Identifier(lookup) => match lookup {
-                    LookupResult::VarDeclaration(var) => {
+                    IdentifierBinding::VarDeclaration(var) => {
                         format!(
                             "identifier: {} {}",
                             var.name,
                             types_to_string(file.file_analyzer.var_types(&var).types())
                         )
                     }
-                    LookupResult::Parameter(param) => {
+                    IdentifierBinding::Parameter(param) => {
                         format!("{} {}", param.name, types_to_string(&param.types))
                     }
                 },
@@ -383,8 +383,8 @@ impl Server {
 
             let target = match result {
                 QueryResult::Identifier(lookup) => match lookup {
-                    LookupResult::VarDeclaration(var) => var.name_node.span.clone(),
-                    LookupResult::Parameter(_) => return None,
+                    IdentifierBinding::VarDeclaration(var) => var.name_node.span.clone(),
+                    IdentifierBinding::Parameter(_) => return None,
                 },
                 QueryResult::FunctionCall(fun) => fun.name_node.span.clone(),
                 _ => return None,
