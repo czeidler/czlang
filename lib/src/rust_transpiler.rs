@@ -12,7 +12,7 @@ use crate::buildin::Buildins;
 use crate::semantics::{FileSemanticAnalyzer, TypeNarrowing};
 use crate::tree_sitter::parse;
 use crate::types::{Ptr, PtrMut, SumType};
-use crate::validation::{lookup_function, lookup_struct};
+use crate::validation::lookup_struct;
 
 struct Writer<'a> {
     indentation: u16,
@@ -162,7 +162,7 @@ impl RustTranspiler {
 
     fn transpile_expression(
         &self,
-        analyzer: &FileSemanticAnalyzer,
+        analyzer: &mut FileSemanticAnalyzer,
         expression: &Expression,
         fun: &Ptr<Function>,
         writer: &mut Writer,
@@ -264,7 +264,7 @@ impl RustTranspiler {
 
     fn transpile_selector_expr(
         &self,
-        analyzer: &FileSemanticAnalyzer,
+        analyzer: &mut FileSemanticAnalyzer,
         expression: &Expression,
         selector: &SelectorExpression,
         fun: &Ptr<Function>,
@@ -404,7 +404,7 @@ impl RustTranspiler {
 
     fn transpile_array_expr(
         &self,
-        analyzer: &FileSemanticAnalyzer,
+        analyzer: &mut FileSemanticAnalyzer,
         array: &ArrayExpression,
         fun: &Ptr<Function>,
         writer: &mut Writer,
@@ -422,7 +422,7 @@ impl RustTranspiler {
 
     fn transpile_slice_expr(
         &self,
-        analyzer: &FileSemanticAnalyzer,
+        analyzer: &mut FileSemanticAnalyzer,
         slice: &SliceExpression,
         fun: &Ptr<Function>,
         writer: &mut Writer,
@@ -441,7 +441,7 @@ impl RustTranspiler {
 
     fn transpile_buildin_function_call(
         &self,
-        analyzer: &FileSemanticAnalyzer,
+        analyzer: &mut FileSemanticAnalyzer,
         call: &FunctionCall,
         fun: &Ptr<Function>,
         writer: &mut Writer,
@@ -482,7 +482,7 @@ impl RustTranspiler {
 
     fn transpile_expression_with_mapping(
         &self,
-        analyzer: &FileSemanticAnalyzer,
+        analyzer: &mut FileSemanticAnalyzer,
         expression: &Expression,
         target: Option<&Vec<RefType>>,
         fun: &Ptr<Function>,
@@ -533,7 +533,7 @@ impl RustTranspiler {
 
     fn transpile_function_call(
         &self,
-        analyzer: &FileSemanticAnalyzer,
+        analyzer: &mut FileSemanticAnalyzer,
         call: &FunctionCall,
         fun: &Ptr<Function>,
         writer: &mut Writer,
@@ -545,7 +545,13 @@ impl RustTranspiler {
         writer.write(&call.name);
         writer.write("(");
 
-        let function = lookup_function(fun, call).unwrap();
+        let fun_call_binding = analyzer
+            .query_function_call(&fun.body.read().unwrap(), call)
+            .unwrap()
+            .binding
+            .unwrap();
+        let function = fun_call_binding.as_function_signature();
+
         let mut iter = call.arguments.iter().enumerate().peekable();
         while let Some((i, expr)) = iter.next() {
             let parameter = function.parameters.get(i).unwrap();
@@ -566,7 +572,7 @@ impl RustTranspiler {
 
     fn transpile_var_declaration(
         &self,
-        analyzer: &FileSemanticAnalyzer,
+        analyzer: &mut FileSemanticAnalyzer,
         var_declaration: &VarDeclaration,
         fun: &Ptr<Function>,
         writer: &mut Writer,
@@ -596,7 +602,7 @@ impl RustTranspiler {
 
     fn transpile_return_statement(
         &self,
-        analyzer: &FileSemanticAnalyzer,
+        analyzer: &mut FileSemanticAnalyzer,
         expression: &Option<Expression>,
         fun: &Ptr<Function>,
         writer: &mut Writer,
@@ -607,7 +613,7 @@ impl RustTranspiler {
             self.transpile_expression_with_mapping(
                 analyzer,
                 expression,
-                fun.return_types.as_ref(),
+                Some(&fun.signature.return_types),
                 fun,
                 writer,
             );
@@ -659,7 +665,7 @@ impl RustTranspiler {
 
     fn transpile_if_statement(
         &self,
-        analyzer: &FileSemanticAnalyzer,
+        analyzer: &mut FileSemanticAnalyzer,
         if_statement: &IfStatement,
         fun: &Ptr<Function>,
         writer: &mut Writer,
@@ -701,7 +707,7 @@ impl RustTranspiler {
 
     fn transpile_block(
         &self,
-        analyzer: &FileSemanticAnalyzer,
+        analyzer: &mut FileSemanticAnalyzer,
         block: &PtrMut<Block>,
         fun: &Ptr<Function>,
         writer: &mut Writer,
@@ -731,15 +737,15 @@ impl RustTranspiler {
 
     fn transpile_function(
         &self,
-        analyzer: &FileSemanticAnalyzer,
+        analyzer: &mut FileSemanticAnalyzer,
         fun: &Ptr<Function>,
         writer: &mut Writer,
     ) {
-        writer.write(&format!("fn {}", fun.name));
-        self.transpile_parameters(&fun.parameters, writer);
-        if let Some(return_type) = &fun.return_types {
+        writer.write(&format!("fn {}", fun.signature.name));
+        self.transpile_parameters(&fun.signature.parameters, writer);
+        if !fun.signature.return_types.is_empty() {
             writer.write(" -> ");
-            self.transpile_types(return_type, writer);
+            self.transpile_types(&fun.signature.return_types, writer);
         }
         writer.write(" {");
         writer.new_line();
@@ -782,7 +788,7 @@ impl RustTranspiler {
 
     fn transpile_struct_field_init(
         &self,
-        analyzer: &FileSemanticAnalyzer,
+        analyzer: &mut FileSemanticAnalyzer,
         struct_field_init: &StructFieldInitialization,
         struct_def: &Ptr<Struct>,
         fun: &Ptr<Function>,
@@ -808,7 +814,7 @@ impl RustTranspiler {
 
     fn transpile_struct_init(
         &self,
-        analyzer: &FileSemanticAnalyzer,
+        analyzer: &mut FileSemanticAnalyzer,
         struct_init: &StructInitialization,
         fun: &Ptr<Function>,
         writer: &mut Writer,
@@ -827,8 +833,8 @@ impl RustTranspiler {
         writer.write("}");
     }
 
-    pub fn transpile_file(&self, analyzer: &FileSemanticAnalyzer, writer: &mut Writer) {
-        let file = analyzer.file.read().unwrap();
+    pub fn transpile_file(&self, analyzer: &mut FileSemanticAnalyzer, writer: &mut Writer) {
+        let file = { analyzer.file.read().unwrap().clone() };
         for (name, types) in &analyzer.sum_types {
             self.transpile_sum_type_def(name, types, writer);
             writer.new_line();
@@ -849,7 +855,7 @@ impl RustTranspiler {
     }
 }
 
-pub fn transpile(analyzer: &FileSemanticAnalyzer, outfile: &PathBuf) -> Result<(), io::Error> {
+pub fn transpile(analyzer: &mut FileSemanticAnalyzer, outfile: &PathBuf) -> Result<(), io::Error> {
     let mut outfile = std::fs::File::create(outfile)?;
 
     let mut buffer = "".to_string();
@@ -898,7 +904,7 @@ pub fn transpile_project(project_dir: &Path) -> Result<(), anyhow::Error> {
     create_dir_all(&src_rust)?;
     let main_rust = src_rust.join("main.rs");
 
-    transpile(&analyzer, &main_rust)?;
+    transpile(&mut analyzer, &main_rust)?;
 
     // write Cargo.toml
     let mut cargo_file = std::fs::File::create(&build_dir.join("Cargo.toml"))?;

@@ -1,17 +1,16 @@
 use crate::{
     ast::{
-        Expression, ExpressionType, Field, File, Function, Parameter, SourcePosition, Statement,
-        Struct, VarDeclaration,
+        Block, Expression, ExpressionType, Field, File, Function, Parameter, SourcePosition,
+        Statement, Struct, VarDeclaration,
     },
-    semantics::{FileSemanticAnalyzer, IdentifierBinding},
+    semantics::{FileSemanticAnalyzer, FunctionCallSemantics, IdentifierBinding},
     types::{Ptr, PtrMut},
-    validation::lookup_function,
 };
 
 #[derive(Debug, Clone)]
 pub enum QueryResult {
     Function(Ptr<Function>),
-    FunctionCall(Ptr<Function>),
+    FunctionCall(FunctionCallSemantics),
     Parameter(Parameter),
     Identifier(IdentifierBinding),
     VarDeclaration(Ptr<VarDeclaration>),
@@ -26,7 +25,7 @@ pub fn find_in_file(
 ) -> Option<QueryResult> {
     let file = file.read().unwrap();
     for (_, fun) in &file.functions {
-        if !fun.node.contains(position) {
+        if !fun.signature.node.contains(position) {
             continue;
         }
         if let Some(result) = find_in_function(analyzer, fun, position) {
@@ -62,10 +61,10 @@ fn find_in_function(
     fun: &Ptr<Function>,
     position: SourcePosition,
 ) -> Option<QueryResult> {
-    if fun.name_node.contains(position) {
+    if fun.signature.name_node.contains(position) {
         return Some(QueryResult::Function(fun.clone()));
     }
-    for param in &fun.parameters {
+    for param in &fun.signature.parameters {
         if !param.node.contains(position) {
             continue;
         }
@@ -75,7 +74,7 @@ fn find_in_function(
 
     let body = fun.body.read().unwrap();
     for statement in &body.statements {
-        let block = FunctionBlock { fun };
+        let block = FunctionBlock { block: &body };
         match statement {
             Statement::VarDeclaration(var) => {
                 if var.name_node.contains(position) {
@@ -116,7 +115,7 @@ fn find_in_function(
 
 // TODO remove:
 struct FunctionBlock<'a> {
-    fun: &'a Function,
+    block: &'a Block,
 }
 
 fn find_in_expression(
@@ -145,10 +144,12 @@ fn find_in_expression(
             }
             None
         }
-        ExpressionType::FunctionCall(call) => match lookup_function(block.fun, call) {
-            Some(fun_declaration) => Some(QueryResult::FunctionCall(fun_declaration)),
-            None => None,
-        },
+        ExpressionType::FunctionCall(call) => {
+            match analyzer.query_function_call(block.block, &call) {
+                Some(function_call) => Some(QueryResult::FunctionCall(function_call.clone())),
+                None => None,
+            }
+        }
         ExpressionType::StructInitialization(_struct_init) => {
             // TODO
             None

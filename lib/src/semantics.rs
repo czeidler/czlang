@@ -3,12 +3,13 @@ use std::collections::{HashMap, HashSet};
 use crate::{
     ast::{
         Array, BinaryExpression, BinaryOperator, Block, BlockParent, Expression, ExpressionType,
-        File, Function, IfAlternative, IfStatement, LangError, NodeData, Parameter, RefType,
-        SelectorExpression, SelectorFieldType, Slice, Statement, Struct, Type, UnaryOperator,
-        VarDeclaration,
+        File, Function, FunctionCall, FunctionSignature, IfAlternative, IfStatement, LangError,
+        NodeData, Parameter, RefType, SelectorExpression, SelectorFieldType, Slice, Statement,
+        Struct, Type, UnaryOperator, VarDeclaration,
     },
+    buildin::Buildins,
     types::{intersection, types_to_string, Ptr, PtrMut, SumType},
-    validation::{lookup_function_declaration, lookup_struct},
+    validation::lookup_struct,
 };
 
 struct BlockSemantics {
@@ -25,6 +26,26 @@ pub enum IdentifierBinding {
 
 pub struct IdentifierSemantics {
     pub binding: Option<IdentifierBinding>,
+}
+
+#[derive(Debug, Clone)]
+pub enum FunctionCallBinding {
+    Function(Ptr<Function>),
+    Buildin(FunctionSignature),
+}
+
+impl FunctionCallBinding {
+    pub fn as_function_signature(&self) -> &FunctionSignature {
+        match self {
+            FunctionCallBinding::Function(fun) => &fun.signature,
+            FunctionCallBinding::Buildin(sig) => sig,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FunctionCallSemantics {
+    pub binding: Option<FunctionCallBinding>,
 }
 
 pub struct ExpressionSemantics {
@@ -61,6 +82,7 @@ pub struct FileSemanticAnalyzer {
     pub if_statements: HashMap<usize, IfStatementSemantics>,
     pub expressions: HashMap<usize, ExpressionSemantics>,
     pub variable_declarations: HashMap<usize, VarDeclarationSemantics>,
+    function_calls: HashMap<usize, FunctionCallSemantics>,
     pub identifiers: HashMap<usize, IdentifierSemantics>,
     blocks: HashMap<usize, BlockSemantics>,
     pub errors: Vec<LangError>,
@@ -83,6 +105,7 @@ impl FileSemanticAnalyzer {
             if_statements: HashMap::new(),
             expressions: HashMap::new(),
             variable_declarations: HashMap::new(),
+            function_calls: HashMap::new(),
             blocks: HashMap::new(),
             errors: Vec::new(),
         }
@@ -112,13 +135,25 @@ impl FileSemanticAnalyzer {
     }
 
     pub fn analyze_fun(&mut self, fun: Ptr<Function>) {
-        if self.fun_symbols.contains(&fun.node.id) {
+        if self.fun_symbols.contains(&fun.signature.node.id) {
             return;
         }
 
         self.validate_fun(&fun);
 
-        self.fun_symbols.insert(fun.node.id);
+        self.fun_symbols.insert(fun.signature.node.id);
+    }
+
+    pub fn query_function_call(
+        &mut self,
+        block: &Block,
+        call: &FunctionCall,
+    ) -> Option<FunctionCallSemantics> {
+        if let Some(s) = self.function_calls.get(&call.node.id) {
+            return Some(s.clone());
+        }
+        self.lookup_function_declaration(block, &call);
+        self.function_calls.get(&call.node.id).map(|s| s.clone())
     }
 
     fn validate_struct_def(&mut self, struct_def: &Ptr<Struct>) {
@@ -154,7 +189,7 @@ impl FileSemanticAnalyzer {
     fn validate_fun(&mut self, fun: &Function) {
         // TODO: fun name clash with other definitions?
 
-        for par_ref in &fun.parameters {
+        for par_ref in &fun.signature.parameters {
             // Add sum type
             if par_ref.types.len() > 1 {
                 let sum_type = SumType::from_types(&par_ref.types);
@@ -192,32 +227,31 @@ impl FileSemanticAnalyzer {
                     (SumType::new(vec![]), None)
                 };
 
-                if ret_types.is_empty() && block.fun.return_types.is_some() {
+                if ret_types.is_empty() && !block.fun.signature.return_types.is_empty() {
                     self.errors.push(LangError::type_error(
                         &expression
                             .map(|e| e.node.clone())
-                            .unwrap_or(block.fun.node.clone()),
-                        format!("Expected return type {:?}", block.fun.return_types),
+                            .unwrap_or(block.fun.signature.node.clone()),
+                        format!(
+                            "Expected return type {:?}",
+                            block.fun.signature.return_types
+                        ),
                     ));
                     return;
                 }
-                if ret_types.is_empty() && block.fun.return_types.is_none() {
+                if ret_types.is_empty() && block.fun.signature.return_types.is_empty() {
                     return;
                 }
-                let fun_ret_type = if let Some(fun_ret_type) = &block.fun.return_types {
-                    fun_ret_type.clone()
-                } else {
-                    vec![]
-                };
+                let fun_ret_type = block.fun.signature.return_types.clone();
                 let overlap = intersection(&ret_types.types(), &fun_ret_type);
                 if overlap.is_empty() {
                     self.errors.push(LangError::type_error(
                         &expression
                             .map(|e| e.node.clone())
-                            .unwrap_or(block.fun.node.clone()),
+                            .unwrap_or(block.fun.signature.node.clone()),
                         format!(
                             "Incompatible return type: fun == {:?}, expr == {:?}",
-                            block.fun.return_types, ret_types,
+                            block.fun.signature.return_types, ret_types,
                         ),
                     ));
                     return;
@@ -392,7 +426,7 @@ impl FileSemanticAnalyzer {
             match parent {
                 BlockParent::Function(fun) => {
                     let fun = fun.upgrade().unwrap();
-                    if let Some(param) = (&fun.parameters)
+                    if let Some(param) = (&fun.signature.parameters)
                         .into_iter()
                         .find(|it| &it.name == identifier)
                     {
@@ -410,6 +444,42 @@ impl FileSemanticAnalyzer {
                     current = Some(block.upgrade().unwrap());
                 }
             }
+        }
+    }
+
+    pub fn lookup_function_declaration(
+        &mut self,
+        _block: &Block,
+        call: &FunctionCall,
+    ) -> Option<FunctionCallBinding> {
+        let file = self.file.read().unwrap();
+        if let Some(declaration) = file.functions.get(&call.name) {
+            let binding = FunctionCallBinding::Function(declaration.clone());
+            let existing = self.function_calls.insert(
+                call.node.id,
+                FunctionCallSemantics {
+                    binding: Some(binding.clone()),
+                },
+            );
+            assert!(existing.is_none());
+            return Some(binding);
+        }
+
+        let buildins = Buildins::new();
+        match buildins.functions.get(&call.name) {
+            Some(fun_declaration) => {
+                let binding = FunctionCallBinding::Buildin(fun_declaration.clone());
+                let existing = self.function_calls.insert(
+                    call.node.id,
+                    FunctionCallSemantics {
+                        binding: Some(binding.clone()),
+                    },
+                );
+                assert!(existing.is_none());
+                Some(binding)
+            }
+
+            None => None,
         }
     }
 
@@ -517,7 +587,8 @@ impl FileSemanticAnalyzer {
                 }),
             }),
             ExpressionType::FunctionCall(fun_call) => {
-                let fun_declaration = match lookup_function_declaration(block.fun, &fun_call.name) {
+                let fun_declaration = match self.lookup_function_declaration(block.block, &fun_call)
+                {
                     Some(fun) => fun,
                     None => {
                         self.errors.push(LangError::type_error(
@@ -527,6 +598,7 @@ impl FileSemanticAnalyzer {
                         return None;
                     }
                 };
+                let fun_declaration = fun_declaration.as_function_signature();
 
                 if fun_declaration.parameters.len() != fun_call.arguments.len() {
                     self.errors.push(LangError::type_error(

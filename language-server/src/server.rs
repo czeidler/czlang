@@ -319,7 +319,7 @@ impl Server {
 
             let result = match result {
                 QueryResult::Function(fun) => {
-                    format!("fun {}", &fun.name)
+                    format!("fun {}", &fun.signature.name)
                 }
                 QueryResult::Parameter(parameter) => {
                     format!("{}", types_to_string(&parameter.types))
@@ -344,7 +344,11 @@ impl Server {
                     )
                 }
                 QueryResult::FunctionCall(fun) => {
-                    format!("fun {}", fun.name)
+                    if let Some(fun) = fun.binding {
+                        format!("fun {}", fun.as_function_signature().name)
+                    } else {
+                        return None
+                    }
                 }
                 QueryResult::StructDeclaration(struct_dec) => {
                     format!("struct {}", struct_dec.name)
@@ -386,7 +390,13 @@ impl Server {
                     IdentifierBinding::VarDeclaration(var) => var.name_node.span.clone(),
                     IdentifierBinding::Parameter(_) => return None,
                 },
-                QueryResult::FunctionCall(fun) => fun.name_node.span.clone(),
+                QueryResult::FunctionCall(fun) => {
+                    if let Some(binding) = fun.binding {
+                        binding.as_function_signature().name_node.span.clone()
+                    } else {
+                        return None;
+                    }
+                }
                 _ => return None,
             };
             let target = Range::new(

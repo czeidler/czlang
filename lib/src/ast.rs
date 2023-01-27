@@ -6,10 +6,7 @@ use std::{
 
 use tree_sitter::Node;
 
-use crate::{
-    buildin::FunctionDeclaration,
-    types::{Ptr, PtrMut},
-};
+use crate::types::{Ptr, PtrMut};
 
 // ast:
 
@@ -204,31 +201,26 @@ impl Field {
 }
 
 #[derive(Debug, Clone)]
-pub struct Function {
-    pub parent: Weak<RwLock<File>>,
-
+pub struct FunctionSignature {
     pub node: NodeData,
 
     pub name: String,
     pub name_node: NodeData,
-
     pub parameters: Vec<Parameter>,
-    pub return_types: Option<Vec<RefType>>,
+    pub return_types: Vec<RefType>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Function {
+    pub parent: Weak<RwLock<File>>,
+
+    pub signature: FunctionSignature,
     pub body: PtrMut<Block>,
 }
 
 impl Function {
     pub fn file(&self) -> PtrMut<File> {
         self.parent.upgrade().unwrap()
-    }
-
-    pub fn as_declaration(&self) -> FunctionDeclaration {
-        FunctionDeclaration {
-            node: self.node.clone(),
-            name: self.name.clone(),
-            parameters: self.parameters.clone(),
-            return_types: self.return_types.clone().unwrap_or(vec![]),
-        }
     }
 }
 
@@ -507,7 +499,7 @@ pub fn parse_file<'a>(node: Node<'a>, context: &mut FileContext<'a>) -> PtrMut<F
                     file.write()
                         .unwrap()
                         .functions
-                        .insert(fun.name.clone(), fun.clone());
+                        .insert(fun.signature.name.clone(), fun.clone());
                 };
             }
             "struct_definition" => {
@@ -542,11 +534,13 @@ fn parse_fun<'a>(
 
     let fun = Ptr::new(Function {
         parent: Ptr::downgrade(file),
-        node: NodeData::from_node(&node),
-        name: node_text(&name, context)?,
-        name_node: NodeData::from_node(&name),
-        parameters: parse_parameters(context, parameter_list)?,
-        return_types,
+        signature: FunctionSignature {
+            node: NodeData::from_node(&node),
+            name: node_text(&name, context)?,
+            name_node: NodeData::from_node(&name),
+            parameters: parse_parameters(context, parameter_list)?,
+            return_types: return_types.unwrap_or(vec![]),
+        },
         body: body.clone(),
     });
     body.write().unwrap().parent = Some(BlockParent::Function(Ptr::downgrade(&fun)));
@@ -1085,7 +1079,6 @@ fn parse_types<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Vec
                         node,
                         &format!("Duplicated sum type: {:?}", t),
                     ));
-                    return None;
                 }
                 types.push(t);
             }

@@ -1,18 +1,11 @@
 use std::collections::HashMap;
 
-use crate::ast::{NodeData, Parameter, RefType, SourcePosition, SourceSpan, Type};
-
-#[derive(Debug, Clone)]
-pub struct FunctionDeclaration {
-    pub node: NodeData,
-
-    pub name: String,
-    pub parameters: Vec<Parameter>,
-    pub return_types: Vec<RefType>,
-}
+use crate::ast::{
+    FunctionSignature, NodeData, Parameter, RefType, SourcePosition, SourceSpan, Type,
+};
 
 pub struct Buildins {
-    pub functions: HashMap<String, FunctionDeclaration>,
+    pub functions: HashMap<String, FunctionSignature>,
 }
 
 impl Buildins {
@@ -20,7 +13,7 @@ impl Buildins {
         let mut functions = HashMap::new();
         functions.insert(
             "println".to_string(),
-            FunctionDeclaration {
+            FunctionSignature {
                 node: NodeData {
                     id: 1,
                     parent: 0,
@@ -30,9 +23,17 @@ impl Buildins {
                     },
                 },
                 name: "println".to_string(),
+                name_node: NodeData {
+                    id: 2,
+                    parent: 0,
+                    span: SourceSpan {
+                        start: SourcePosition::new(0, 0),
+                        end: SourcePosition::new(0, 0),
+                    },
+                },
                 parameters: vec![Parameter {
                     node: NodeData {
-                        id: 1,
+                        id: 3,
                         parent: 0,
                         span: SourceSpan {
                             start: SourcePosition::new(0, 0),
