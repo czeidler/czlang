@@ -233,6 +233,18 @@ pub struct Block {
     pub statements: Vec<Statement>,
 }
 
+impl Block {
+    pub fn fun(&self) -> Option<Ptr<Function>> {
+        let Some(parent) = &self.parent else {
+            return None;
+        };
+        match parent {
+            BlockParent::Function(fun) => Some(fun.upgrade().unwrap()),
+            BlockParent::Block(block) => block.upgrade().unwrap().fun(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum StringTemplatePart {
     Expression(Expression),

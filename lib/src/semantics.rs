@@ -24,6 +24,7 @@ pub enum IdentifierBinding {
     Parameter(Parameter),
 }
 
+#[derive(Debug, Clone)]
 pub struct IdentifierSemantics {
     pub binding: Option<IdentifierBinding>,
 }
@@ -83,7 +84,7 @@ pub struct FileSemanticAnalyzer {
     pub expressions: HashMap<usize, ExpressionSemantics>,
     pub variable_declarations: HashMap<usize, VarDeclarationSemantics>,
     function_calls: HashMap<usize, FunctionCallSemantics>,
-    pub identifiers: HashMap<usize, IdentifierSemantics>,
+    identifiers: HashMap<usize, IdentifierSemantics>,
     blocks: HashMap<usize, BlockSemantics>,
     pub errors: Vec<LangError>,
 }
@@ -131,7 +132,8 @@ impl FileSemanticAnalyzer {
 
         self.validate_struct_def(&struct_def);
 
-        self.fun_symbols.insert(struct_def.node.id);
+        let new_entry = self.fun_symbols.insert(struct_def.node.id);
+        assert!(new_entry);
     }
 
     pub fn analyze_fun(&mut self, fun: Ptr<Function>) {
@@ -141,7 +143,23 @@ impl FileSemanticAnalyzer {
 
         self.validate_fun(&fun);
 
-        self.fun_symbols.insert(fun.signature.node.id);
+        let new_entry = self.fun_symbols.insert(fun.signature.node.id);
+        assert!(new_entry);
+    }
+
+    pub fn query_identifier(
+        &mut self,
+        block: &Block,
+        node_id: usize,
+    ) -> Option<IdentifierSemantics> {
+        if let Some(s) = self.identifiers.get(&node_id) {
+            return Some(s.clone());
+        }
+        let Some(fun) = block.fun() else {
+            return None;
+        };
+        self.validate_fun(&fun);
+        self.identifiers.get(&node_id).map(|s| s.clone())
     }
 
     pub fn query_function_call(
@@ -152,7 +170,10 @@ impl FileSemanticAnalyzer {
         if let Some(s) = self.function_calls.get(&call.node.id) {
             return Some(s.clone());
         }
-        self.lookup_function_declaration(block, &call);
+        let Some(fun) = block.fun() else {
+            return None;
+        };
+        self.validate_fun(&fun);
         self.function_calls.get(&call.node.id).map(|s| s.clone())
     }
 
@@ -297,12 +318,13 @@ impl FileSemanticAnalyzer {
             }
         }
 
-        self.variable_declarations.insert(
+        let existing = self.variable_declarations.insert(
             var_declaration.node.id,
             VarDeclarationSemantics {
                 inferred_types: Some(var_types),
             },
         );
+        assert!(existing.is_none());
 
         if let Some(_) = self
             .blocks
@@ -626,6 +648,7 @@ impl FileSemanticAnalyzer {
                         ));
                         return None;
                     }
+                    // overwrite previous results
                     self.expressions.insert(
                         arg.node.id,
                         ExpressionSemantics {
@@ -643,16 +666,16 @@ impl FileSemanticAnalyzer {
                 SumType::from_type(RefType::value(Type::Identifier(struct_init.name.clone())))
             }
             ExpressionType::SelectorExpression(select) => {
-                self.validate_expression(block, &select.root);
-                self.selector_expression_type(block, select)?
+                self.validate_selector_expression(block, select)?
             }
         };
-        self.expressions.insert(
+        let existing = self.expressions.insert(
             expression.node.id,
             ExpressionSemantics {
                 resolved_types: Some(types.clone()),
             },
         );
+        assert!(existing.is_none());
 
         Some(types)
     }
@@ -677,7 +700,7 @@ impl FileSemanticAnalyzer {
     }
 
     /// Returns the type of the expression
-    fn selector_expression_type(
+    fn validate_selector_expression(
         &mut self,
         block: &FunctionBlock,
         select: &SelectorExpression,
@@ -809,12 +832,13 @@ impl FileSemanticAnalyzer {
             _ => None,
         } {
             if let Some(narrowing) = self.validate_typeof_expression(block, &binary) {
-                self.if_statements.insert(
+                let existing = self.if_statements.insert(
                     if_statement.node.id,
                     IfStatementSemantics {
                         type_narrowing: Some(narrowing),
                     },
                 );
+                assert!(existing.is_none());
             }
         }
 

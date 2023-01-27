@@ -126,7 +126,10 @@ fn find_in_expression(
 ) -> Option<QueryResult> {
     match &expression.r#type {
         ExpressionType::Identifier(_) => {
-            let Some(identifier) = analyzer.identifiers.get(&expression.node.id).map(|s|s.binding.clone()).flatten() else {return None;};
+            let Some(identifier) = analyzer
+                .query_identifier(block.block, expression.node.id)
+                .map(|s| s.binding.clone())
+                .flatten() else { return None };
             Some(QueryResult::Identifier(identifier))
         }
         ExpressionType::BinaryExpression(binary) => {
