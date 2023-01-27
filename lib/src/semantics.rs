@@ -9,7 +9,6 @@ use crate::{
     },
     buildin::Buildins,
     types::{intersection, types_to_string, Ptr, PtrMut, SumType},
-    validation::lookup_struct,
 };
 
 struct BlockSemantics {
@@ -18,8 +17,6 @@ struct BlockSemantics {
 
 #[derive(Debug, Clone)]
 pub enum IdentifierBinding {
-    //StructDeclaration(Struct),
-    //FunctionCall(FunctionCall),
     VarDeclaration(Ptr<VarDeclaration>),
     Parameter(Parameter),
 }
@@ -436,10 +433,13 @@ impl FileSemanticAnalyzer {
                 .flatten();
             if let Some(var) = var {
                 let binding = IdentifierBinding::VarDeclaration(var.clone());
-                self.identifiers
-                    .entry(id)
-                    .or_insert(IdentifierSemantics { binding: None })
-                    .binding = Some(binding.clone());
+                let existing = self.identifiers.insert(
+                    id,
+                    IdentifierSemantics {
+                        binding: Some(binding.clone()),
+                    },
+                );
+                assert!(existing.is_none());
                 return Some(binding);
             }
             let Some(parent) = b.parent.clone() else {
@@ -453,10 +453,13 @@ impl FileSemanticAnalyzer {
                         .find(|it| &it.name == identifier)
                     {
                         let binding = IdentifierBinding::Parameter(param.clone());
-                        self.identifiers
-                            .entry(id)
-                            .or_insert(IdentifierSemantics { binding: None })
-                            .binding = Some(binding.clone());
+                        let existing = self.identifiers.insert(
+                            id,
+                            IdentifierSemantics {
+                                binding: Some(binding.clone()),
+                            },
+                        );
+                        assert!(existing.is_none());
                         return Some(binding);
                     } else {
                         return None;
@@ -708,14 +711,15 @@ impl FileSemanticAnalyzer {
         let root_types = self.validate_expression(block, &select.root)?;
         let (identifier, nullable) =
             self.validate_nullable_identifier(&select.root.node, &root_types)?;
-        let Some(current_struct) = lookup_struct(block.fun, &identifier) else {
-        self.errors.push(LangError::type_error(
-            &select.root.node,
-            format!("{} is not a struct", identifier),
-        ));
-        return None;
-    };
-        let mut current_struct = current_struct;
+        let Some(current_struct) = self.file.read().unwrap().struct_by_name(&identifier) else {
+            self.errors.push(LangError::type_error(
+                &select.root.node,
+                format!("{} is not a struct", identifier),
+            ));
+            return None;
+        };
+
+        let mut current_struct: Ptr<Struct> = current_struct;
         let mut current_struct_nullable = nullable;
         let mut nullable_chain = nullable;
         for (i, field) in select.fields.iter().enumerate() {
@@ -765,23 +769,26 @@ impl FileSemanticAnalyzer {
                 match &field.field {
                     SelectorFieldType::Identifier(field_identifier) => {
                         let Some(found_field) = current_struct.fields.iter().find(|f|&f.name == field_identifier) else {
-                            self.errors.push(LangError::type_error(
-                            &field.node,
-                            format!("{} is not field of {}", field_identifier, current_struct.name),
-                        ));
-                        return None;
-                    };
+                                self.errors.push(LangError::type_error(
+                                &field.node,
+                                format!("{} is not field of {}", field_identifier, current_struct.name),
+                            ));
+                            return None;
+                        };
+
                         let (identifier, nullable) = self.validate_nullable_identifier(
                             &field.node,
                             &SumType::from_types(&found_field.types),
                         )?;
-                        let Some(found_struct) = lookup_struct(block.fun, &identifier) else {
-                            self.errors.push(LangError::type_error(
-                            &field.node,
-                            format!("{} is not a struct", identifier),
-                        ));
-                        return None;
-                    };
+
+                        let Some(found_struct) = self
+                            .file.read().unwrap().struct_by_name(&identifier) else {
+                                self.errors.push(LangError::type_error(
+                                &field.node,
+                                format!("{} is not a struct", identifier),
+                            ));
+                            return None;
+                        };
                         current_struct = found_struct;
                         current_struct_nullable = nullable;
                     }

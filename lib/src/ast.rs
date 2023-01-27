@@ -171,6 +171,12 @@ pub struct File {
     pub struct_defs: HashMap<String, Ptr<Struct>>,
 }
 
+impl File {
+    pub fn struct_by_name(&self, name: &str) -> Option<Ptr<Struct>> {
+        self.struct_defs.get(name).map(|f| f.clone())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Struct {
     pub node: NodeData,

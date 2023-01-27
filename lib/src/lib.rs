@@ -5,7 +5,6 @@ mod buildin;
 pub mod rust_transpiler;
 mod tree_sitter;
 pub mod types;
-pub mod validation;
 
 pub mod project;
 pub mod query;

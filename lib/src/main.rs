@@ -8,7 +8,6 @@ mod rust_transpiler;
 mod semantics;
 mod tree_sitter;
 mod types;
-mod validation;
 
 #[cfg(test)]
 pub mod test_utils;

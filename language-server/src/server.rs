@@ -388,7 +388,7 @@ impl Server {
             let target = match result {
                 QueryResult::Identifier(lookup) => match lookup {
                     IdentifierBinding::VarDeclaration(var) => var.name_node.span.clone(),
-                    IdentifierBinding::Parameter(_) => return None,
+                    IdentifierBinding::Parameter(param) => param.node.span.clone(),
                 },
                 QueryResult::FunctionCall(fun) => {
                     if let Some(binding) = fun.binding {

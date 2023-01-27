@@ -12,7 +12,6 @@ use crate::buildin::Buildins;
 use crate::semantics::{FileSemanticAnalyzer, TypeNarrowing};
 use crate::tree_sitter::parse;
 use crate::types::{Ptr, PtrMut, SumType};
-use crate::validation::lookup_struct;
 
 struct Writer<'a> {
     indentation: u16,
@@ -309,7 +308,12 @@ impl RustTranspiler {
             })
             .next()
             .unwrap();
-        let mut current_struct = lookup_struct(fun, root_struct_identifier).unwrap();
+        let mut current_struct = fun
+            .file()
+            .read()
+            .unwrap()
+            .struct_by_name(root_struct_identifier)
+            .unwrap();
         for field in &selector.fields {
             if !encountered_first_optional {
                 if field.optional_chaining {
@@ -359,7 +363,12 @@ impl RustTranspiler {
                                 })
                                 .next()
                                 .unwrap();
-                            current_struct = lookup_struct(fun, struct_identifier).unwrap();
+                            current_struct = fun
+                                .file()
+                                .read()
+                                .unwrap()
+                                .struct_by_name(struct_identifier)
+                                .unwrap();
                         }
                         SelectorFieldType::Call => todo!(),
                     }
@@ -823,7 +832,12 @@ impl RustTranspiler {
         writer.write(" {");
         writer.new_line();
         writer.indented(|writer| {
-            let struct_def = lookup_struct(fun, &struct_init.name).unwrap();
+            let struct_def = fun
+                .file()
+                .read()
+                .unwrap()
+                .struct_by_name(&struct_init.name)
+                .unwrap();
             for field in &struct_init.fields {
                 self.transpile_struct_field_init(analyzer, field, &struct_def, fun, writer);
                 writer.write(",");
