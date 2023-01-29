@@ -71,19 +71,32 @@ pub struct TypeNarrowing {
     pub types: SumType,
 }
 
+#[derive(Debug, Clone)]
+pub enum TypeBinding {
+    Struct(Ptr<Struct>),
+}
+
+#[derive(Debug, Clone)]
+pub struct TypeIdentifierSemantics {
+    pub binding: Option<TypeBinding>,
+}
+
 pub struct FileSemanticAnalyzer {
     pub file: PtrMut<File>,
     pub sum_types: HashMap<String, SumType>,
+    pub errors: Vec<LangError>,
+
     structs: HashSet<usize>,
     /// Just keep track of analyzed/checked functions
     fun_symbols: HashSet<usize>,
+    type_identifiers: HashMap<usize, TypeIdentifierSemantics>,
+    // TODO make private by adding a query method:
     pub if_statements: HashMap<usize, IfStatementSemantics>,
     pub expressions: HashMap<usize, ExpressionSemantics>,
-    pub variable_declarations: HashMap<usize, VarDeclarationSemantics>,
+    variable_declarations: HashMap<usize, VarDeclarationSemantics>,
     function_calls: HashMap<usize, FunctionCallSemantics>,
     identifiers: HashMap<usize, IdentifierSemantics>,
     blocks: HashMap<usize, BlockSemantics>,
-    pub errors: Vec<LangError>,
 }
 
 /// Represents a reference to a block within a function
@@ -97,15 +110,17 @@ impl FileSemanticAnalyzer {
         FileSemanticAnalyzer {
             file,
             sum_types: HashMap::new(),
+            errors: Vec::new(),
+
             identifiers: HashMap::new(),
             structs: HashSet::new(),
             fun_symbols: HashSet::new(),
+            type_identifiers: HashMap::new(),
             if_statements: HashMap::new(),
             expressions: HashMap::new(),
             variable_declarations: HashMap::new(),
             function_calls: HashMap::new(),
             blocks: HashMap::new(),
-            errors: Vec::new(),
         }
     }
 
@@ -142,6 +157,23 @@ impl FileSemanticAnalyzer {
 
         let new_entry = self.fun_symbols.insert(fun.signature.node.id);
         assert!(new_entry);
+    }
+
+    pub fn query_type(&mut self, r#type: &RefType) -> Option<TypeIdentifierSemantics> {
+        if let Some(s) = self.type_identifiers.get(&r#type.node.id) {
+            return Some(s.clone());
+        }
+
+        let type_identifier = match &r#type.r#type {
+            Type::Identifier(identifier) => identifier,
+            _ => return None,
+        };
+
+        self.bind_type_identifier(&r#type.node, type_identifier);
+
+        self.type_identifiers
+            .get(&r#type.node.id)
+            .map(|s| s.clone())
     }
 
     pub fn query_identifier(
@@ -187,6 +219,8 @@ impl FileSemanticAnalyzer {
         for t in types {
             if result_types.iter().find(|v| *v == t).is_none() {
                 result_types.push(t.clone());
+                // query type to bind the type
+                self.query_type(t);
             } else {
                 self.errors.push(LangError::type_error(
                     node,
@@ -202,6 +236,23 @@ impl FileSemanticAnalyzer {
                 .insert(result_types.sum_type_name(), result_types.clone());
         }
         result_types
+    }
+
+    fn bind_type_identifier(&mut self, node: &NodeData, identifier: &String) {
+        let Some(struct_def) = self.file.read().unwrap().struct_defs.get(identifier).map(|s| s.clone()) else {
+            self.errors.push(LangError::type_error(
+                node,
+                format!("Can't resolve type identifier: {:?}", identifier),
+            ));
+            return;
+        };
+        let existing = self.type_identifiers.insert(
+            node.id,
+            TypeIdentifierSemantics {
+                binding: Some(TypeBinding::Struct(struct_def)),
+            },
+        );
+        assert!(existing.is_none())
     }
 
     fn validate_fun(&mut self, fun: &Function) {
@@ -514,7 +565,9 @@ impl FileSemanticAnalyzer {
         expression: &Expression,
     ) -> Option<SumType> {
         let types = match &expression.r#type {
-            ExpressionType::String(_) => SumType::from_type(RefType::value(Type::String)),
+            ExpressionType::String(_) => {
+                SumType::from_type(RefType::value(expression.node.clone(), Type::String))
+            }
 
             ExpressionType::Identifier(identifier) => {
                 let identifier = match self.lookup_identifier_from_block(
@@ -536,19 +589,28 @@ impl FileSemanticAnalyzer {
                     IdentifierBinding::Parameter(param) => SumType::from_types(&param.types),
                 }
             }
-            ExpressionType::IntLiteral(_) => {
-                SumType::from_type(RefType::value(Type::Unresolved(vec![
-                    RefType::value(Type::I32),
-                    RefType::value(Type::U32),
-                ])))
+            ExpressionType::IntLiteral(_) => SumType::from_type(RefType::value(
+                expression.node.clone(),
+                Type::Unresolved(vec![
+                    RefType::value(expression.node.clone(), Type::I32),
+                    RefType::value(expression.node.clone(), Type::U32),
+                ]),
+            )),
+            ExpressionType::Null => {
+                SumType::from_type(RefType::value(expression.node.clone(), Type::Null))
             }
-            ExpressionType::Null => SumType::from_type(RefType::value(Type::Null)),
-            ExpressionType::Bool(_) => SumType::from_type(RefType::value(Type::Bool)),
+            ExpressionType::Bool(_) => {
+                SumType::from_type(RefType::value(expression.node.clone(), Type::Bool))
+            }
 
             ExpressionType::UnaryExpression(unary) => match unary.operator {
                 UnaryOperator::Minus => match unary.operand.r#type {
                     ExpressionType::IntLiteral(_) => SumType::from_type(RefType::value(
-                        Type::Unresolved(vec![RefType::value(Type::I32)]),
+                        unary.operand.node.clone(),
+                        Type::Unresolved(vec![RefType::value(
+                            unary.operand.node.clone(),
+                            Type::I32,
+                        )]),
                     )),
                     _ => {
                         self.errors.push(LangError::type_error(
@@ -569,7 +631,7 @@ impl FileSemanticAnalyzer {
                     types
                         .types()
                         .into_iter()
-                        .map(|it| RefType::reference(it.r#type.clone()))
+                        .map(|it| RefType::reference(it.node.clone(), it.r#type.clone()))
                         .collect()
                 }
                 UnaryOperator::TypeOf => todo!(),
@@ -596,21 +658,21 @@ impl FileSemanticAnalyzer {
                 SumType::new(overlap)
             }
             ExpressionType::ParenthesizedExpression(_) => todo!(),
-            ExpressionType::ArrayExpression(array) => SumType::from_type(RefType {
-                is_reference: false,
-                r#type: Type::Array(Array {
+            ExpressionType::ArrayExpression(array) => SumType::from_type(RefType::value(
+                expression.node.clone(),
+                Type::Array(Array {
                     types: Ptr::new(self.validate_expression_list(block, &array.expressions)),
                     length: array.expressions.len(),
                 }),
-            }),
-            ExpressionType::SliceExpression(slice) => SumType::from_type(RefType {
-                is_reference: false,
-                r#type: Type::Slice(Slice {
+            )),
+            ExpressionType::SliceExpression(slice) => SumType::from_type(RefType::value(
+                expression.node.clone(),
+                Type::Slice(Slice {
                     types: Ptr::new(
                         self.validate_expression_list(block, &vec![slice.operand.as_ref().clone()]),
                     ),
                 }),
-            }),
+            )),
             ExpressionType::FunctionCall(fun_call) => {
                 let fun_declaration = match self.lookup_function_declaration(block.block, &fun_call)
                 {
@@ -666,7 +728,10 @@ impl FileSemanticAnalyzer {
                 for field in &struct_init.fields {
                     self.validate_expression(block, &field.value);
                 }
-                SumType::from_type(RefType::value(Type::Identifier(struct_init.name.clone())))
+                SumType::from_type(RefType::value(
+                    expression.node.clone(),
+                    Type::Identifier(struct_init.name.clone()),
+                ))
             }
             ExpressionType::SelectorExpression(select) => {
                 self.validate_selector_expression(block, select)?
@@ -711,7 +776,14 @@ impl FileSemanticAnalyzer {
         let root_types = self.validate_expression(block, &select.root)?;
         let (identifier, nullable) =
             self.validate_nullable_identifier(&select.root.node, &root_types)?;
-        let Some(current_struct) = self.file.read().unwrap().struct_by_name(&identifier) else {
+        let current_struct = self
+            .query_type(&identifier)
+            .map(|s| s.binding)
+            .flatten()
+            .map(|b| match b {
+                TypeBinding::Struct(struct_def) => struct_def,
+            });
+        let Some(current_struct) = current_struct else {
             self.errors.push(LangError::type_error(
                 &select.root.node,
                 format!("{} is not a struct", identifier),
@@ -758,7 +830,7 @@ impl FileSemanticAnalyzer {
                     };
                         let mut types = found_field.types.clone();
                         if nullable_chain && !types.iter().any(|t| matches!(t.r#type, Type::Null)) {
-                            types.push(RefType::value(Type::Null));
+                            types.push(RefType::value(field.node.clone(), Type::Null));
                             types.sort();
                         }
                         return Some(SumType::new(types));
@@ -781,8 +853,14 @@ impl FileSemanticAnalyzer {
                             &SumType::from_types(&found_field.types),
                         )?;
 
-                        let Some(found_struct) = self
-                            .file.read().unwrap().struct_by_name(&identifier) else {
+                        let found_struct = self
+                            .query_type(&identifier)
+                            .map(|s| s.binding)
+                            .flatten()
+                            .map(|b| match b {
+                                TypeBinding::Struct(struct_def) => struct_def,
+                            });
+                        let Some(found_struct) = found_struct else {
                                 self.errors.push(LangError::type_error(
                                 &field.node,
                                 format!("{} is not a struct", identifier),
@@ -800,12 +878,12 @@ impl FileSemanticAnalyzer {
     }
 
     /// Validate types contains an identifier and an optional null type
-    /// Returns the identifier and if nullable
+    /// Returns the identifier and if it is nullable
     fn validate_nullable_identifier(
         &mut self,
         node: &NodeData,
         types: &SumType,
-    ) -> Option<(String, bool)> {
+    ) -> Option<(RefType, bool)> {
         if types.len() > 2
             || types.len() > 1 && !types.iter().any(|t| matches!(t.r#type, Type::Null))
         {
@@ -815,22 +893,22 @@ impl FileSemanticAnalyzer {
             ));
             return None;
         }
-        let identifier = types
+        let identifier_type = types
             .iter()
             .filter_map(|t| match &t.r#type {
-                Type::Identifier(identifier) => Some(identifier),
+                Type::Identifier(_) => Some(t),
                 _ => None,
             })
             .next();
-        let Some(identifier) = identifier else {
-        self.errors.push(LangError::type_error(
-            node,
-            format!("Type is not an identifier: {:?}", types),
-        ));
-        return None;
-    };
+        let Some(identifier_type) = identifier_type else {
+            self.errors.push(LangError::type_error(
+                node,
+                format!("Type is not an identifier: {:?}", types),
+            ));
+            return None;
+        };
 
-        Some((identifier.clone(), types.len() == 2))
+        Some((identifier_type.clone(), types.len() == 2))
     }
 
     fn validate_if_statement(&mut self, block: &FunctionBlock, if_statement: &Ptr<IfStatement>) {
@@ -966,14 +1044,12 @@ impl FileSemanticAnalyzer {
         match &expression.right.r#type {
             // TODO handle unary & case
             ExpressionType::Identifier(identifier) => match identifier.as_str() {
-                "bool" => result.types.push(RefType {
-                    is_reference: false,
-                    r#type: Type::Bool,
-                }),
-                "i32" => result.types.push(RefType {
-                    is_reference: false,
-                    r#type: Type::I32,
-                }),
+                "bool" => result
+                    .types
+                    .push(RefType::value(expression.right.node.clone(), Type::Bool)),
+                "i32" => result
+                    .types
+                    .push(RefType::value(expression.right.node.clone(), Type::I32)),
                 _ => {
                     self.errors.push(LangError::type_error(
                         &expression.right.node,
@@ -982,10 +1058,9 @@ impl FileSemanticAnalyzer {
                     return None;
                 }
             },
-            ExpressionType::Null => result.types.push(RefType {
-                is_reference: false,
-                r#type: Type::Null,
-            }),
+            ExpressionType::Null => result
+                .types
+                .push(RefType::value(expression.right.node.clone(), Type::Null)),
             _ => {
                 self.errors.push(LangError::type_error(
                     &expression.right.node,

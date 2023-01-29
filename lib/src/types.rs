@@ -174,13 +174,11 @@ pub fn intersection(left_types: &Vec<RefType>, right_types: &Vec<RefType>) -> Ve
                     return inter;
                 }
                 // still unresolved
-                return vec![RefType {
-                    is_reference: false,
-                    r#type: Type::Unresolved(inter),
-                }];
+                return vec![RefType::value(l.node.clone(), Type::Unresolved(inter))];
             }
         }
     }
+
     if right_types.len() == 1 {
         if let Some(r) = right_types.get(0) {
             if let Type::Unresolved(types) = &r.r#type {
@@ -189,10 +187,7 @@ pub fn intersection(left_types: &Vec<RefType>, right_types: &Vec<RefType>) -> Ve
                     return inter;
                 }
                 // still unresolved
-                return vec![RefType {
-                    is_reference: false,
-                    r#type: Type::Unresolved(inter),
-                }];
+                return vec![RefType::value(r.node.clone(), Type::Unresolved(inter))];
             }
         }
     }
@@ -213,6 +208,7 @@ pub fn intersection(left_types: &Vec<RefType>, right_types: &Vec<RefType>) -> Ve
                             continue;
                         }
                         output.push(RefType {
+                            node: left.node.clone(),
                             is_reference: left.is_reference,
                             r#type: Type::Array(Array {
                                 types: Ptr::new(inter),
@@ -227,6 +223,7 @@ pub fn intersection(left_types: &Vec<RefType>, right_types: &Vec<RefType>) -> Ve
                         continue;
                     }
                     output.push(RefType {
+                        node: left.node.clone(),
                         is_reference: left.is_reference,
                         r#type: Type::Slice(Slice {
                             types: Ptr::new(inter),
@@ -250,7 +247,7 @@ mod tests {
     use std::vec;
 
     use crate::{
-        ast::{Array, RefType, Type},
+        ast::{Array, NodeData, RefType, SourcePosition, SourceSpan, Type},
         types::{intersection, Ptr},
     };
 
@@ -282,35 +279,37 @@ mod tests {
         return true;
     }
 
+    fn node(id: usize) -> NodeData {
+        NodeData {
+            id,
+            parent: 0,
+            span: SourceSpan {
+                start: SourcePosition { row: 0, column: 0 },
+                end: SourcePosition { row: 0, column: 0 },
+            },
+        }
+    }
+
     #[test]
     fn test_intersection_1() {
         // var value: []i32 = [1, 2, 3]
-        let left = vec![RefType {
-            is_reference: false,
-            r#type: Type::Array(Array {
+        let left = vec![RefType::value(
+            node(1),
+            Type::Array(Array {
                 length: 3,
-                types: Ptr::new(vec![RefType {
-                    is_reference: false,
-                    r#type: Type::I32,
-                }]),
+                types: Ptr::new(vec![RefType::value(node(2), Type::I32)]),
             }),
-        }];
-        let right = vec![RefType {
-            is_reference: false,
-            r#type: Type::Array(Array {
+        )];
+        let right = vec![RefType::value(
+            node(3),
+            Type::Array(Array {
                 length: 3,
                 types: Ptr::new(vec![
-                    RefType {
-                        is_reference: false,
-                        r#type: Type::I32,
-                    },
-                    RefType {
-                        is_reference: false,
-                        r#type: Type::U32,
-                    },
+                    RefType::value(node(4), Type::I32),
+                    RefType::value(node(5), Type::U32),
                 ]),
             }),
-        }];
+        )];
         let inter = intersection(&left, &right);
         assert!(is_equal(&inter, &left));
     }
@@ -319,61 +318,43 @@ mod tests {
     #[test]
     fn test_intersection_2() {
         // var value: []i32 = [2]([2]i32 | u32)
-        let left = vec![RefType {
-            is_reference: false,
-            r#type: Type::Array(Array {
+        let left = vec![RefType::value(
+            node(1),
+            Type::Array(Array {
                 length: 2,
                 types: Ptr::new(vec![
-                    RefType {
-                        is_reference: false,
-                        r#type: Type::Array(Array {
+                    RefType::value(
+                        node(2),
+                        Type::Array(Array {
                             length: 3,
-                            types: Ptr::new(vec![RefType {
-                                is_reference: false,
-                                r#type: Type::I32,
-                            }]),
+                            types: Ptr::new(vec![RefType::value(node(3), Type::I32)]),
                         }),
-                    },
-                    RefType {
-                        is_reference: false,
-                        r#type: Type::U32,
-                    },
+                    ),
+                    RefType::value(node(4), Type::U32),
                 ]),
             }),
-        }];
+        )];
         // right side: [[1, 2], 3] = [2]([2](i32 | u32) | i32 | u32))
-        let right = vec![RefType {
-            is_reference: false,
-            r#type: Type::Array(Array {
+        let right = vec![RefType::value(
+            node(4),
+            Type::Array(Array {
                 length: 2,
                 types: Ptr::new(vec![
-                    RefType {
-                        is_reference: false,
-                        r#type: Type::Array(Array {
+                    RefType::value(
+                        node(0),
+                        Type::Array(Array {
                             length: 3,
                             types: Ptr::new(vec![
-                                RefType {
-                                    is_reference: false,
-                                    r#type: Type::I32,
-                                },
-                                RefType {
-                                    is_reference: false,
-                                    r#type: Type::U32,
-                                },
+                                RefType::value(node(5), Type::I32),
+                                RefType::value(node(6), Type::U32),
                             ]),
                         }),
-                    },
-                    RefType {
-                        is_reference: false,
-                        r#type: Type::I32,
-                    },
-                    RefType {
-                        is_reference: false,
-                        r#type: Type::U32,
-                    },
+                    ),
+                    RefType::value(node(5), Type::I32),
+                    RefType::value(node(6), Type::U32),
                 ]),
             }),
-        }];
+        )];
         let inter = intersection(&left, &right);
         assert!(is_equal(&inter, &left));
     }
@@ -383,71 +364,44 @@ mod tests {
     fn test_intersection_3() {
         // u32 | i32 | [2](bool | string)
         let left = vec![
-            RefType {
-                is_reference: false,
-                r#type: Type::U32,
-            },
-            RefType {
-                is_reference: false,
-                r#type: Type::I32,
-            },
-            RefType {
-                is_reference: false,
-                r#type: Type::Array(Array {
+            RefType::value(node(6), Type::U32),
+            RefType::value(node(5), Type::I32),
+            RefType::value(
+                node(5),
+                Type::Array(Array {
                     length: 2,
                     types: Ptr::new(vec![
-                        RefType {
-                            is_reference: false,
-                            r#type: Type::Bool,
-                        },
-                        RefType {
-                            is_reference: false,
-                            r#type: Type::String,
-                        },
+                        RefType::value(node(5), Type::Bool),
+                        RefType::value(node(5), Type::String),
                     ]),
                 }),
-            },
+            ),
         ];
         // i32 | [2]bool | string
         let right = vec![
-            RefType {
-                is_reference: false,
-                r#type: Type::I32,
-            },
-            RefType {
-                is_reference: false,
-                r#type: Type::Array(Array {
+            RefType::value(node(5), Type::I32),
+            RefType::value(
+                node(5),
+                Type::Array(Array {
                     length: 2,
-                    types: Ptr::new(vec![RefType {
-                        is_reference: false,
-                        r#type: Type::Bool,
-                    }]),
+                    types: Ptr::new(vec![RefType::value(node(5), Type::Bool)]),
                 }),
-            },
-            RefType {
-                is_reference: false,
-                r#type: Type::String,
-            },
+            ),
+            RefType::value(node(5), Type::String),
         ];
         let inter = intersection(&left, &right);
         assert!(is_equal(
             &inter,
             // i32 | []bool
             &vec![
-                RefType {
-                    is_reference: false,
-                    r#type: Type::I32,
-                },
-                RefType {
-                    is_reference: false,
-                    r#type: Type::Array(Array {
+                RefType::value(node(5), Type::I32),
+                RefType::value(
+                    node(5),
+                    Type::Array(Array {
                         length: 2,
-                        types: Ptr::new(vec![RefType {
-                            is_reference: false,
-                            r#type: Type::Bool,
-                        }]),
+                        types: Ptr::new(vec![RefType::value(node(5), Type::Bool)]),
                     }),
-                },
+                ),
             ]
         ));
     }
@@ -457,53 +411,47 @@ mod tests {
     #[test]
     fn test_intersection_4() {
         // u32 | i32 | [2](bool | string)
-        let left = vec![RefType {
-            is_reference: false,
-            r#type: Type::Array(Array {
+        let left = vec![RefType::value(
+            node(5),
+            Type::Array(Array {
                 length: 2,
                 types: Ptr::new(vec![
-                    RefType {
-                        is_reference: false,
-                        r#type: Type::I32,
-                    },
-                    RefType {
-                        is_reference: false,
-                        r#type: Type::U32,
-                    },
+                    RefType::value(node(5), Type::I32),
+                    RefType::value(node(5), Type::U32),
                 ]),
             }),
-        }];
+        )];
         // []unresolved
-        let right = vec![RefType {
-            is_reference: false,
-            r#type: Type::Array(Array {
+        let right = vec![RefType::value(
+            node(5),
+            Type::Array(Array {
                 length: 2,
-                types: Ptr::new(vec![RefType {
-                    is_reference: false,
-                    r#type: Type::Unresolved(vec![
-                        RefType::value(Type::I32),
-                        RefType::value(Type::U32),
-                        RefType::value(Type::U8),
+                types: Ptr::new(vec![RefType::value(
+                    node(5),
+                    Type::Unresolved(vec![
+                        RefType::value(node(0), Type::I32),
+                        RefType::value(node(0), Type::U32),
+                        RefType::value(node(0), Type::U8),
                     ]),
-                }]),
+                )]),
             }),
-        }];
+        )];
         let inter = intersection(&left, &right);
         assert!(is_equal(
             &inter,
-            &vec![RefType {
-                is_reference: false,
-                r#type: Type::Array(Array {
+            &vec![RefType::value(
+                node(0),
+                Type::Array(Array {
                     length: 2,
-                    types: Ptr::new(vec![RefType {
-                        is_reference: false,
-                        r#type: Type::Unresolved(vec![
-                            RefType::value(Type::I32),
-                            RefType::value(Type::U32)
-                        ],),
-                    }]),
-                }),
-            }]
+                    types: Ptr::new(vec![RefType::value(
+                        node(0),
+                        Type::Unresolved(vec![
+                            RefType::value(node(0), Type::I32),
+                            RefType::value(node(0), Type::U32)
+                        ])
+                    )]),
+                })
+            )]
         ));
     }
 }

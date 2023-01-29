@@ -10,7 +10,7 @@ use crate::types::{Ptr, PtrMut};
 
 // ast:
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub struct SourcePosition {
     pub row: usize,
     pub column: usize,
@@ -40,7 +40,7 @@ impl SourcePosition {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub struct SourceSpan {
     pub start: SourcePosition,
     pub end: SourcePosition,
@@ -144,7 +144,7 @@ impl LangError {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub struct NodeData {
     pub id: usize,
     pub parent: usize,
@@ -286,22 +286,31 @@ pub enum Type {
     Unresolved(Vec<RefType>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Eq, Hash, PartialOrd, Ord)]
 pub struct RefType {
+    pub node: NodeData,
     pub is_reference: bool,
     pub r#type: Type,
 }
 
+impl PartialEq for RefType {
+    fn eq(&self, other: &RefType) -> bool {
+        self.is_reference == other.is_reference && self.r#type == other.r#type
+    }
+}
+
 impl RefType {
-    pub fn value(r#type: Type) -> RefType {
+    pub fn value(node: NodeData, r#type: Type) -> RefType {
         RefType {
+            node,
             is_reference: false,
             r#type,
         }
     }
 
-    pub fn reference(r#type: Type) -> RefType {
+    pub fn reference(node: NodeData, r#type: Type) -> RefType {
         RefType {
+            node,
             is_reference: true,
             r#type,
         }
@@ -1105,12 +1114,14 @@ fn parse_types<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Vec
         "reference_type" => {
             let type_node = child_by_field(&node, "type", context)?;
             vec![RefType {
+                node: NodeData::from_node(&type_node),
                 is_reference: true,
                 r#type: parse_type(context, &type_node)?,
             }]
         }
         _ => {
             vec![RefType {
+                node: NodeData::from_node(&node),
                 is_reference: false,
                 r#type: parse_type(context, node)?,
             }]
