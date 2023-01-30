@@ -86,9 +86,10 @@ pub enum SelectorFieldBinding {
     Struct(Ptr<Struct>),
 }
 
-// Note: could be merged with TypeIdentifierSemantics...
 #[derive(Debug, Clone)]
 pub struct SelectorFieldSemantics {
+    pub r#type: SumType,
+    pub parent: Option<Ptr<Struct>>,
     pub binding: Option<SelectorFieldBinding>,
 }
 
@@ -822,7 +823,7 @@ impl FileSemanticAnalyzer {
     ) -> Option<SumType> {
         let root_types = self.validate_expression(block, &select.root)?;
         let (root_struct, nullable) =
-            self.bind_selector_field_to_struct(&select.root.node, &root_types.types())?;
+            self.bind_selector_field_to_struct(&select.root.node, &root_types.types(), None)?;
 
         let mut current_struct: Ptr<Struct> = root_struct;
         let mut current_struct_nullable = nullable;
@@ -852,25 +853,33 @@ impl FileSemanticAnalyzer {
                 return None;
             }
             if i == select.fields.len() - 1 {
-                let existing = self
-                    .selector_fields
-                    .insert(field.node.id, SelectorFieldSemantics { binding: None });
-                assert!(existing.is_none());
                 match &field.field {
                     SelectorFieldType::Identifier(field_identifier) => {
                         let Some(found_field) = current_struct.fields.iter().find(|f|&f.name == field_identifier) else {
-                            self.errors.push(LangError::type_error(
-                            &field.node,
-                            format!("{} is not field of {}", field_identifier, current_struct.name),
-                        ));
-                        return None;
-                    };
+                                self.errors.push(LangError::type_error(
+                                &field.node,
+                                format!("{} is not field of {}", field_identifier, current_struct.name),
+                            ));
+                            return None;
+                        };
                         let mut types = found_field.types.clone();
                         if nullable_chain && !types.iter().any(|t| matches!(t.r#type, Type::Null)) {
                             types.push(RefType::value(field.node.clone(), Type::Null));
                             types.sort();
                         }
-                        return Some(SumType::new(types));
+                        let sum_types = SumType::new(types);
+
+                        let existing = self.selector_fields.insert(
+                            field.node.id,
+                            SelectorFieldSemantics {
+                                r#type: sum_types.clone(),
+                                binding: None,
+                                parent: Some(current_struct.clone()),
+                            },
+                        );
+                        assert!(existing.is_none());
+
+                        return Some(sum_types);
                     }
                     SelectorFieldType::Call => todo!(),
                 }
@@ -885,8 +894,11 @@ impl FileSemanticAnalyzer {
                             return None;
                         };
 
-                        let (found_struct, nullable) =
-                            self.bind_selector_field_to_struct(&field.node, &found_field.types)?;
+                        let (found_struct, nullable) = self.bind_selector_field_to_struct(
+                            &field.node,
+                            &found_field.types,
+                            Some(current_struct.clone()),
+                        )?;
 
                         current_struct = found_struct;
                         current_struct_nullable = nullable;
@@ -902,6 +914,7 @@ impl FileSemanticAnalyzer {
         &mut self,
         field_node: &NodeData,
         field_type: &Vec<RefType>,
+        parent: Option<Ptr<Struct>>,
     ) -> Option<(Ptr<Struct>, bool)> {
         let (identifier, nullable) =
             self.validate_nullable_identifier(field_node, &SumType::from_types(&field_type))?;
@@ -924,7 +937,9 @@ impl FileSemanticAnalyzer {
         let existing = self.selector_fields.insert(
             field_node.id,
             SelectorFieldSemantics {
+                r#type: SumType::from_types(&field_type),
                 binding: Some(SelectorFieldBinding::Struct(found_struct.clone())),
+                parent,
             },
         );
         assert!(existing.is_none());

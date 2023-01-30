@@ -5,6 +5,7 @@ use crate::{
     },
     semantics::{
         FileSemanticAnalyzer, FunctionCallSemantics, IdentifierBinding, SelectorFieldBinding,
+        SelectorFieldSemantics,
     },
     types::{Ptr, PtrMut},
 };
@@ -18,8 +19,8 @@ pub enum QueryResult {
     VarDeclaration(Ptr<VarDeclaration>),
     StructDeclaration(Ptr<Struct>),
     StructFieldDeclaration(Field),
-    /// the found SelectorField and the struct it refers to
-    SelectorFieldStruct((SelectorField, Ptr<Struct>)),
+    /// the found SelectorField, the type and the struct it refers to
+    SelectorFieldStruct((SelectorField, Ptr<Struct>, SelectorFieldSemantics)),
 }
 
 pub fn find_in_file(
@@ -186,19 +187,22 @@ fn find_in_selector_field(
         return None;
     }
 
-    if let Some(binding) = analyzer
-        .query_selector_field(block.block, selector_field)
-        .map(|s| s.binding)
-        .flatten()
-    {
-        match binding {
+    let Some(result) = analyzer
+        .query_selector_field(block.block, selector_field) else {
+        return None;
+    };
+
+    match &result.binding {
+        Some(binding) => match binding {
             SelectorFieldBinding::Struct(struct_def) => {
                 return Some(QueryResult::SelectorFieldStruct((
                     selector_field.clone(),
-                    struct_def,
+                    struct_def.clone(),
+                    result,
                 )))
             }
-        }
+        },
+        None => {}
     }
     None
 }

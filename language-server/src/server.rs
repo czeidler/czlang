@@ -357,7 +357,7 @@ impl Server {
                     format!("{} {}", field.name, types_to_string(&field.types))
                 }
                 QueryResult::SelectorFieldStruct(result) => {
-                    format!("struct {}", result.1.name)
+                    format!("field {}", types_to_string(result.2.r#type.types()))
                 },
             };
             Some(Hover {
@@ -403,7 +403,12 @@ impl Server {
                 QueryResult::SelectorFieldStruct(result) => {
                     match result.0.field {
                         SelectorFieldType::Identifier(identifier) => {
-                            if let Some(field) = result.1.fields.iter().find(|f| f.name == identifier) {
+                            let parent = match result.2.parent {
+                                Some(parent) => parent,
+                                None => return None,
+                            };
+
+                            if let Some(field) = parent.fields.iter().find(|f| f.name == identifier) {
                                 field.name_node.span.clone()
                             } else {
                                 return None;
