@@ -356,6 +356,9 @@ impl Server {
                 QueryResult::StructFieldDeclaration(field) => {
                     format!("{} {}", field.name, types_to_string(&field.types))
                 }
+                QueryResult::SelectorFieldStruct(struct_dec) => {
+                    format!("struct {}", struct_dec.name)
+                },
             };
             Some(Hover {
                 contents: HoverContents::Scalar(MarkedString::String(result)),

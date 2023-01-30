@@ -1,9 +1,11 @@
 use crate::{
     ast::{
-        Block, Expression, ExpressionType, Field, File, Function, Parameter, SourcePosition,
-        Statement, Struct, VarDeclaration,
+        Block, Expression, ExpressionType, Field, File, Function, Parameter, SelectorField,
+        SourcePosition, Statement, Struct, VarDeclaration,
     },
-    semantics::{FileSemanticAnalyzer, FunctionCallSemantics, IdentifierBinding},
+    semantics::{
+        FileSemanticAnalyzer, FunctionCallSemantics, IdentifierBinding, SelectorFieldBinding,
+    },
     types::{Ptr, PtrMut},
 };
 
@@ -16,6 +18,7 @@ pub enum QueryResult {
     VarDeclaration(Ptr<VarDeclaration>),
     StructDeclaration(Ptr<Struct>),
     StructFieldDeclaration(Field),
+    SelectorFieldStruct(Ptr<Struct>),
 }
 
 pub fn find_in_file(
@@ -161,9 +164,37 @@ fn find_in_expression(
             if selector.root.node.contains(position) {
                 return find_in_expression(analyzer, block, &selector.root, position);
             }
-            // TODO look in fields:
+            for field in &selector.fields {
+                if let Some(result) = find_in_selector_field(analyzer, block, field, position) {
+                    return Some(result);
+                }
+            }
             None
         }
         _ => None,
     }
+}
+
+fn find_in_selector_field(
+    analyzer: &mut FileSemanticAnalyzer,
+    block: &FunctionBlock,
+    selector_field: &SelectorField,
+    position: SourcePosition,
+) -> Option<QueryResult> {
+    if !selector_field.node.contains(position) {
+        return None;
+    }
+
+    if let Some(binding) = analyzer
+        .query_selector_field(block.block, selector_field)
+        .map(|s| s.binding)
+        .flatten()
+    {
+        match binding {
+            SelectorFieldBinding::Struct(struct_def) => {
+                return Some(QueryResult::SelectorFieldStruct(struct_def))
+            }
+        }
+    }
+    None
 }
