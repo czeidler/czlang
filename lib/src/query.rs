@@ -4,8 +4,7 @@ use crate::{
         SourcePosition, Statement, Struct, VarDeclaration,
     },
     semantics::{
-        FileSemanticAnalyzer, FunctionCallSemantics, IdentifierBinding, SelectorFieldBinding,
-        SelectorFieldSemantics,
+        FileSemanticAnalyzer, FunctionCallSemantics, IdentifierBinding, SelectorFieldSemantics,
     },
     types::{Ptr, PtrMut},
 };
@@ -19,8 +18,8 @@ pub enum QueryResult {
     VarDeclaration(Ptr<VarDeclaration>),
     StructDeclaration(Ptr<Struct>),
     StructFieldDeclaration(Field),
-    /// the found SelectorField, the type and the struct it refers to
-    SelectorFieldStruct((SelectorField, Ptr<Struct>, SelectorFieldSemantics)),
+    /// the found SelectorField and the SelectorFieldSemantics
+    SelectorField((SelectorField, SelectorFieldSemantics)),
 }
 
 pub fn find_in_file(
@@ -192,17 +191,5 @@ fn find_in_selector_field(
         return None;
     };
 
-    match &result.binding {
-        Some(binding) => match binding {
-            SelectorFieldBinding::Struct(struct_def) => {
-                return Some(QueryResult::SelectorFieldStruct((
-                    selector_field.clone(),
-                    struct_def.clone(),
-                    result,
-                )))
-            }
-        },
-        None => {}
-    }
-    None
+    return Some(QueryResult::SelectorField((selector_field.clone(), result)));
 }

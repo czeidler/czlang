@@ -356,8 +356,8 @@ impl Server {
                 QueryResult::StructFieldDeclaration(field) => {
                     format!("{} {}", field.name, types_to_string(&field.types))
                 }
-                QueryResult::SelectorFieldStruct(result) => {
-                    format!("field {}", types_to_string(result.2.r#type.types()))
+                QueryResult::SelectorField(result) => {
+                    format!("field {}", types_to_string(result.1.r#type.types()))
                 },
             };
             Some(Hover {
@@ -400,10 +400,10 @@ impl Server {
                         return None;
                     }
                 },
-                QueryResult::SelectorFieldStruct(result) => {
+                QueryResult::SelectorField(result) => {
                     match result.0.field {
                         SelectorFieldType::Identifier(identifier) => {
-                            let parent = match result.2.parent {
+                            let parent = match result.1.parent {
                                 Some(parent) => parent,
                                 None => return None,
                             };
