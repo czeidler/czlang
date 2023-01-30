@@ -9,7 +9,7 @@ use crate::ast::{
     Struct, StructFieldInitialization, StructInitialization, Type, UnaryOperator, VarDeclaration,
 };
 use crate::buildin::Buildins;
-use crate::semantics::{FileSemanticAnalyzer, TypeNarrowing};
+use crate::semantics::{FileSemanticAnalyzer, SelectorFieldBinding, TypeNarrowing};
 use crate::tree_sitter::parse;
 use crate::types::{Ptr, PtrMut, SumType};
 
@@ -299,21 +299,14 @@ impl RustTranspiler {
             .map(|s| s.resolved_types.clone())
             .flatten()
             .unwrap();
-
-        let root_struct_identifier = current_types
-            .iter()
-            .filter_map(|t| match &t.r#type {
-                Type::Identifier(identifier) => Some(identifier),
-                _ => None,
-            })
-            .next()
-            .unwrap();
-        let mut current_struct = fun
-            .file()
-            .read()
+        let mut current_struct = match analyzer
+            .query_selector(&fun.body.read().unwrap(), selector)
             .unwrap()
-            .struct_by_name(root_struct_identifier)
-            .unwrap();
+            .binding
+            .unwrap()
+        {
+            SelectorFieldBinding::Struct(struct_dec) => struct_dec,
+        };
         for field in &selector.fields {
             if !encountered_first_optional {
                 if field.optional_chaining {
@@ -355,20 +348,14 @@ impl RustTranspiler {
                                     .unwrap()
                                     .types,
                             );
-                            let struct_identifier = current_types
-                                .iter()
-                                .filter_map(|t| match &t.r#type {
-                                    Type::Identifier(identifier) => Some(identifier),
-                                    _ => None,
-                                })
-                                .next()
-                                .unwrap();
-                            current_struct = fun
-                                .file()
-                                .read()
+                            current_struct = match analyzer
+                                .query_selector_field(&fun.body.read().unwrap(), &field)
                                 .unwrap()
-                                .struct_by_name(struct_identifier)
-                                .unwrap();
+                                .binding
+                                .unwrap()
+                            {
+                                SelectorFieldBinding::Struct(struct_dec) => struct_dec,
+                            };
                         }
                         SelectorFieldType::Call => todo!(),
                     }

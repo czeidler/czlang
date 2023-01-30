@@ -4,8 +4,8 @@ use crate::{
     ast::{
         Array, BinaryExpression, BinaryOperator, Block, BlockParent, Expression, ExpressionType,
         File, Function, FunctionCall, FunctionSignature, IfAlternative, IfStatement, LangError,
-        NodeData, Parameter, RefType, SelectorExpression, SelectorFieldType, Slice, Statement,
-        Struct, Type, UnaryOperator, VarDeclaration,
+        NodeData, Parameter, RefType, SelectorExpression, SelectorField, SelectorFieldType, Slice,
+        Statement, Struct, Type, UnaryOperator, VarDeclaration,
     },
     buildin::Buildins,
     types::{intersection, types_to_string, Ptr, PtrMut, SumType},
@@ -81,6 +81,17 @@ pub struct TypeIdentifierSemantics {
     pub binding: Option<TypeBinding>,
 }
 
+#[derive(Debug, Clone)]
+pub enum SelectorFieldBinding {
+    Struct(Ptr<Struct>),
+}
+
+// Note: could be merged with TypeIdentifierSemantics...
+#[derive(Debug, Clone)]
+pub struct SelectorFieldSemantics {
+    pub binding: Option<SelectorFieldBinding>,
+}
+
 pub struct FileSemanticAnalyzer {
     pub file: PtrMut<File>,
     pub sum_types: HashMap<String, SumType>,
@@ -93,6 +104,7 @@ pub struct FileSemanticAnalyzer {
     // TODO make private by adding a query method:
     pub if_statements: HashMap<usize, IfStatementSemantics>,
     pub expressions: HashMap<usize, ExpressionSemantics>,
+    selector_fields: HashMap<usize, SelectorFieldSemantics>,
     variable_declarations: HashMap<usize, VarDeclarationSemantics>,
     function_calls: HashMap<usize, FunctionCallSemantics>,
     identifiers: HashMap<usize, IdentifierSemantics>,
@@ -118,6 +130,7 @@ impl FileSemanticAnalyzer {
             type_identifiers: HashMap::new(),
             if_statements: HashMap::new(),
             expressions: HashMap::new(),
+            selector_fields: HashMap::new(),
             variable_declarations: HashMap::new(),
             function_calls: HashMap::new(),
             blocks: HashMap::new(),
@@ -176,6 +189,7 @@ impl FileSemanticAnalyzer {
             .map(|s| s.clone())
     }
 
+    /// node_id is the node id of the identifier expression
     pub fn query_identifier(
         &mut self,
         block: &Block,
@@ -204,6 +218,39 @@ impl FileSemanticAnalyzer {
         };
         self.validate_fun(&fun);
         self.function_calls.get(&call.node.id).map(|s| s.clone())
+    }
+
+    /// Query the root selector expression
+    pub fn query_selector(
+        &mut self,
+        block: &Block,
+        select: &SelectorExpression,
+    ) -> Option<SelectorFieldSemantics> {
+        if let Some(s) = self.selector_fields.get(&select.root.node.id) {
+            return Some(s.clone());
+        }
+        let Some(fun) = block.fun() else {
+            return None;
+        };
+        self.validate_fun(&fun);
+        self.selector_fields
+            .get(&select.root.node.id)
+            .map(|s| s.clone())
+    }
+
+    pub fn query_selector_field(
+        &mut self,
+        block: &Block,
+        field: &SelectorField,
+    ) -> Option<SelectorFieldSemantics> {
+        if let Some(s) = self.selector_fields.get(&field.node.id) {
+            return Some(s.clone());
+        }
+        let Some(fun) = block.fun() else {
+            return None;
+        };
+        self.validate_fun(&fun);
+        self.selector_fields.get(&field.node.id).map(|s| s.clone())
     }
 
     fn validate_struct_def(&mut self, struct_def: &Ptr<Struct>) {
@@ -774,24 +821,10 @@ impl FileSemanticAnalyzer {
         select: &SelectorExpression,
     ) -> Option<SumType> {
         let root_types = self.validate_expression(block, &select.root)?;
-        let (identifier, nullable) =
-            self.validate_nullable_identifier(&select.root.node, &root_types)?;
-        let current_struct = self
-            .query_type(&identifier)
-            .map(|s| s.binding)
-            .flatten()
-            .map(|b| match b {
-                TypeBinding::Struct(struct_def) => struct_def,
-            });
-        let Some(current_struct) = current_struct else {
-            self.errors.push(LangError::type_error(
-                &select.root.node,
-                format!("{} is not a struct", identifier),
-            ));
-            return None;
-        };
+        let (root_struct, nullable) =
+            self.bind_selector_field_to_struct(&select.root.node, &root_types.types())?;
 
-        let mut current_struct: Ptr<Struct> = current_struct;
+        let mut current_struct: Ptr<Struct> = root_struct;
         let mut current_struct_nullable = nullable;
         let mut nullable_chain = nullable;
         for (i, field) in select.fields.iter().enumerate() {
@@ -819,6 +852,10 @@ impl FileSemanticAnalyzer {
                 return None;
             }
             if i == select.fields.len() - 1 {
+                let existing = self
+                    .selector_fields
+                    .insert(field.node.id, SelectorFieldSemantics { binding: None });
+                assert!(existing.is_none());
                 match &field.field {
                     SelectorFieldType::Identifier(field_identifier) => {
                         let Some(found_field) = current_struct.fields.iter().find(|f|&f.name == field_identifier) else {
@@ -848,25 +885,9 @@ impl FileSemanticAnalyzer {
                             return None;
                         };
 
-                        let (identifier, nullable) = self.validate_nullable_identifier(
-                            &field.node,
-                            &SumType::from_types(&found_field.types),
-                        )?;
+                        let (found_struct, nullable) =
+                            self.bind_selector_field_to_struct(&field.node, &found_field.types)?;
 
-                        let found_struct = self
-                            .query_type(&identifier)
-                            .map(|s| s.binding)
-                            .flatten()
-                            .map(|b| match b {
-                                TypeBinding::Struct(struct_def) => struct_def,
-                            });
-                        let Some(found_struct) = found_struct else {
-                                self.errors.push(LangError::type_error(
-                                &field.node,
-                                format!("{} is not a struct", identifier),
-                            ));
-                            return None;
-                        };
                         current_struct = found_struct;
                         current_struct_nullable = nullable;
                     }
@@ -875,6 +896,39 @@ impl FileSemanticAnalyzer {
             }
         }
         return None;
+    }
+
+    fn bind_selector_field_to_struct(
+        &mut self,
+        field_node: &NodeData,
+        field_type: &Vec<RefType>,
+    ) -> Option<(Ptr<Struct>, bool)> {
+        let (identifier, nullable) =
+            self.validate_nullable_identifier(field_node, &SumType::from_types(&field_type))?;
+
+        let found_struct = self
+            .query_type(&identifier)
+            .map(|s| s.binding)
+            .flatten()
+            .map(|b| match b {
+                TypeBinding::Struct(struct_def) => struct_def,
+            });
+        let Some(found_struct) = found_struct else {
+                self.errors.push(LangError::type_error(
+                    field_node,
+                format!("{} is not a struct", identifier),
+            ));
+            return None;
+        };
+
+        let existing = self.selector_fields.insert(
+            field_node.id,
+            SelectorFieldSemantics {
+                binding: Some(SelectorFieldBinding::Struct(found_struct.clone())),
+            },
+        );
+        assert!(existing.is_none());
+        Some((found_struct, nullable))
     }
 
     /// Validate types contains an identifier and an optional null type
