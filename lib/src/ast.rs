@@ -197,6 +197,7 @@ pub struct Field {
     pub node: NodeData,
 
     pub name: String,
+    pub name_node: NodeData,
     pub types: Vec<RefType>,
 }
 
@@ -615,6 +616,7 @@ fn parse_struct_field<'a>(
         },
 
         name: node_text(&name, context)?,
+        name_node: NodeData::from_node(&name),
         types: parse_types(context, &field_type)?,
     })
 }

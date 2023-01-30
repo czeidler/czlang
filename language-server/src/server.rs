@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::Result;
 use czlanglib::{
-    ast::{SourcePosition, SourceSpan},
+    ast::{SelectorFieldType, SourcePosition, SourceSpan},
     init,
     project::{FileChange, Project},
     query::{find_in_file, QueryResult},
@@ -356,8 +356,8 @@ impl Server {
                 QueryResult::StructFieldDeclaration(field) => {
                     format!("{} {}", field.name, types_to_string(&field.types))
                 }
-                QueryResult::SelectorFieldStruct(struct_dec) => {
-                    format!("struct {}", struct_dec.name)
+                QueryResult::SelectorFieldStruct(result) => {
+                    format!("struct {}", result.1.name)
                 },
             };
             Some(Hover {
@@ -391,13 +391,25 @@ impl Server {
             let target = match result {
                 QueryResult::Identifier(lookup) => match lookup {
                     IdentifierBinding::VarDeclaration(var) => var.name_node.span.clone(),
-                    IdentifierBinding::Parameter(param) => param.node.span.clone(),
+                    IdentifierBinding::Parameter(param) => param.node.span,
                 },
                 QueryResult::FunctionCall(fun) => {
                     if let Some(binding) = fun.binding {
                         binding.as_function_signature().name_node.span.clone()
                     } else {
                         return None;
+                    }
+                },
+                QueryResult::SelectorFieldStruct(result) => {
+                    match result.0.field {
+                        SelectorFieldType::Identifier(identifier) => {
+                            if let Some(field) = result.1.fields.iter().find(|f| f.name == identifier) {
+                                field.name_node.span.clone()
+                            } else {
+                                return None;
+                            }
+                        },
+                        SelectorFieldType::Call => return None, // TODO
                     }
                 }
                 _ => return None,

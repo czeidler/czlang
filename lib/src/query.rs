@@ -18,7 +18,8 @@ pub enum QueryResult {
     VarDeclaration(Ptr<VarDeclaration>),
     StructDeclaration(Ptr<Struct>),
     StructFieldDeclaration(Field),
-    SelectorFieldStruct(Ptr<Struct>),
+    /// the found SelectorField and the struct it refers to
+    SelectorFieldStruct((SelectorField, Ptr<Struct>)),
 }
 
 pub fn find_in_file(
@@ -192,7 +193,10 @@ fn find_in_selector_field(
     {
         match binding {
             SelectorFieldBinding::Struct(struct_def) => {
-                return Some(QueryResult::SelectorFieldStruct(struct_def))
+                return Some(QueryResult::SelectorFieldStruct((
+                    selector_field.clone(),
+                    struct_def,
+                )))
             }
         }
     }
