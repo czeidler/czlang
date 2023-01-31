@@ -84,3 +84,42 @@ fun x() i32 {
     )
   )
 )
+
+==================
+Block Expression
+==================
+
+fun x() i32 {
+  var test = {
+    32
+  }
+
+  {
+    var t2 = true
+  }
+}
+
+---
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameter_list)
+    (primitive_type)
+    (block
+      (var_declaration
+        (identifier)
+        (block
+          (expression_statement
+            (int_literal))))
+      (expression_statement
+        (block
+          (var_declaration
+            (identifier)
+            (true)
+          )
+        )
+      )
+    )
+  )
+)

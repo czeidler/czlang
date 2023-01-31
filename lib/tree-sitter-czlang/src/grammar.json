@@ -994,6 +994,10 @@
         {
           "type": "SYMBOL",
           "name": "error_expression"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "block"
         }
       ]
     },
