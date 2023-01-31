@@ -558,7 +558,7 @@ fn parse_fun<'a>(
         None => None,
     };
     let body_node: Node = child_by_field(&node, "body", context)?;
-    let body = parse_block(context, body_node, node.clone());
+    let body = parse_block(context, body_node);
 
     let fun = Ptr::new(Function {
         parent: Ptr::downgrade(file),
@@ -621,11 +621,7 @@ fn parse_struct_field<'a>(
     })
 }
 
-fn parse_block<'a>(
-    context: &mut FileContext<'a>,
-    node: Node<'a>,
-    parent_node: Node<'a>,
-) -> PtrMut<Block> {
+fn parse_block<'a>(context: &mut FileContext<'a>, node: Node<'a>) -> PtrMut<Block> {
     let mut statements: Vec<Statement> = Vec::new();
     for index in 1..node.child_count() - 1 {
         let statement_node = match child(&node, "statement", index, context) {
@@ -659,7 +655,7 @@ fn parse_block<'a>(
                 };
             }
             "if_statement" => {
-                match parse_if(context, statement_node, parent_node) {
+                match parse_if(context, statement_node) {
                     Some(statement) => statements.push(Statement::IfStatement(statement)),
                     None => continue,
                 };
@@ -671,11 +667,7 @@ fn parse_block<'a>(
     Ptr::new(RwLock::new(Block {
         parent: None,
         statements,
-        node: NodeData {
-            id: node.id(),
-            parent: parent_node.id(),
-            span: SourceSpan::from_node(&node),
-        },
+        node: NodeData::from_node(&node),
     }))
 }
 
@@ -977,32 +969,20 @@ fn parse_return_statement<'a>(
     Some(expression)
 }
 
-fn parse_if<'a>(
-    context: &mut FileContext<'a>,
-    node: Node<'a>,
-    parent: Node<'a>,
-) -> Option<Ptr<IfStatement>> {
+fn parse_if<'a>(context: &mut FileContext<'a>, node: Node<'a>) -> Option<Ptr<IfStatement>> {
     let condition = child_by_field(&node, "condition", context)?;
     let consequence = child_by_field(&node, "consequence", context)?;
     let alternative = node.child_by_field_name("alternative".as_bytes());
 
     let condition = parse_expression(context, &condition)?;
-    let consequence = parse_block(context, consequence, parent);
+    let consequence = parse_block(context, consequence);
 
     let alternative = match alternative {
         Some(alternative) => {
             if alternative.kind() == "if_statement" {
-                Some(IfAlternative::If(parse_if(
-                    context,
-                    alternative.clone(),
-                    node.clone(),
-                )?))
+                Some(IfAlternative::If(parse_if(context, alternative.clone())?))
             } else {
-                Some(IfAlternative::Else(parse_block(
-                    context,
-                    alternative,
-                    node.clone(),
-                )))
+                Some(IfAlternative::Else(parse_block(context, alternative)))
             }
         }
         None => None,
