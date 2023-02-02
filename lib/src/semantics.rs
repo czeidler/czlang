@@ -258,11 +258,11 @@ impl FileSemanticAnalyzer {
         // TODO: struct name clash with other definitions?
 
         for field in &struct_def.fields {
-            self.validate_declaration_types(&field.node, &field.types);
+            self.validate_declaration_types(&field.types);
         }
     }
 
-    fn validate_declaration_types(&mut self, node: &NodeData, types: &Vec<RefType>) -> SumType {
+    fn validate_types(&mut self, types: &Vec<RefType>) -> SumType {
         let mut result_types = vec![];
         for t in types {
             if result_types.iter().find(|v| *v == t).is_none() {
@@ -271,12 +271,16 @@ impl FileSemanticAnalyzer {
                 self.query_type(t);
             } else {
                 self.errors.push(LangError::type_error(
-                    node,
+                    &t.node,
                     format!("Duplicated type: {:?}", t),
                 ))
             }
         }
-        let result_types = SumType::new(result_types);
+        SumType::new(result_types)
+    }
+
+    fn validate_declaration_types(&mut self, types: &Vec<RefType>) -> SumType {
+        let result_types = self.validate_types(types);
 
         // Add sum type
         if result_types.len() > 1 {
@@ -309,7 +313,7 @@ impl FileSemanticAnalyzer {
         for par_ref in &fun.signature.parameters {
             // Add sum type
             if par_ref.types.len() > 1 {
-                let sum_type = SumType::from_types(&par_ref.types);
+                let sum_type = self.validate_types(&par_ref.types);
                 self.sum_types.insert(sum_type.sum_type_name(), sum_type);
             }
         }
@@ -384,7 +388,7 @@ impl FileSemanticAnalyzer {
         var_declaration: Ptr<VarDeclaration>,
     ) {
         let mut var_types = if let Some(types) = &var_declaration.types {
-            self.validate_declaration_types(&var_declaration.node, types)
+            self.validate_declaration_types(types)
         } else {
             SumType::new(vec![])
         };

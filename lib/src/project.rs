@@ -26,8 +26,8 @@ impl ProjectFile {
     fn new(path: String, source: String) -> Self {
         let tree = parse(&source, None);
         let mut file_context = FileContext::new(tree.root_node(), path, &source);
-        let file = file_context.parse_file();
-        let parse_errors = file_context.errors;
+        let mut parse_errors = Vec::new();
+        let file = file_context.parse_file(&mut parse_errors);
 
         let project_file = ProjectFile {
             source,
@@ -79,8 +79,8 @@ impl ProjectFile {
         self.tree = parse(&self.source, Some(&self.tree));
 
         let mut file_context = FileContext::new(self.tree.root_node(), url, &self.source);
-        self.file = file_context.parse_file();
-        self.parse_errors = file_context.errors;
+        let mut parse_errors = Vec::new();
+        self.file = file_context.parse_file(&mut parse_errors);
         self.file_analyzer = FileSemanticAnalyzer::new(self.file.clone())
     }
 }

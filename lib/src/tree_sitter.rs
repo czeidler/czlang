@@ -36,10 +36,11 @@ mod tests {
         println!("Tree sitter {}", root_node.to_sexp());
 
         let mut file_context = FileContext::new(root_node, "test".to_string(), &source_code);
-        let file = file_context.parse_file();
+        let mut parse_errors = Vec::new();
+        let file = file_context.parse_file(&mut parse_errors);
 
         println!("AST: {:?}", file);
-        for error in &file_context.errors {
+        for error in &parse_errors {
             print_err(&error, &source_code);
         }
     }

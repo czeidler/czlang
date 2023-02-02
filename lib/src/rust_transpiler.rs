@@ -883,14 +883,15 @@ pub fn transpile_project(project_dir: &Path) -> Result<(), anyhow::Error> {
 
     let file_path = main_file_path.to_string_lossy();
     let mut file_context = FileContext::new(root_node.clone(), file_path.to_string(), &source_code);
-    let file = file_context.parse_file();
-    for error in &file_context.errors {
+    let mut parse_errors = Vec::new();
+    let file = file_context.parse_file(&mut parse_errors);
+    for error in &parse_errors {
         print_err(&error, &file_context.source);
     }
-    if !file_context.errors.is_empty() {
+    if !parse_errors.is_empty() {
         return Err(anyhow::Error::msg(format!(
             "{} compile error(s)",
-            file_context.errors.len()
+            parse_errors.len()
         )));
     }
 
