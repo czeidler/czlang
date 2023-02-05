@@ -2,14 +2,20 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     ast::{
-        Array, BinaryExpression, BinaryOperator, Block, BlockParent, Expression, ExpressionType,
-        File, Function, FunctionCall, FunctionSignature, IfAlternative, IfStatement, LangError,
-        NodeData, Parameter, RefType, SelectorExpression, SelectorField, SelectorFieldType, Slice,
-        Statement, Struct, Type, UnaryOperator, VarDeclaration,
+        Array, BinaryExpression, BinaryOperator, Block, BlockParent, BlockTrait, Expression,
+        ExpressionType, FileContext, FileTrait, Function, FunctionCall, FunctionSignature,
+        FunctionTrait, IfAlternative, IfStatement, LangError, NodeData, Parameter, RefType,
+        RootSymbol, SelectorExpression, SelectorField, SelectorFieldType, Slice, Statement, Struct,
+        Type, UnaryOperator, VarDeclaration,
     },
     buildin::Buildins,
-    types::{intersection, types_to_string, Ptr, PtrMut, SumType},
+    types::{intersection, types_to_string, Ptr, SumType},
 };
+
+pub struct FileSemantics {
+    pub functions: HashMap<String, Ptr<Function>>,
+    pub structs: HashMap<String, Ptr<Struct>>,
+}
 
 struct BlockSemantics {
     pub vars: HashMap<String, Ptr<VarDeclaration>>,
@@ -94,10 +100,11 @@ pub struct SelectorFieldSemantics {
 }
 
 pub struct FileSemanticAnalyzer {
-    pub file: PtrMut<File>,
+    pub file: Ptr<FileContext>,
     pub sum_types: HashMap<String, SumType>,
     pub errors: Vec<LangError>,
 
+    file_semantics: Option<Ptr<FileSemantics>>,
     structs: HashSet<usize>,
     /// Just keep track of analyzed/checked functions
     fun_symbols: HashSet<usize>,
@@ -119,9 +126,10 @@ struct FunctionBlock<'a> {
 }
 
 impl FileSemanticAnalyzer {
-    pub fn new(file: PtrMut<File>) -> Self {
+    pub fn new(file: Ptr<FileContext>) -> Self {
         FileSemanticAnalyzer {
             file,
+            file_semantics: None,
             sum_types: HashMap::new(),
             errors: Vec::new(),
 
@@ -139,19 +147,18 @@ impl FileSemanticAnalyzer {
     }
 
     pub fn analyze(&mut self) {
-        // clone structs in order to release the read lock (write lock is acquired during validation)
-        let struct_defs = self.file.read().unwrap().struct_defs.clone();
-        for (_, struct_def) in struct_defs {
+        let file_semantics = self.query_file();
+
+        for (_, struct_def) in &file_semantics.structs {
             self.analyze_struct(struct_def);
         }
 
-        let functions = self.file.read().unwrap().functions.clone();
-        for (_, fun) in functions {
+        for (_, fun) in &file_semantics.functions {
             self.analyze_fun(fun);
         }
     }
 
-    pub fn analyze_struct(&mut self, struct_def: Ptr<Struct>) {
+    pub fn analyze_struct(&mut self, struct_def: &Ptr<Struct>) {
         if self.structs.contains(&struct_def.node.id) {
             return;
         }
@@ -162,15 +169,24 @@ impl FileSemanticAnalyzer {
         assert!(new_entry);
     }
 
-    pub fn analyze_fun(&mut self, fun: Ptr<Function>) {
+    pub fn analyze_fun(&mut self, fun: &Ptr<Function>) {
         if self.fun_symbols.contains(&fun.signature.node.id) {
             return;
         }
-
         self.validate_fun(&fun);
-
         let new_entry = self.fun_symbols.insert(fun.signature.node.id);
         assert!(new_entry);
+    }
+
+    pub fn query_file(&mut self) -> Ptr<FileSemantics> {
+        if let Some(file) = &self.file_semantics {
+            return file.clone();
+        }
+
+        let file = Ptr::new(self.validate_file());
+        self.file_semantics = Some(file.clone());
+
+        file
     }
 
     pub fn query_type(&mut self, r#type: &RefType) -> Option<TypeIdentifierSemantics> {
@@ -254,6 +270,35 @@ impl FileSemanticAnalyzer {
         self.selector_fields.get(&field.node.id).map(|s| s.clone())
     }
 
+    fn validate_file(&mut self) -> FileSemantics {
+        let mut functions = HashMap::new();
+        let mut structs = HashMap::new();
+        for child in self.file.children() {
+            match child {
+                RootSymbol::Function(fun) => {
+                    let existed = functions.insert(fun.signature.name.clone(), fun.clone());
+                    if existed.is_some() {
+                        self.errors.push(LangError::type_error(
+                            &fun.signature.name_node,
+                            format!("Duplicated function definition: {:?}", fun.signature.name),
+                        ))
+                    }
+                }
+                RootSymbol::Struct(struct_def) => {
+                    let existed = structs.insert(struct_def.name.clone(), struct_def.clone());
+                    if existed.is_some() {
+                        self.errors.push(LangError::type_error(
+                            &struct_def.name_node,
+                            format!("Duplicated struct definition: {:?}", struct_def.name),
+                        ))
+                    }
+                }
+            }
+        }
+
+        FileSemantics { functions, structs }
+    }
+
     fn validate_struct_def(&mut self, struct_def: &Ptr<Struct>) {
         // TODO: struct name clash with other definitions?
 
@@ -291,7 +336,8 @@ impl FileSemanticAnalyzer {
     }
 
     fn bind_type_identifier(&mut self, node: &NodeData, identifier: &String) {
-        let Some(struct_def) = self.file.read().unwrap().struct_defs.get(identifier).map(|s| s.clone()) else {
+        let file = self.query_file();
+        let Some(struct_def) = file.structs.get(identifier).map(|s| s.clone()) else {
             self.errors.push(LangError::type_error(
                 node,
                 format!("Can't resolve type identifier: {:?}", identifier),
@@ -307,7 +353,7 @@ impl FileSemanticAnalyzer {
         assert!(existing.is_none())
     }
 
-    fn validate_fun(&mut self, fun: &Function) {
+    fn validate_fun(&mut self, fun: &Ptr<Function>) {
         // TODO: fun name clash with other definitions?
 
         for par_ref in &fun.signature.parameters {
@@ -317,15 +363,14 @@ impl FileSemanticAnalyzer {
                 self.sum_types.insert(sum_type.sum_type_name(), sum_type);
             }
         }
-        let block = fun.body.clone();
+        let block = fun.body();
 
         self.validate_block(fun, &block);
     }
 
-    fn validate_block(&mut self, fun: &Function, block: &PtrMut<Block>) {
-        let block = block.read().unwrap();
-        for statement in &block.statements {
-            self.validate_statement(&FunctionBlock { fun, block: &block }, statement);
+    fn validate_block(&mut self, fun: &Function, block: &Ptr<Block>) {
+        for statement in block.statements() {
+            self.validate_statement(&FunctionBlock { fun, block: &block }, &statement);
         }
     }
 
@@ -545,12 +590,9 @@ impl FileSemanticAnalyzer {
                 assert!(existing.is_none());
                 return Some(binding);
             }
-            let Some(parent) = b.parent.clone() else {
-                return None;
-            };
-            match parent {
+
+            match &b.parent {
                 BlockParent::Function(fun) => {
-                    let fun = fun.upgrade().unwrap();
                     if let Some(param) = (&fun.signature.parameters)
                         .into_iter()
                         .find(|it| &it.name == identifier)
@@ -569,7 +611,7 @@ impl FileSemanticAnalyzer {
                     }
                 }
                 BlockParent::Block(block) => {
-                    current = Some(block.upgrade().unwrap());
+                    current = Some(block.clone());
                 }
             }
         }
@@ -580,7 +622,7 @@ impl FileSemanticAnalyzer {
         _block: &Block,
         call: &FunctionCall,
     ) -> Option<FunctionCallBinding> {
-        let file = self.file.read().unwrap();
+        let file = self.query_file();
         if let Some(declaration) = file.functions.get(&call.name) {
             let binding = FunctionCallBinding::Function(declaration.clone());
             let existing = self.function_calls.insert(

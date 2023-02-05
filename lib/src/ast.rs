@@ -1,12 +1,11 @@
-use std::{
-    collections::HashMap,
-    hash::Hash,
-    sync::{RwLock, Weak},
+use std::{hash::Hash, sync::Arc};
+
+use tree_sitter::{Node, Tree};
+
+use crate::{
+    tree_sitter::{find_node, parse},
+    types::Ptr,
 };
-
-use tree_sitter::Node;
-
-use crate::types::{Ptr, PtrMut};
 
 // ast:
 
@@ -165,15 +164,59 @@ impl NodeData {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct File {
-    pub functions: HashMap<String, Ptr<Function>>,
-    pub struct_defs: HashMap<String, Ptr<Struct>>,
+pub enum RootSymbol {
+    Function(Ptr<Function>),
+    Struct(Ptr<Struct>),
 }
 
-impl File {
-    pub fn struct_by_name(&self, name: &str) -> Option<Ptr<Struct>> {
-        self.struct_defs.get(name).map(|f| f.clone())
+pub trait FileTrait {
+    fn children(&self) -> FileSymbolIterator;
+}
+
+impl FileTrait for Ptr<FileContext> {
+    fn children(&self) -> FileSymbolIterator {
+        FileSymbolIterator::new(self.clone())
+    }
+}
+
+pub struct FileSymbolIterator {
+    file: Ptr<FileContext>,
+    index: usize,
+}
+
+impl FileSymbolIterator {
+    fn new(file: Ptr<FileContext>) -> Self {
+        FileSymbolIterator { file, index: 0 }
+    }
+}
+
+impl Iterator for FileSymbolIterator {
+    type Item = RootSymbol;
+    fn next(&mut self) -> Option<Self::Item> {
+        let root = self.file.tree.root_node();
+        loop {
+            let Some(child) = root.child(self.index) else {
+                return None;
+            };
+            self.index = self.index + 1;
+            match child.kind() {
+                "function_definition" => {
+                    if let Some(fun) = parse_fun(&self.file, &child) {
+                        return Some(RootSymbol::Function(fun));
+                    } else {
+                        println!("Invalid function_definition: {:?}", child);
+                    }
+                }
+                "struct_definition" => {
+                    if let Some(struct_def) = parse_struct(&self.file, &child) {
+                        return Some(RootSymbol::Struct(struct_def));
+                    } else {
+                        println!("Invalid struct_definition: {:?}", child);
+                    }
+                }
+                _ => {}
+            };
+        }
     }
 }
 
@@ -219,36 +262,120 @@ pub struct FunctionSignature {
 
 #[derive(Debug, Clone)]
 pub struct Function {
-    pub parent: Weak<RwLock<File>>,
+    pub file: Ptr<FileContext>,
 
     pub signature: FunctionSignature,
-    pub body: PtrMut<Block>,
+    pub body_node: NodeData,
 }
 
 impl Function {
-    pub fn file(&self) -> PtrMut<File> {
-        self.parent.upgrade().unwrap()
+    pub fn file(&self) -> Ptr<FileContext> {
+        self.file.clone()
+    }
+}
+
+pub trait FunctionTrait {
+    fn body(&self) -> Ptr<Block>;
+}
+
+impl FunctionTrait for Ptr<Function> {
+    fn body(&self) -> Ptr<Block> {
+        let position = &self.body_node.span.start;
+        let body_node = find_node(
+            &self.file.tree,
+            self.body_node.id,
+            position.row,
+            position.column,
+        )
+        .unwrap();
+        parse_block(&self.file, body_node, BlockParent::Function(self.clone()))
     }
 }
 
 #[derive(Debug)]
 pub struct Block {
-    pub parent: Option<BlockParent>,
+    pub context: Ptr<FileContext>,
+    pub parent: BlockParent,
 
     pub node: NodeData,
-
-    pub statements: Vec<Statement>,
 }
 
 impl Block {
     pub fn fun(&self) -> Option<Ptr<Function>> {
-        let Some(parent) = &self.parent else {
-            return None;
-        };
-        match parent {
-            BlockParent::Function(fun) => Some(fun.upgrade().unwrap()),
-            BlockParent::Block(block) => block.upgrade().unwrap().fun(),
+        match &self.parent {
+            BlockParent::Function(fun) => Some(fun.clone()),
+            BlockParent::Block(block) => block.fun(),
         }
+    }
+}
+
+pub trait BlockTrait {
+    fn statements(&self) -> StatementIterator;
+}
+
+impl BlockTrait for Ptr<Block> {
+    fn statements(&self) -> StatementIterator {
+        let position = &self.node.span.start;
+        let node = find_node(
+            &self.context.tree,
+            self.node.id,
+            position.row,
+            position.column,
+        )
+        .unwrap();
+        StatementIterator {
+            file: self.context.clone(),
+            block: self.clone(),
+            node,
+            index: 1,
+        }
+    }
+}
+
+pub struct StatementIterator<'a> {
+    file: Ptr<FileContext>,
+    block: Ptr<Block>,
+    node: Node<'a>,
+    index: usize,
+}
+
+impl<'a> Iterator for StatementIterator<'a> {
+    type Item = Statement;
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.index < self.node.child_count() {
+            let statement_node = child(&self.node, "statement", self.index);
+            self.index = self.index + 1;
+
+            let statement_node = match statement_node {
+                Some(statement_node) => statement_node,
+                None => {
+                    continue;
+                }
+            };
+            let next = match statement_node.kind() {
+                "expression_statement" => {
+                    let expression_node = match child_by_field(&statement_node, "expression") {
+                        Some(expression_node) => expression_node,
+                        None => continue,
+                    };
+                    parse_expression(&self.file, &expression_node)
+                        .map(|statement| Statement::Expression(statement))
+                }
+                "var_declaration" => parse_var_declaration(&self.file, statement_node)
+                    .map(|statement| Statement::VarDeclaration(Ptr::new(statement))),
+                "return_statement" => parse_return_statement(&self.file, &statement_node)
+                    .map(|statement| Statement::Return(statement)),
+                "if_statement" => parse_if(&self.file, statement_node, self.block.clone())
+                    .map(|statement| Statement::IfStatement(statement)),
+
+                _ => None,
+            };
+
+            if next.is_some() {
+                return next;
+            }
+        }
+        None
     }
 }
 
@@ -471,7 +598,7 @@ pub struct ParenthesizedExpression {
 
 #[derive(Debug, Clone)]
 pub enum IfAlternative {
-    Else(PtrMut<Block>),
+    Else(Ptr<Block>),
     If(Ptr<IfStatement>),
 }
 
@@ -479,7 +606,7 @@ pub enum IfAlternative {
 pub struct IfStatement {
     pub node: NodeData,
     pub condition: Expression,
-    pub consequence: PtrMut<Block>,
+    pub consequence: Ptr<Block>,
     pub alternative: Option<IfAlternative>,
 }
 
@@ -490,90 +617,63 @@ pub struct FileData<'a> {
 }
 
 #[derive(Debug, Clone)]
-pub struct FileContext<'a> {
-    pub root: Node<'a>,
+pub struct FileContext {
+    pub tree: Tree,
     pub file_path: String,
-    pub source: &'a String,
+    pub source: String,
 }
 
-impl<'a> FileContext<'a> {
-    pub fn new(root: Node<'a>, file_path: String, source: &'a String) -> Self {
-        FileContext {
-            root,
+impl FileContext {
+    pub fn parse(file_path: String, source: String, errors: &mut Vec<LangError>) -> Ptr<Self> {
+        let tree = parse(&source, None);
+        collect_errors(tree.root_node(), &source, errors);
+        Arc::new(FileContext {
+            tree,
             file_path,
             source,
-        }
+        })
     }
 
-    pub fn parse_file(&mut self, errors: &mut Vec<LangError>) -> PtrMut<File> {
-        collect_errors(self.root, self.source, errors);
-        parse_file(self.root, self)
+    pub fn parse_from_existing_tree(
+        file_path: String,
+        source: String,
+        tree: &Tree,
+        errors: &mut Vec<LangError>,
+    ) -> Ptr<Self> {
+        let tree = parse(&source, Some(tree));
+        collect_errors(tree.root_node(), &source, errors);
+        Arc::new(FileContext {
+            tree,
+            file_path,
+            source,
+        })
     }
 }
 
-pub fn parse_file<'a>(node: Node<'a>, context: &mut FileContext<'a>) -> PtrMut<File> {
-    let file = Ptr::new(RwLock::new(File {
-        functions: HashMap::new(),
-        struct_defs: HashMap::new(),
-    }));
-
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        match child.kind() {
-            "function_definition" => {
-                if let Some(fun) = parse_fun(context, &file, &child) {
-                    file.write()
-                        .unwrap()
-                        .functions
-                        .insert(fun.signature.name.clone(), fun.clone());
-                };
-            }
-            "struct_definition" => {
-                if let Some(struct_def) = parse_struct(context, &child) {
-                    file.write()
-                        .unwrap()
-                        .struct_defs
-                        .insert(struct_def.name.clone(), struct_def);
-                }
-            }
-            _ => {}
-        };
-    }
-
-    // package only has one file right now
-    file
-}
-
-fn parse_fun<'a>(
-    context: &mut FileContext<'a>,
-    file: &PtrMut<File>,
-    node: &Node<'a>,
-) -> Option<Ptr<Function>> {
+fn parse_fun<'a>(file: &Ptr<FileContext>, node: &Node<'a>) -> Option<Ptr<Function>> {
     let name = child_by_field(&node, "name")?;
     let parameter_list = child_by_field(&node, "parameters")?;
     let return_types = match node.child_by_field_name("result".as_bytes()) {
-        Some(return_node) => parse_types(context, &return_node),
+        Some(return_node) => parse_types(file, &return_node),
         None => None,
     };
     let body_node: Node = child_by_field(&node, "body")?;
-    let body = parse_block(context, body_node);
 
     let fun = Ptr::new(Function {
-        parent: Ptr::downgrade(file),
+        file: file.clone(),
         signature: FunctionSignature {
             node: NodeData::from_node(&node),
-            name: node_text(&name, context)?,
+            name: node_text(&name, file)?,
             name_node: NodeData::from_node(&name),
-            parameters: parse_parameters(context, parameter_list)?,
+            parameters: parse_parameters(file, parameter_list)?,
             return_types: return_types.unwrap_or(vec![]),
         },
-        body: body.clone(),
+        body_node: NodeData::from_node(&body_node),
     });
-    body.write().unwrap().parent = Some(BlockParent::Function(Ptr::downgrade(&fun)));
     Some(fun)
 }
 
-fn parse_struct<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Ptr<Struct>> {
+fn parse_struct<'a>(context: &Ptr<FileContext>, node: &Node<'a>) -> Option<Ptr<Struct>> {
     let name = child_by_field(&node, "name")?;
     let fields = child_by_field(&node, "fields")?;
     let fields = parse_struct_fields(context, &fields, node)?;
@@ -586,7 +686,7 @@ fn parse_struct<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Pt
 }
 
 fn parse_struct_fields<'a>(
-    context: &mut FileContext<'a>,
+    context: &Ptr<FileContext>,
     node: &Node<'a>,
     parent: &Node<'a>,
 ) -> Option<Vec<Field>> {
@@ -599,7 +699,7 @@ fn parse_struct_fields<'a>(
 }
 
 fn parse_struct_field<'a>(
-    context: &mut FileContext<'a>,
+    context: &Ptr<FileContext>,
     node: &Node<'a>,
     parent: &Node<'a>,
 ) -> Option<Field> {
@@ -619,57 +719,15 @@ fn parse_struct_field<'a>(
     })
 }
 
-fn parse_block<'a>(context: &mut FileContext<'a>, node: Node<'a>) -> PtrMut<Block> {
-    let mut statements: Vec<Statement> = Vec::new();
-    for index in 1..node.child_count() - 1 {
-        let statement_node = match child(&node, "statement", index) {
-            Some(statement_node) => statement_node,
-            None => continue,
-        };
-        match statement_node.kind() {
-            "expression_statement" => {
-                let expression_node = match child_by_field(&statement_node, "expression") {
-                    Some(expression_node) => expression_node,
-                    None => continue,
-                };
-                match parse_expression(context, &expression_node) {
-                    Some(expression) => statements.push(Statement::Expression(expression)),
-                    None => continue,
-                };
-            }
-            "var_declaration" => {
-                match parse_var_declaration(context, statement_node) {
-                    Some(statement) => {
-                        statements.push(Statement::VarDeclaration(Ptr::new(statement)))
-                    }
-                    None => continue,
-                };
-            }
-
-            "return_statement" => {
-                match parse_return_statement(context, &statement_node) {
-                    Some(statement) => statements.push(Statement::Return(statement)),
-                    None => continue,
-                };
-            }
-            "if_statement" => {
-                match parse_if(context, statement_node) {
-                    Some(statement) => statements.push(Statement::IfStatement(statement)),
-                    None => continue,
-                };
-            }
-
-            _ => {}
-        }
-    }
-    Ptr::new(RwLock::new(Block {
-        parent: None,
-        statements,
+fn parse_block<'a>(file: &Ptr<FileContext>, node: Node<'a>, parent: BlockParent) -> Ptr<Block> {
+    Ptr::new(Block {
+        context: file.clone(),
+        parent,
         node: NodeData::from_node(&node),
-    }))
+    })
 }
 
-fn parse_function_call(context: &mut FileContext, node: &Node) -> Option<FunctionCall> {
+fn parse_function_call(context: &Ptr<FileContext>, node: &Node) -> Option<FunctionCall> {
     let name = child(node, "function name", 0)?;
     let arguments_list = child(node, "arguments", 1)?;
     let arguments = parse_function_call_arguments(context, &arguments_list)?;
@@ -683,7 +741,7 @@ fn parse_function_call(context: &mut FileContext, node: &Node) -> Option<Functio
 }
 
 fn parse_function_call_arguments(
-    context: &mut FileContext,
+    context: &Ptr<FileContext>,
     node: &Node,
 ) -> Option<Vec<Expression>> {
     let mut arguments = Vec::new();
@@ -696,7 +754,7 @@ fn parse_function_call_arguments(
 }
 
 fn parse_struct_field_initialization(
-    context: &mut FileContext,
+    context: &Ptr<FileContext>,
     node: &Node,
 ) -> Option<StructFieldInitialization> {
     let name = child(node, "name", 0)?;
@@ -710,7 +768,7 @@ fn parse_struct_field_initialization(
 }
 
 fn parse_struct_initialization(
-    context: &mut FileContext,
+    context: &Ptr<FileContext>,
     node: &Node,
 ) -> Option<StructInitialization> {
     let name = child(node, "name", 0)?;
@@ -737,7 +795,7 @@ fn parse_struct_initialization(
     })
 }
 
-fn parse_selector_field(context: &mut FileContext, node: &Node) -> Option<SelectorField> {
+fn parse_selector_field(context: &Ptr<FileContext>, node: &Node) -> Option<SelectorField> {
     let chaining = child(node, "chaining", 0)?;
     let chaining_text = node_text(&chaining, context)?;
     let field = child(node, "field", 1)?;
@@ -753,7 +811,10 @@ fn parse_selector_field(context: &mut FileContext, node: &Node) -> Option<Select
     })
 }
 
-fn parse_selector_expression(context: &mut FileContext, node: &Node) -> Option<SelectorExpression> {
+fn parse_selector_expression(
+    context: &Ptr<FileContext>,
+    node: &Node,
+) -> Option<SelectorExpression> {
     let operand = child(node, "operand", 0)?;
     let root = Box::new(parse_expression(context, &operand)?);
     let mut fields: Vec<SelectorField> = Vec::new();
@@ -767,7 +828,7 @@ fn parse_selector_expression(context: &mut FileContext, node: &Node) -> Option<S
     Some(SelectorExpression { root, fields })
 }
 
-fn parse_expression(context: &mut FileContext, node: &Node) -> Option<Expression> {
+fn parse_expression(context: &Ptr<FileContext>, node: &Node) -> Option<Expression> {
     let expression_type = match node.kind() {
         "identifier" => ExpressionType::Identifier(node_text(&node, context)?),
         "int_literal" => ExpressionType::IntLiteral(parse_usize(context, node)?),
@@ -808,7 +869,7 @@ fn parse_expression(context: &mut FileContext, node: &Node) -> Option<Expression
     })
 }
 
-fn parse_unary_expression(context: &mut FileContext, node: &Node) -> Option<UnaryExpression> {
+fn parse_unary_expression(context: &Ptr<FileContext>, node: &Node) -> Option<UnaryExpression> {
     let operator = child_by_field(&node, "operator")?;
     let string = node_text(&operator, context)?;
     let operator = match string.as_str() {
@@ -828,7 +889,7 @@ fn parse_unary_expression(context: &mut FileContext, node: &Node) -> Option<Unar
     })
 }
 
-fn parse_binary_expression(context: &mut FileContext, node: &Node) -> Option<BinaryExpression> {
+fn parse_binary_expression(context: &Ptr<FileContext>, node: &Node) -> Option<BinaryExpression> {
     let operator = child_by_field(&node, "operator")?;
     let string = node_text(&operator, context)?;
     let operator = match string.as_str() {
@@ -859,7 +920,7 @@ fn parse_binary_expression(context: &mut FileContext, node: &Node) -> Option<Bin
 }
 
 fn parse_parenthesized_expression(
-    context: &mut FileContext,
+    context: &Ptr<FileContext>,
     node: &Node,
 ) -> Option<ParenthesizedExpression> {
     let expression = child_by_field(&node, "expression")?;
@@ -868,7 +929,7 @@ fn parse_parenthesized_expression(
     })
 }
 
-fn parse_array_expression(context: &mut FileContext, node: &Node) -> Option<ArrayExpression> {
+fn parse_array_expression(context: &Ptr<FileContext>, node: &Node) -> Option<ArrayExpression> {
     let mut expressions = Vec::new();
     let mut cursor = node.walk();
     for child in node.children_by_field_name("expression", &mut cursor) {
@@ -878,7 +939,7 @@ fn parse_array_expression(context: &mut FileContext, node: &Node) -> Option<Arra
     Some(ArrayExpression { expressions })
 }
 
-fn parse_slice_expression(context: &mut FileContext, node: &Node) -> Option<SliceExpression> {
+fn parse_slice_expression(context: &Ptr<FileContext>, node: &Node) -> Option<SliceExpression> {
     let operand = child_by_field(&node, "operand")?;
     let start = match node.child_by_field_name("start".as_bytes()) {
         Some(n) => Some(parse_usize(context, &n)?),
@@ -896,7 +957,7 @@ fn parse_slice_expression(context: &mut FileContext, node: &Node) -> Option<Slic
     })
 }
 
-fn parse_string(context: &mut FileContext, node: &Node) -> Option<StringTemplate> {
+fn parse_string(context: &Ptr<FileContext>, node: &Node) -> Option<StringTemplate> {
     let start_column = node.start_position().column;
     let string = node_text(&node, context)?;
     let string = string.as_str()[1..string.len() - 1].to_string();
@@ -924,10 +985,7 @@ fn parse_string(context: &mut FileContext, node: &Node) -> Option<StringTemplate
     Some(template)
 }
 
-fn parse_var_declaration<'a>(
-    context: &mut FileContext<'a>,
-    node: Node<'a>,
-) -> Option<VarDeclaration> {
+fn parse_var_declaration<'a>(context: &Ptr<FileContext>, node: Node<'a>) -> Option<VarDeclaration> {
     let is_mutable = node.child_by_field_name("mutable".as_bytes()).is_some();
 
     let name = child_by_field(&node, "name")?;
@@ -948,7 +1006,7 @@ fn parse_var_declaration<'a>(
 }
 
 fn parse_return_statement<'a>(
-    context: &mut FileContext<'a>,
+    context: &Ptr<FileContext>,
     node: &Node<'a>,
 ) -> Option<Option<Expression>> {
     let expression = match node.child_by_field_name("expression".as_bytes()) {
@@ -958,20 +1016,32 @@ fn parse_return_statement<'a>(
     Some(expression)
 }
 
-fn parse_if<'a>(context: &mut FileContext<'a>, node: Node<'a>) -> Option<Ptr<IfStatement>> {
+fn parse_if<'a>(
+    context: &Ptr<FileContext>,
+    node: Node<'a>,
+    parent: Ptr<Block>,
+) -> Option<Ptr<IfStatement>> {
     let condition = child_by_field(&node, "condition")?;
     let consequence = child_by_field(&node, "consequence")?;
     let alternative = node.child_by_field_name("alternative".as_bytes());
 
     let condition = parse_expression(context, &condition)?;
-    let consequence = parse_block(context, consequence);
+    let consequence = parse_block(context, consequence, BlockParent::Block(parent.clone()));
 
     let alternative = match alternative {
         Some(alternative) => {
             if alternative.kind() == "if_statement" {
-                Some(IfAlternative::If(parse_if(context, alternative.clone())?))
+                Some(IfAlternative::If(parse_if(
+                    context,
+                    alternative.clone(),
+                    parent,
+                )?))
             } else {
-                Some(IfAlternative::Else(parse_block(context, alternative)))
+                Some(IfAlternative::Else(parse_block(
+                    context,
+                    alternative,
+                    BlockParent::Block(parent),
+                )))
             }
         }
         None => None,
@@ -986,11 +1056,11 @@ fn parse_if<'a>(context: &mut FileContext<'a>, node: Node<'a>) -> Option<Ptr<IfS
 
 #[derive(Debug, Clone)]
 pub enum BlockParent {
-    Function(Weak<Function>),
-    Block(Weak<Block>),
+    Function(Ptr<Function>),
+    Block(Ptr<Block>),
 }
 
-fn parse_parameters<'a>(context: &mut FileContext<'a>, node: Node<'a>) -> Option<Vec<Parameter>> {
+fn parse_parameters<'a>(context: &Ptr<FileContext>, node: Node<'a>) -> Option<Vec<Parameter>> {
     let mut parameters = Vec::new();
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -1002,7 +1072,7 @@ fn parse_parameters<'a>(context: &mut FileContext<'a>, node: Node<'a>) -> Option
     Some(parameters)
 }
 
-fn parse_parameter<'a>(context: &mut FileContext<'a>, node: Node<'a>) -> Option<Parameter> {
+fn parse_parameter<'a>(context: &Ptr<FileContext>, node: Node<'a>) -> Option<Parameter> {
     let is_mutable = node.child_by_field_name("mutable".as_bytes()).is_some();
     let is_reference = node.child_by_field_name("reference".as_bytes()).is_some();
     let name = child(&node, "parameter name", 0)?;
@@ -1023,7 +1093,7 @@ fn parse_parameter<'a>(context: &mut FileContext<'a>, node: Node<'a>) -> Option<
     })
 }
 
-fn parse_type<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Type> {
+fn parse_type<'a>(context: &Ptr<FileContext>, node: &Node<'a>) -> Option<Type> {
     let t = match node.kind() {
         "primitive_type" => {
             let type_text = node_text(&node, context)?;
@@ -1055,7 +1125,7 @@ fn parse_type<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Type
     Some(t)
 }
 
-fn parse_types<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Vec<RefType>> {
+fn parse_types<'a>(context: &Ptr<FileContext>, node: &Node<'a>) -> Option<Vec<RefType>> {
     let types = match node.kind() {
         "parenthesized_type" => {
             let parenthesized_type = child_by_field(&node, "type")?;
@@ -1093,7 +1163,7 @@ fn parse_types<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Vec
     Some(types)
 }
 
-fn parse_array<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Array> {
+fn parse_array<'a>(context: &Ptr<FileContext>, node: &Node<'a>) -> Option<Array> {
     let element = child_by_field(&node, "element")?;
     let length = child_by_field(&node, "length")?;
     let length = parse_usize(context, &length)?;
@@ -1104,7 +1174,7 @@ fn parse_array<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Arr
     })
 }
 
-fn parse_slice<'a>(context: &mut FileContext<'a>, node: &Node<'a>) -> Option<Slice> {
+fn parse_slice<'a>(context: &Ptr<FileContext>, node: &Node<'a>) -> Option<Slice> {
     let element = child_by_field(&node, "element")?;
     let types = parse_types(context, &element)?;
     Some(Slice {
@@ -1130,7 +1200,7 @@ fn error_to_string(err: &Node, source: &str) -> String {
     format!("{}: {},,{}{}", error_type, text, &err.to_sexp(), children)
 }
 
-fn node_text<'a>(node: &Node, context: &mut FileContext<'a>) -> Option<String> {
+fn node_text<'a>(node: &Node, context: &Ptr<FileContext>) -> Option<String> {
     let text = node
         .utf8_text(context.source.as_bytes())
         .map_err(|err| {
@@ -1162,7 +1232,7 @@ fn child_by_field<'a>(node: &Node<'a>, field: &str) -> Option<Node<'a>> {
     }
 }
 
-fn parse_usize(context: &mut FileContext, node: &Node) -> Option<usize> {
+fn parse_usize(context: &Ptr<FileContext>, node: &Node) -> Option<usize> {
     let string = node_text(&node, context)?;
     string
         .parse::<usize>()
@@ -1173,7 +1243,7 @@ fn parse_usize(context: &mut FileContext, node: &Node) -> Option<usize> {
         .ok()
 }
 
-fn collect_errors(node: Node, source: &str, errors: &mut Vec<LangError>) {
+pub fn collect_errors(node: Node, source: &str, errors: &mut Vec<LangError>) {
     if !node.has_error() && !node.is_missing() {
         return;
     }

@@ -3,15 +3,15 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 use crate::ast::{
-    print_err, Array, ArrayExpression, BinaryOperator, Block, Expression, ExpressionType, Field,
-    FileContext, Function, FunctionCall, IfAlternative, IfStatement, Parameter, RefType,
-    SelectorExpression, SelectorFieldType, Slice, SliceExpression, Statement, StringTemplatePart,
-    Struct, StructFieldInitialization, StructInitialization, Type, UnaryOperator, VarDeclaration,
+    print_err, Array, ArrayExpression, BinaryOperator, Block, BlockTrait, Expression,
+    ExpressionType, Field, FileContext, Function, FunctionCall, FunctionTrait, IfAlternative,
+    IfStatement, Parameter, RefType, SelectorExpression, SelectorFieldType, Slice, SliceExpression,
+    Statement, StringTemplatePart, Struct, StructFieldInitialization, StructInitialization, Type,
+    UnaryOperator, VarDeclaration,
 };
 use crate::buildin::Buildins;
 use crate::semantics::{FileSemanticAnalyzer, SelectorFieldBinding, TypeNarrowing};
-use crate::tree_sitter::parse;
-use crate::types::{Ptr, PtrMut, SumType};
+use crate::types::{Ptr, SumType};
 
 struct Writer<'a> {
     indentation: u16,
@@ -300,7 +300,7 @@ impl RustTranspiler {
             .flatten()
             .unwrap();
         let mut current_struct = match analyzer
-            .query_selector(&fun.body.read().unwrap(), selector)
+            .query_selector(&fun.body(), selector)
             .unwrap()
             .binding
             .unwrap()
@@ -349,7 +349,7 @@ impl RustTranspiler {
                                     .types,
                             );
                             current_struct = match analyzer
-                                .query_selector_field(&fun.body.read().unwrap(), &field)
+                                .query_selector_field(&fun.body(), &field)
                                 .unwrap()
                                 .binding
                                 .unwrap()
@@ -542,7 +542,7 @@ impl RustTranspiler {
         writer.write("(");
 
         let fun_call_binding = analyzer
-            .query_function_call(&fun.body.read().unwrap(), call)
+            .query_function_call(&fun.body(), call)
             .unwrap()
             .binding
             .unwrap();
@@ -704,14 +704,14 @@ impl RustTranspiler {
     fn transpile_block(
         &self,
         analyzer: &mut FileSemanticAnalyzer,
-        block: &PtrMut<Block>,
+        block: &Ptr<Block>,
         fun: &Ptr<Function>,
         writer: &mut Writer,
     ) {
-        for statement in &block.read().unwrap().statements {
+        for statement in block.statements() {
             match statement {
                 Statement::Expression(expr) => {
-                    self.transpile_expression(analyzer, expr, fun, writer);
+                    self.transpile_expression(analyzer, &expr, fun, writer);
                     writer.write(";");
                     writer.new_line();
                 }
@@ -720,7 +720,7 @@ impl RustTranspiler {
                     writer.new_line();
                 }
                 Statement::Return(expression) => {
-                    self.transpile_return_statement(analyzer, expression, fun, writer);
+                    self.transpile_return_statement(analyzer, &expression, fun, writer);
                     writer.new_line();
                 }
                 Statement::IfStatement(if_statement) => {
@@ -746,7 +746,7 @@ impl RustTranspiler {
         writer.write(" {");
         writer.new_line();
         writer.indented(|writer| {
-            self.transpile_block(analyzer, &fun.body, fun, writer);
+            self.transpile_block(analyzer, &fun.body(), fun, writer);
         });
         writer.write("}");
     }
@@ -819,12 +819,8 @@ impl RustTranspiler {
         writer.write(" {");
         writer.new_line();
         writer.indented(|writer| {
-            let struct_def = fun
-                .file()
-                .read()
-                .unwrap()
-                .struct_by_name(&struct_init.name)
-                .unwrap();
+            let file = analyzer.query_file();
+            let struct_def = file.structs.get(&struct_init.name).unwrap();
             for field in &struct_init.fields {
                 self.transpile_struct_field_init(analyzer, field, &struct_def, fun, writer);
                 writer.write(",");
@@ -835,14 +831,14 @@ impl RustTranspiler {
     }
 
     pub fn transpile_file(&self, analyzer: &mut FileSemanticAnalyzer, writer: &mut Writer) {
-        let file = { analyzer.file.read().unwrap().clone() };
+        let file = analyzer.query_file();
         for (name, types) in &analyzer.sum_types {
             self.transpile_sum_type_def(name, types, writer);
             writer.new_line();
             writer.new_line();
         }
 
-        for (_, struct_def) in &file.struct_defs {
+        for (_, struct_def) in &file.structs {
             self.transpile_struct(struct_def, writer);
             writer.new_line();
             writer.new_line();
@@ -878,15 +874,11 @@ pub fn transpile_project(project_dir: &Path) -> Result<(), anyhow::Error> {
     main_file.read_to_end(&mut buffer)?;
 
     let source_code = String::from_utf8(buffer)?;
-    let tree = parse(&source_code, None);
-    let root_node = tree.root_node();
-
     let file_path = main_file_path.to_string_lossy();
-    let mut file_context = FileContext::new(root_node.clone(), file_path.to_string(), &source_code);
     let mut parse_errors = Vec::new();
-    let file = file_context.parse_file(&mut parse_errors);
+    let file = FileContext::parse(file_path.to_string(), source_code, &mut parse_errors);
     for error in &parse_errors {
-        print_err(&error, &file_context.source);
+        print_err(&error, &file.source);
     }
     if !parse_errors.is_empty() {
         return Err(anyhow::Error::msg(format!(

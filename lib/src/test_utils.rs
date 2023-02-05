@@ -8,7 +8,6 @@ use crate::{
     ast::{print_err, FileContext},
     rust_transpiler::transpile_project,
     semantics::FileSemanticAnalyzer,
-    tree_sitter::parse,
 };
 
 pub fn create_project(test_dir: &str, file_content: &str) {
@@ -52,15 +51,11 @@ pub fn validate_project<'a>(test_dir: &str, file_content: &str) -> Result<(), an
     main_file.read_to_end(&mut buffer)?;
 
     let source_code = String::from_utf8(buffer)?;
-    let tree = parse(&source_code, None);
-    let root_node = tree.root_node();
-
     let file_path = main_file_path.to_string_lossy();
-    let mut file_context = FileContext::new(root_node.clone(), file_path.to_string(), &source_code);
     let mut parse_errors = Vec::new();
-    let file = file_context.parse_file(&mut parse_errors);
+    let file = FileContext::parse(file_path.to_string(), source_code, &mut parse_errors);
     for error in &parse_errors {
-        print_err(&error, &file_context.source);
+        print_err(&error, &file.source);
     }
     if !parse_errors.is_empty() {
         return Err(anyhow::Error::msg(format!(

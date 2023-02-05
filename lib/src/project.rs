@@ -1,19 +1,17 @@
 use std::collections::HashMap;
 
-use tree_sitter::{InputEdit, Point, Tree};
+use tree_sitter::{InputEdit, Point};
 
 use crate::{
-    ast::{File, FileContext, LangError, SourceSpan},
+    ast::{FileContext, LangError, SourceSpan},
     semantics::FileSemanticAnalyzer,
     tree_sitter::parse,
-    types::PtrMut,
+    types::Ptr,
 };
 
 pub struct ProjectFile {
-    pub source: String,
-    pub tree: Tree,
     pub parse_errors: Vec<LangError>,
-    pub file: PtrMut<File>,
+    pub file: Ptr<FileContext>,
     pub file_analyzer: FileSemanticAnalyzer,
 }
 
@@ -24,14 +22,10 @@ pub struct FileChange {
 
 impl ProjectFile {
     fn new(path: String, source: String) -> Self {
-        let tree = parse(&source, None);
-        let mut file_context = FileContext::new(tree.root_node(), path, &source);
         let mut parse_errors = Vec::new();
-        let file = file_context.parse_file(&mut parse_errors);
+        let file = FileContext::parse(path, source, &mut parse_errors);
 
         let project_file = ProjectFile {
-            source,
-            tree,
             file: file.clone(),
             parse_errors,
             file_analyzer: FileSemanticAnalyzer::new(file),
@@ -41,9 +35,12 @@ impl ProjectFile {
     }
 
     pub fn edit_file(&mut self, url: String, changes: Vec<FileChange>) {
+        let mut tree = self.file.tree.clone();
+        // Note: avoid cloning the whole file?
+        let mut source = self.file.source.clone();
         for change in changes {
             let Some(range) = change.range else {
-                self.tree = parse(&change.text, None);
+                tree = parse(&change.text, None);
                 continue;
             };
             let mut change_lines: i32 = 0;
@@ -53,8 +50,8 @@ impl ProjectFile {
                 change_end_column = line.len();
             }
 
-            let (start, end) = range.to_byte_range(&self.source);
-            self.tree.edit(&InputEdit {
+            let (start, end) = range.to_byte_range(&source);
+            tree.edit(&InputEdit {
                 start_byte: start,
                 old_end_byte: end,
                 new_end_byte: start + change.text.bytes().len(),
@@ -71,17 +68,15 @@ impl ProjectFile {
                     column: change_end_column,
                 },
             });
-            let char_range = range.to_char_range(&self.source);
-            self.source
-                .replace_range(char_range.0..char_range.1, &change.text);
+            let char_range = range.to_char_range(&source);
+            source.replace_range(char_range.0..char_range.1, &change.text);
         }
 
-        self.tree = parse(&self.source, Some(&self.tree));
-
-        let mut file_context = FileContext::new(self.tree.root_node(), url, &self.source);
         let mut parse_errors = Vec::new();
-        self.file = file_context.parse_file(&mut parse_errors);
-        self.file_analyzer = FileSemanticAnalyzer::new(self.file.clone())
+        let file_context =
+            FileContext::parse_from_existing_tree(url, source, &tree, &mut parse_errors);
+
+        self.file_analyzer = FileSemanticAnalyzer::new(file_context)
     }
 }
 

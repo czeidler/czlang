@@ -1,4 +1,4 @@
-use tree_sitter::{Language, Tree};
+use tree_sitter::{Language, Node, Point, Tree};
 
 extern "C" {
     fn tree_sitter_czlang() -> Language;
@@ -20,12 +20,24 @@ pub fn parse(source_code: &str, old_tree: Option<&Tree>) -> Tree {
     tree
 }
 
+pub fn find_node(tree: &Tree, id: usize, row: usize, column: usize) -> Option<Node> {
+    let mut cursor = tree.walk();
+    let node_position = Point { row, column };
+    loop {
+        let child_index = cursor.goto_first_child_for_point(node_position.clone());
+        if child_index.is_none() {
+            return None;
+        };
+        let node = cursor.node();
+        if node.id() == id {
+            return Some(node);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::{
-        ast::{print_err, FileContext},
-        tree_sitter::parse,
-    };
+    use crate::tree_sitter::{find_node, parse};
 
     #[test]
     fn test_can_load_grammar() {
@@ -34,14 +46,43 @@ mod tests {
         let tree = parse(&source_code, None);
         let root_node = tree.root_node();
         println!("Tree sitter {}", root_node.to_sexp());
+    }
 
-        let mut file_context = FileContext::new(root_node, "test".to_string(), &source_code);
-        let mut parse_errors = Vec::new();
-        let file = file_context.parse_file(&mut parse_errors);
+    #[test]
+    fn test_find_node() {
+        let source_code = "
+            fun test(test bool) bool {
+                if test {
 
-        println!("AST: {:?}", file);
-        for error in &parse_errors {
-            print_err(&error, &source_code);
-        }
+                }
+            }
+            "
+        .to_string();
+        let tree = parse(&source_code, None);
+        let root = tree.root_node();
+        let fun = root.child(0).unwrap();
+        assert_eq!(fun.kind(), "function_definition");
+        let body_node = fun.child_by_field_name("body").unwrap();
+        let if_statement = body_node.child(1).unwrap();
+        assert_eq!(if_statement.kind(), "if_statement");
+        let if_block = if_statement.child_by_field_name("consequence").unwrap();
+
+        let found = find_node(
+            &tree,
+            if_block.id(),
+            if_block.start_position().row,
+            if_block.start_position().column,
+        )
+        .unwrap();
+        assert_eq!(found.id(), if_block.id());
+
+        let found = find_node(
+            &tree,
+            fun.id(),
+            fun.start_position().row,
+            fun.start_position().column,
+        )
+        .unwrap();
+        assert_eq!(found.id(), fun.id());
     }
 }

@@ -1,12 +1,13 @@
 use crate::{
     ast::{
-        Block, Expression, ExpressionType, Field, File, Function, Parameter, SelectorField,
-        SourcePosition, Statement, Struct, VarDeclaration,
+        Block, BlockTrait, Expression, ExpressionType, Field, Function, FunctionTrait, Parameter,
+        SelectorField, SourcePosition, Statement, Struct, VarDeclaration,
     },
     semantics::{
-        FileSemanticAnalyzer, FunctionCallSemantics, IdentifierBinding, SelectorFieldSemantics,
+        FileSemanticAnalyzer, FileSemantics, FunctionCallSemantics, IdentifierBinding,
+        SelectorFieldSemantics,
     },
-    types::{Ptr, PtrMut},
+    types::Ptr,
 };
 
 #[derive(Debug, Clone)]
@@ -24,10 +25,9 @@ pub enum QueryResult {
 
 pub fn find_in_file(
     analyzer: &mut FileSemanticAnalyzer,
-    file: PtrMut<File>,
     position: SourcePosition,
 ) -> Option<QueryResult> {
-    let file = file.read().unwrap();
+    let file = analyzer.query_file();
     for (_, fun) in &file.functions {
         if !fun.signature.node.contains(position) {
             continue;
@@ -43,8 +43,8 @@ pub fn find_in_file(
     None
 }
 
-fn find_in_structs(file: &File, position: SourcePosition) -> Option<QueryResult> {
-    for (_, struct_def) in &file.struct_defs {
+fn find_in_structs(file: &FileSemantics, position: SourcePosition) -> Option<QueryResult> {
+    for (_, struct_def) in &file.structs {
         if !struct_def.node.contains(position) {
             continue;
         }
@@ -76,8 +76,8 @@ fn find_in_function(
         return Some(QueryResult::Parameter(param.clone()));
     }
 
-    let body = fun.body.read().unwrap();
-    for statement in &body.statements {
+    let body = fun.body();
+    for statement in body.statements() {
         let block = FunctionBlock { block: &body };
         match statement {
             Statement::VarDeclaration(var) => {
@@ -99,7 +99,7 @@ fn find_in_function(
                 // TODO find in block
             }
             Statement::Return(ret) => {
-                if let Some(ret) = ret {
+                if let Some(ret) = &ret {
                     if ret.node.contains(position) {
                         return find_in_expression(analyzer, &block, ret, position);
                     }
@@ -107,7 +107,7 @@ fn find_in_function(
             }
             Statement::Expression(expr) => {
                 if expr.node.contains(position) {
-                    return find_in_expression(analyzer, &block, expr, position);
+                    return find_in_expression(analyzer, &block, &expr, position);
                 }
             }
         }

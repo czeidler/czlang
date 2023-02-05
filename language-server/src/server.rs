@@ -315,7 +315,7 @@ impl Server {
             let Some(file) = file else {return None};
 
             let position = SourcePosition::new(position.line as usize, position.character as usize);
-            let Some(result) = find_in_file(&mut file.file_analyzer, file.file.clone(), position) else { return None };
+            let Some(result) = find_in_file(&mut file.file_analyzer, position) else { return None };
 
             let result = match result {
                 QueryResult::Function(fun) => {
@@ -347,7 +347,7 @@ impl Server {
                     if let Some(fun) = fun.binding {
                         format!("fun {}", fun.as_function_signature().name)
                     } else {
-                        return None
+                        return None;
                     }
                 }
                 QueryResult::StructDeclaration(struct_dec) => {
@@ -358,7 +358,7 @@ impl Server {
                 }
                 QueryResult::SelectorField(result) => {
                     format!("field {}", types_to_string(result.1.r#type.types()))
-                },
+                }
             };
             Some(Hover {
                 contents: HoverContents::Scalar(MarkedString::String(result)),
@@ -386,7 +386,7 @@ impl Server {
             let Some(file) = file else {return None};
 
             let position = SourcePosition::new(position.line as usize, position.character as usize);
-            let Some(result) = find_in_file(&mut file.file_analyzer, file.file.clone(), position) else { return None };
+            let Some(result) = find_in_file(&mut file.file_analyzer, position) else { return None };
 
             let target = match result {
                 QueryResult::Identifier(lookup) => match lookup {
@@ -399,7 +399,7 @@ impl Server {
                     } else {
                         return None;
                     }
-                },
+                }
                 QueryResult::SelectorField(result) => {
                     match result.0.field {
                         SelectorFieldType::Identifier(identifier) => {
@@ -408,12 +408,13 @@ impl Server {
                                 None => return None,
                             };
 
-                            if let Some(field) = parent.fields.iter().find(|f| f.name == identifier) {
+                            if let Some(field) = parent.fields.iter().find(|f| f.name == identifier)
+                            {
                                 field.name_node.span.clone()
                             } else {
                                 return None;
                             }
-                        },
+                        }
                         SelectorFieldType::Call => return None, // TODO
                     }
                 }
