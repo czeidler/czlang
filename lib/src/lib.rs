@@ -20,6 +20,7 @@ pub fn init() {
     let _logger = Logger::try_with_str("info, my::critical::module=trace")
         .unwrap()
         .log_to_file(FileSpec::default().suppress_timestamp())
+        .append()
         .write_mode(WriteMode::Direct)
         .start()
         .unwrap();
