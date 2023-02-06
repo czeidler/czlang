@@ -661,10 +661,10 @@ impl FileContext {
     pub fn parse_from_existing_tree(
         file_path: String,
         source: String,
-        tree: &Tree,
+        old_tree: &Tree,
         errors: &mut Vec<LangError>,
     ) -> Ptr<Self> {
-        let tree = parse(&source, Some(tree));
+        let tree = parse(&source, Some(old_tree));
         collect_errors(tree.root_node(), &source, errors);
         Arc::new(FileContext {
             tree,

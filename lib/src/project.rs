@@ -15,6 +15,7 @@ pub struct ProjectFile {
     pub file_analyzer: FileSemanticAnalyzer,
 }
 
+#[derive(Debug)]
 pub struct FileChange {
     pub range: Option<SourceSpan>,
     pub text: String,
@@ -41,6 +42,7 @@ impl ProjectFile {
         for change in changes {
             let Some(range) = change.range else {
                 tree = parse(&change.text, None);
+                source = change.text;
                 continue;
             };
             let mut change_lines: i32 = 0;
@@ -72,11 +74,11 @@ impl ProjectFile {
             source.replace_range(char_range.0..char_range.1, &change.text);
         }
 
-        let mut parse_errors = Vec::new();
-        let file_context =
-            FileContext::parse_from_existing_tree(url, source, &tree, &mut parse_errors);
+        self.parse_errors.clear();
+        self.file =
+            FileContext::parse_from_existing_tree(url, source, &tree, &mut self.parse_errors);
 
-        self.file_analyzer = FileSemanticAnalyzer::new(file_context)
+        self.file_analyzer = FileSemanticAnalyzer::new(self.file.clone())
     }
 }
 
