@@ -159,7 +159,7 @@ impl FileSemanticAnalyzer {
 
         self.validate_struct_def(&struct_def);
 
-        let new_entry = self.fun_symbols.insert(struct_def.node.id);
+        let new_entry = self.structs.insert(struct_def.node.id);
         assert!(new_entry);
     }
 
@@ -212,7 +212,8 @@ impl FileSemanticAnalyzer {
         let Some(fun) = block.fun() else {
             return None;
         };
-        self.validate_fun(&fun);
+        self.analyze_fun(&fun);
+
         self.identifiers.get(&node_id).map(|s| s.clone())
     }
 
@@ -227,7 +228,8 @@ impl FileSemanticAnalyzer {
         let Some(fun) = block.fun() else {
             return None;
         };
-        self.validate_fun(&fun);
+        self.analyze_fun(&fun);
+
         self.function_calls.get(&call.node.id).map(|s| s.clone())
     }
 
@@ -243,7 +245,8 @@ impl FileSemanticAnalyzer {
         let Some(fun) = block.fun() else {
             return None;
         };
-        self.validate_fun(&fun);
+        self.analyze_fun(&fun);
+
         self.selector_fields
             .get(&select.root.node.id)
             .map(|s| s.clone())
@@ -260,7 +263,8 @@ impl FileSemanticAnalyzer {
         let Some(fun) = block.fun() else {
             return None;
         };
-        self.validate_fun(&fun);
+        self.analyze_fun(&fun);
+
         self.selector_fields.get(&field.node.id).map(|s| s.clone())
     }
 
