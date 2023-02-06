@@ -719,8 +719,8 @@ impl RustTranspiler {
                     self.transpile_var_declaration(analyzer, &var, fun, writer);
                     writer.new_line();
                 }
-                Statement::Return(expression) => {
-                    self.transpile_return_statement(analyzer, &expression, fun, writer);
+                Statement::Return(ret) => {
+                    self.transpile_return_statement(analyzer, &ret.expression, fun, writer);
                     writer.new_line();
                 }
                 Statement::IfStatement(if_statement) => {

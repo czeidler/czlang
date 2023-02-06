@@ -363,8 +363,17 @@ impl FileSemanticAnalyzer {
     }
 
     fn validate_block(&mut self, fun: &Function, block: &Ptr<Block>) {
+        let mut last_statement: Option<Statement> = None;
         for statement in block.statements() {
             self.validate_statement(fun, block, &statement);
+            if last_statement.map(|s| s.is_return()).unwrap_or(false) {
+                self.errors.push(LangError::type_error(
+                    statement.node(),
+                    "Not statements allowed after return statement".to_string(),
+                ));
+            }
+
+            last_statement = Some(statement);
         }
     }
 
@@ -377,7 +386,7 @@ impl FileSemanticAnalyzer {
                 self.validate_var_declaration(fun, block, var_declaration.clone());
             }
             Statement::Return(ret) => {
-                let (ret_types, expression) = if let Some(expression) = ret {
+                let (ret_types, expression) = if let Some(expression) = &ret.expression {
                     let Some(ret_types) = self.validate_expression(fun, block, expression) else {
                         // error validating the return expression
                         return;

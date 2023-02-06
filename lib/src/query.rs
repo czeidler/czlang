@@ -99,7 +99,7 @@ fn find_in_function(
                 // TODO find in block
             }
             Statement::Return(ret) => {
-                if let Some(ret) = &ret {
+                if let Some(ret) = &ret.expression {
                     if ret.node.contains(position) {
                         return find_in_expression(analyzer, &block, ret, position);
                     }

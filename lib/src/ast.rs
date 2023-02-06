@@ -468,11 +468,35 @@ pub struct SliceExpression {
 }
 
 #[derive(Debug, Clone)]
+pub struct ReturnStatement {
+    pub node: NodeData,
+    pub expression: Option<Expression>,
+}
+
+#[derive(Debug, Clone)]
 pub enum Statement {
     Expression(Expression),
     VarDeclaration(Ptr<VarDeclaration>),
-    Return(Option<Expression>),
+    Return(ReturnStatement),
     IfStatement(Ptr<IfStatement>),
+}
+
+impl Statement {
+    pub fn is_return(&self) -> bool {
+        match self {
+            Statement::Return(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn node(&self) -> &NodeData {
+        match self {
+            Statement::Expression(expr) => &expr.node,
+            Statement::VarDeclaration(var) => &var.node,
+            Statement::Return(ret) => &ret.node,
+            Statement::IfStatement(if_statement) => &if_statement.node,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1008,12 +1032,15 @@ fn parse_var_declaration<'a>(context: &Ptr<FileContext>, node: Node<'a>) -> Opti
 fn parse_return_statement<'a>(
     context: &Ptr<FileContext>,
     node: &Node<'a>,
-) -> Option<Option<Expression>> {
+) -> Option<ReturnStatement> {
     let expression = match node.child_by_field_name("expression".as_bytes()) {
         Some(expression) => Some(parse_expression(context, &expression)?),
         None => None,
     };
-    Some(expression)
+    Some(ReturnStatement {
+        node: NodeData::from_node(node),
+        expression,
+    })
 }
 
 fn parse_if<'a>(
