@@ -5,7 +5,7 @@ use crate::{
     },
     semantics::{
         FileSemanticAnalyzer, FileSemantics, FunctionCallSemantics, IdentifierBinding,
-        SelectorFieldSemantics,
+        SelectorFieldSemantics, TypeBinding,
     },
     types::Ptr,
 };
@@ -16,6 +16,7 @@ pub enum QueryResult {
     FunctionCall(FunctionCallSemantics),
     Parameter(Parameter),
     Identifier(IdentifierBinding),
+    StructIdentifier(Ptr<Struct>),
     VarDeclaration(Ptr<VarDeclaration>),
     StructDeclaration(Ptr<Struct>),
     StructFieldDeclaration(Field),
@@ -157,7 +158,17 @@ fn find_in_expression(
                 None => None,
             }
         }
-        ExpressionType::StructInitialization(_struct_init) => {
+        ExpressionType::StructInitialization(struct_init) => {
+            if struct_init.name_node.contains(position) {
+                return analyzer
+                    .query_type_identifier(&struct_init.name_node, &struct_init.name)
+                    .and_then(|r| r.binding)
+                    .and_then(|binding| match binding {
+                        TypeBinding::Struct(struct_dec) => {
+                            Some(QueryResult::StructIdentifier(struct_dec.clone()))
+                        }
+                    });
+            }
             // TODO
             None
         }

@@ -183,6 +183,20 @@ impl FileSemanticAnalyzer {
         file
     }
 
+    pub fn query_type_identifier(
+        &mut self,
+        node: &NodeData,
+        identifier: &String,
+    ) -> Option<TypeIdentifierSemantics> {
+        if let Some(s) = self.type_identifiers.get(&node.id) {
+            return Some(s.clone());
+        }
+
+        self.bind_type_identifier(&node, identifier);
+
+        self.type_identifiers.get(&node.id).map(|s| s.clone())
+    }
+
     pub fn query_type(&mut self, r#type: &RefType) -> Option<TypeIdentifierSemantics> {
         if let Some(s) = self.type_identifiers.get(&r#type.node.id) {
             return Some(s.clone());

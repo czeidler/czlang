@@ -359,6 +359,9 @@ impl Server {
                 QueryResult::SelectorField(result) => {
                     format!("field {}", types_to_string(result.1.r#type.types()))
                 }
+                QueryResult::StructIdentifier(struct_dec) => {
+                    format!("struct {}", struct_dec.name)
+                }
             };
             Some(Hover {
                 contents: HoverContents::Scalar(MarkedString::String(result)),
@@ -393,6 +396,7 @@ impl Server {
                     IdentifierBinding::VarDeclaration(var) => var.name_node.span.clone(),
                     IdentifierBinding::Parameter(param) => param.node.span,
                 },
+                QueryResult::StructIdentifier(struct_dec) => struct_dec.name_node.span.clone(),
                 QueryResult::FunctionCall(fun) => {
                     if let Some(binding) = fun.binding {
                         binding.as_function_signature().name_node.span.clone()
