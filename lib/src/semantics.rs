@@ -347,22 +347,28 @@ impl FileSemanticAnalyzer {
         result_types
     }
 
-    fn bind_type_identifier(&mut self, node: &NodeData, identifier: &String) {
+    fn bind_type_identifier(
+        &mut self,
+        node: &NodeData,
+        identifier: &String,
+    ) -> Option<TypeBinding> {
         let file = self.query_file();
         let Some(struct_def) = file.structs.get(identifier).map(|s| s.clone()) else {
             self.errors.push(LangError::type_error(
                 node,
                 format!("Can't resolve type identifier: {:?}", identifier),
             ));
-            return;
+            return None;
         };
+        let binding = Some(TypeBinding::Struct(struct_def));
         let existing = self.type_identifiers.insert(
             node.id,
             TypeIdentifierSemantics {
-                binding: Some(TypeBinding::Struct(struct_def)),
+                binding: binding.clone(),
             },
         );
-        assert!(existing.is_none())
+        assert!(existing.is_none());
+        binding
     }
 
     fn validate_fun(&mut self, fun: &Ptr<Function>) {
@@ -840,9 +846,35 @@ impl FileSemanticAnalyzer {
                 SumType::from_types(&fun_declaration.return_types)
             }
             ExpressionType::StructInitialization(struct_init) => {
+                let Some(binding) = self.bind_type_identifier(&struct_init.name_node, &struct_init.name) else {
+                    return None;
+                };
+                let struct_dec = match binding {
+                    TypeBinding::Struct(struct_dec) => struct_dec,
+                };
+                let mut expected_fields =
+                    struct_dec.fields.iter().fold(HashSet::new(), |mut set, f| {
+                        set.insert(f.name.clone());
+                        set
+                    });
                 for field in &struct_init.fields {
+                    let found = expected_fields.remove(&field.name);
+                    if !found {
+                        self.errors.push(LangError::type_error(
+                            &field.node,
+                            "Field not in struct".to_string(),
+                        ));
+                    }
                     self.validate_expression(fun, block, &field.value);
+                    // TODO check type are matching
                 }
+                if !expected_fields.is_empty() {
+                    self.errors.push(LangError::type_error(
+                        &struct_init.node,
+                        format!("Missing fields: {:?}", expected_fields),
+                    ));
+                };
+
                 SumType::from_type(RefType::value(
                     expression.node.clone(),
                     Type::Identifier(struct_init.name.clone()),
