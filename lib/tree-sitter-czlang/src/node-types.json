@@ -2166,10 +2166,6 @@
         "required": false,
         "types": [
           {
-            "type": "identifier",
-            "named": true
-          },
-          {
             "type": "keyed_element",
             "named": true
           }

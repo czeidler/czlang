@@ -1888,17 +1888,8 @@
                             "type": "FIELD",
                             "name": "field_init",
                             "content": {
-                              "type": "CHOICE",
-                              "members": [
-                                {
-                                  "type": "SYMBOL",
-                                  "name": "identifier"
-                                },
-                                {
-                                  "type": "SYMBOL",
-                                  "name": "keyed_element"
-                                }
-                              ]
+                              "type": "SYMBOL",
+                              "name": "keyed_element"
                             }
                           },
                           {
@@ -1914,17 +1905,8 @@
                                   "type": "FIELD",
                                   "name": "field_init",
                                   "content": {
-                                    "type": "CHOICE",
-                                    "members": [
-                                      {
-                                        "type": "SYMBOL",
-                                        "name": "identifier"
-                                      },
-                                      {
-                                        "type": "SYMBOL",
-                                        "name": "keyed_element"
-                                      }
-                                    ]
+                                    "type": "SYMBOL",
+                                    "name": "keyed_element"
                                   }
                                 }
                               ]

@@ -807,8 +807,9 @@ fn parse_struct_initialization(
                 };
                 fields.push(field);
             }
-            "identifier" => todo!(),
-            _ => {}
+            _ => {
+                println!("Unsupported field kind: {}", field_init.kind());
+            }
         }
     }
     Some(StructInitialization {
