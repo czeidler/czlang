@@ -204,14 +204,14 @@ impl Iterator for FileSymbolIterator {
                     if let Some(fun) = parse_fun(&self.file, &child) {
                         return Some(RootSymbol::Function(fun));
                     } else {
-                        println!("Invalid function_definition: {:?}", child);
+                        log::error!("Invalid function_definition: {:?}", child);
                     }
                 }
                 "struct_definition" => {
                     if let Some(struct_def) = parse_struct(&self.file, &child) {
                         return Some(RootSymbol::Struct(struct_def));
                     } else {
-                        println!("Invalid struct_definition: {:?}", child);
+                        log::error!("Invalid struct_definition: {:?}", child);
                     }
                 }
                 _ => {}
@@ -808,7 +808,7 @@ fn parse_struct_initialization(
                 fields.push(field);
             }
             _ => {
-                println!("Unsupported field kind: {}", field_init.kind());
+                log::error!("Unsupported field kind: {}", field_init.kind());
             }
         }
     }
@@ -903,7 +903,7 @@ fn parse_unary_expression(context: &Ptr<FileContext>, node: &Node) -> Option<Una
         "&" => UnaryOperator::Reference,
         "typeof" => UnaryOperator::TypeOf,
         unknown => {
-            println!("Unknown unary operator: {}", unknown);
+            log::error!("Unknown unary operator: {}", unknown);
             return None;
         }
     };
@@ -931,7 +931,7 @@ fn parse_binary_expression(context: &Ptr<FileContext>, node: &Node) -> Option<Bi
         "&&" => BinaryOperator::And,
         "||" => BinaryOperator::Or,
         unknown => {
-            println!("Unknown binary operator: {}", unknown);
+            log::error!("Unknown binary operator: {}", unknown);
             return None;
         }
     };
@@ -1134,7 +1134,7 @@ fn parse_type<'a>(context: &Ptr<FileContext>, node: &Node<'a>) -> Option<Type> {
                 "u32" => Type::U32,
                 "null" => Type::Null,
                 _ => {
-                    println!("Unsupported primitve type: {}", type_text);
+                    log::error!("Unsupported primitve type: {}", type_text);
                     return None;
                 }
             }
@@ -1146,7 +1146,7 @@ fn parse_type<'a>(context: &Ptr<FileContext>, node: &Node<'a>) -> Option<Type> {
         "array_type" => Type::Array(parse_array(context, &node)?),
         "slice_type" => Type::Slice(parse_slice(context, &node)?),
         _ => {
-            println!("Unsupported type: {}", node.kind());
+            log::error!("Unsupported type: {}", node.kind());
             return None;
         }
     };
@@ -1165,7 +1165,7 @@ fn parse_types<'a>(context: &Ptr<FileContext>, node: &Node<'a>) -> Option<Vec<Re
             let mut types = parse_types(context, &left)?;
             for t in parse_types(context, &right)? {
                 if types.contains(&t) {
-                    println!("Duplicated sum type: {:?}", t);
+                    log::error!("Duplicated sum type: {:?}", t);
                 }
                 types.push(t);
             }
@@ -1232,7 +1232,7 @@ fn node_text<'a>(node: &Node, context: &Ptr<FileContext>) -> Option<String> {
     let text = node
         .utf8_text(context.source.as_bytes())
         .map_err(|err| {
-            println!("{}", err);
+            log::error!("{}", err);
         })
         .ok()?
         .trim()
@@ -1244,7 +1244,7 @@ fn child<'a>(node: &Node<'a>, name: &str, index: usize) -> Option<Node<'a>> {
     match node.child(index) {
         Some(node) => Some(node),
         None => {
-            println!("{} expected", name);
+            log::error!("{} expected", name);
             return None;
         }
     }
@@ -1254,7 +1254,7 @@ fn child_by_field<'a>(node: &Node<'a>, field: &str) -> Option<Node<'a>> {
     match node.child_by_field_name(field.as_bytes()) {
         Some(node) => Some(node),
         None => {
-            println!("{} field expected in parser tree", field);
+            log::error!("{} field expected in parser tree", field);
             None
         }
     }
@@ -1265,7 +1265,7 @@ fn parse_usize(context: &Ptr<FileContext>, node: &Node) -> Option<usize> {
     string
         .parse::<usize>()
         .map_err(|err| {
-            println!("Failed to parse integer: {}", err);
+            log::error!("Failed to parse integer: {}", err);
             err
         })
         .ok()
