@@ -65,7 +65,7 @@ pub fn validate_project<'a>(test_dir: &str, file_content: &str) -> Result<(), an
     }
 
     let mut analyzer = FileSemanticAnalyzer::new(file);
-    analyzer.analyze();
+    analyzer.query_all();
     if !analyzer.errors.is_empty() {
         return Err(anyhow::Error::msg(analyzer.errors[0].msg.clone()));
     }

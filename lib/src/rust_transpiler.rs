@@ -888,7 +888,7 @@ pub fn transpile_project(project_dir: &Path) -> Result<(), anyhow::Error> {
     }
 
     let mut analyzer = FileSemanticAnalyzer::new(file.clone());
-    analyzer.analyze();
+    analyzer.query_all();
     if !analyzer.errors.is_empty() {
         return Err(anyhow::Error::msg(analyzer.errors[0].msg.clone()));
     }

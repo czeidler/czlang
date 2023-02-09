@@ -142,19 +142,21 @@ impl FileSemanticAnalyzer {
         }
     }
 
-    pub fn analyze(&mut self) {
+    /// Query all symbols in the files and thus doing a full validation
+    pub fn query_all(&mut self) {
         let file_semantics = self.query_file();
 
         for (_, struct_def) in &file_semantics.structs {
-            self.analyze_struct(struct_def);
+            self.query_struct(struct_def);
         }
 
         for (_, fun) in &file_semantics.functions {
-            self.analyze_fun(fun);
+            self.query_fun(fun);
         }
     }
 
-    pub fn analyze_struct(&mut self, struct_def: &Ptr<Struct>) {
+    /// Query/validate a single struct
+    pub fn query_struct(&mut self, struct_def: &Ptr<Struct>) {
         if self.structs.contains(&struct_def.node.id) {
             return;
         }
@@ -165,7 +167,8 @@ impl FileSemanticAnalyzer {
         assert!(new_entry);
     }
 
-    pub fn analyze_fun(&mut self, fun: &Ptr<Function>) {
+    /// Query/validate a single function
+    pub fn query_fun(&mut self, fun: &Ptr<Function>) {
         if self.fun_symbols.contains(&fun.signature.node.id) {
             return;
         }
@@ -228,7 +231,7 @@ impl FileSemanticAnalyzer {
         let Some(fun) = block.fun() else {
             return None;
         };
-        self.analyze_fun(&fun);
+        self.query_fun(&fun);
 
         self.identifiers.get(&node_id).map(|s| s.clone())
     }
@@ -244,7 +247,7 @@ impl FileSemanticAnalyzer {
         let Some(fun) = block.fun() else {
             return None;
         };
-        self.analyze_fun(&fun);
+        self.query_fun(&fun);
 
         self.function_calls.get(&call.node.id).map(|s| s.clone())
     }
@@ -261,7 +264,7 @@ impl FileSemanticAnalyzer {
         let Some(fun) = block.fun() else {
             return None;
         };
-        self.analyze_fun(&fun);
+        self.query_fun(&fun);
 
         self.selector_fields
             .get(&select.root.node.id)
@@ -279,7 +282,7 @@ impl FileSemanticAnalyzer {
         let Some(fun) = block.fun() else {
             return None;
         };
-        self.analyze_fun(&fun);
+        self.query_fun(&fun);
 
         self.selector_fields.get(&field.node.id).map(|s| s.clone())
     }
@@ -296,7 +299,7 @@ impl FileSemanticAnalyzer {
         let Some(fun) = block.fun() else {
             return None;
         };
-        self.analyze_fun(&fun);
+        self.query_fun(&fun);
 
         self.struct_field_inits
             .get(&field.node.id)

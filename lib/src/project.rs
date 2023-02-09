@@ -111,6 +111,6 @@ impl Project {
 
     pub fn validate_file(&mut self, url: &String) {
         let Some(file) = self.open_files.get_mut(url) else {return;};
-        file.file_analyzer.analyze();
+        file.file_analyzer.query_all();
     }
 }
