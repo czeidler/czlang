@@ -92,13 +92,14 @@ impl SourceSpan {
                 end_char += line.len() + 1;
                 continue;
             }
-            if self.end.row > index {
-                end_char += line.len() + 1;
-                continue;
-            }
             if !found_start && self.start.row == index {
                 start_char += self.start.column;
                 found_start = true;
+            }
+
+            if self.end.row > index {
+                end_char += line.len() + 1;
+                continue;
             }
             if !found_end && self.end.row == index {
                 end_char += self.end.column;

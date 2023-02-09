@@ -46,7 +46,7 @@ impl ProjectFile {
                 continue;
             };
             let mut change_lines: i32 = 0;
-            let mut change_end_column = 0;
+            let mut change_end_column = change.text.len();
             for line in change.text.lines() {
                 change_lines += 1;
                 change_end_column = line.len();
@@ -67,7 +67,11 @@ impl ProjectFile {
                 },
                 new_end_position: Point {
                     row: range.start.row + change_lines as usize,
-                    column: change_end_column,
+                    column: if change_lines == 0 {
+                        range.start.column + change_end_column
+                    } else {
+                        change_end_column
+                    },
                 },
             });
             let char_range = range.to_char_range(&source);
