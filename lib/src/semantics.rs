@@ -3,10 +3,10 @@ use std::collections::{HashMap, HashSet};
 use crate::{
     ast::{
         Array, BinaryExpression, BinaryOperator, Block, BlockParent, BlockTrait, Expression,
-        ExpressionType, FileContext, FileTrait, Function, FunctionCall, FunctionSignature,
+        ExpressionType, Field, FileContext, FileTrait, Function, FunctionCall, FunctionSignature,
         FunctionTrait, IfAlternative, IfStatement, LangError, NodeData, Parameter, RefType,
         RootSymbol, SelectorExpression, SelectorField, SelectorFieldType, Slice, Statement, Struct,
-        Type, UnaryOperator, VarDeclaration,
+        StructFieldInitialization, Type, UnaryOperator, VarDeclaration,
     },
     buildin::Buildins,
     types::{intersection, types_to_string, Ptr, SumType},
@@ -117,6 +117,7 @@ pub struct FileSemanticAnalyzer {
     function_calls: HashMap<usize, FunctionCallSemantics>,
     identifiers: HashMap<usize, IdentifierSemantics>,
     blocks: HashMap<usize, BlockSemantics>,
+    struct_field_inits: HashMap<usize, Field>,
 }
 
 impl FileSemanticAnalyzer {
@@ -137,6 +138,7 @@ impl FileSemanticAnalyzer {
             variable_declarations: HashMap::new(),
             function_calls: HashMap::new(),
             blocks: HashMap::new(),
+            struct_field_inits: HashMap::new(),
         }
     }
 
@@ -282,6 +284,25 @@ impl FileSemanticAnalyzer {
         self.selector_fields.get(&field.node.id).map(|s| s.clone())
     }
 
+    pub fn query_struct_field_initializer(
+        &mut self,
+        block: &Block,
+        field: &StructFieldInitialization,
+    ) -> Option<Field> {
+        if let Some(f) = self.struct_field_inits.get(&field.node.id) {
+            return Some(f.clone());
+        }
+
+        let Some(fun) = block.fun() else {
+            return None;
+        };
+        self.analyze_fun(&fun);
+
+        self.struct_field_inits
+            .get(&field.node.id)
+            .map(|f| f.clone())
+    }
+
     fn validate_file(&mut self) -> FileSemantics {
         let mut functions = HashMap::new();
         let mut structs = HashMap::new();
@@ -369,6 +390,20 @@ impl FileSemanticAnalyzer {
         );
         assert!(existing.is_none());
         binding
+    }
+
+    fn bind_struct_field_initialization(
+        &mut self,
+        field: &StructFieldInitialization,
+        struct_field: &Field,
+    ) {
+        if self.struct_field_inits.contains_key(&field.node.id) {
+            return;
+        }
+        let existing = self
+            .struct_field_inits
+            .insert(field.node.id, struct_field.clone());
+        assert!(existing.is_none());
     }
 
     fn validate_fun(&mut self, fun: &Ptr<Function>) {
@@ -853,20 +888,37 @@ impl FileSemanticAnalyzer {
                     TypeBinding::Struct(struct_dec) => struct_dec,
                 };
                 let mut expected_fields =
-                    struct_dec.fields.iter().fold(HashSet::new(), |mut set, f| {
-                        set.insert(f.name.clone());
+                    struct_dec.fields.iter().fold(HashMap::new(), |mut set, f| {
+                        set.insert(f.name.clone(), f.clone());
                         set
                     });
                 for field in &struct_init.fields {
-                    let found = expected_fields.remove(&field.name);
-                    if !found {
+                    let Some(field_type) = self.validate_expression(fun, block, &field.value) else {
+                        continue;
+                    };
+
+                    let Some(struct_field) = expected_fields.remove(&field.name) else {
                         self.errors.push(LangError::type_error(
                             &field.node,
                             "Field not in struct".to_string(),
                         ));
+                        continue;
+                    };
+
+                    self.bind_struct_field_initialization(field, &struct_field);
+
+                    let overlap = intersection(&field_type.types(), &struct_field.types);
+                    if overlap.is_empty() {
+                        self.errors.push(LangError::type_error(
+                            &field.node,
+                            format!(
+                                "Incompatible field types: field == {:?}, expr == {:?}",
+                                types_to_string(&struct_field.types),
+                                types_to_string(field_type.types()),
+                            ),
+                        ));
+                        continue;
                     }
-                    self.validate_expression(fun, block, &field.value);
-                    // TODO check type are matching
                 }
                 if !expected_fields.is_empty() {
                     self.errors.push(LangError::type_error(
