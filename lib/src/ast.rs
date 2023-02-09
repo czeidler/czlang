@@ -522,6 +522,7 @@ pub struct FunctionCall {
 pub struct StructFieldInitialization {
     pub node: NodeData,
     pub name: String,
+    pub name_node: NodeData,
     pub value: Expression,
 }
 
@@ -788,6 +789,7 @@ fn parse_struct_field_initialization(
     Some(StructFieldInitialization {
         node: NodeData::from_node(&node),
         name: node_text(&name, context)?,
+        name_node: NodeData::from_node(&name),
         value: parse_expression(context, &value_node)?,
     })
 }

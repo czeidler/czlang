@@ -20,6 +20,7 @@ pub enum QueryResult {
     VarDeclaration(Ptr<VarDeclaration>),
     StructDeclaration(Ptr<Struct>),
     StructFieldDeclaration(Field),
+    StructFieldInitialization(Field),
     /// the found SelectorField and the SelectorFieldSemantics
     SelectorField((SelectorField, SelectorFieldSemantics)),
 }
@@ -169,7 +170,17 @@ fn find_in_expression(
                         }
                     });
             }
-            // TODO
+            for field in &struct_init.fields {
+                if field.name_node.contains(position) {
+                    if let Some(f) = analyzer.query_struct_field_initializer(block.block, &field) {
+                        return Some(QueryResult::StructFieldInitialization(f));
+                    }
+                }
+
+                if field.value.node.contains(position) {
+                    return find_in_expression(analyzer, block, &field.value, position);
+                }
+            }
             None
         }
         ExpressionType::SelectorExpression(selector) => {

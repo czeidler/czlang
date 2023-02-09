@@ -362,6 +362,9 @@ impl Server {
                 QueryResult::StructIdentifier(struct_dec) => {
                     format!("struct {}", struct_dec.name)
                 }
+                QueryResult::StructFieldInitialization(field) => {
+                    format!("field {}", types_to_string(&field.types))
+                }
             };
             Some(Hover {
                 contents: HoverContents::Scalar(MarkedString::String(result)),
@@ -422,6 +425,7 @@ impl Server {
                         SelectorFieldType::Call => return None, // TODO
                     }
                 }
+                QueryResult::StructFieldInitialization(field) => field.name_node.span,
                 _ => return None,
             };
             let target = Range::new(
