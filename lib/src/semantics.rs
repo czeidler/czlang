@@ -6,7 +6,7 @@ use crate::{
         ExpressionType, Field, FileContext, FileTrait, Function, FunctionCall, FunctionSignature,
         FunctionTrait, IfAlternative, IfStatement, LangError, NodeData, Parameter, RefType,
         RootSymbol, SelectorExpression, SelectorField, SelectorFieldType, Slice, Statement, Struct,
-        StructFieldInitialization, Type, UnaryOperator, VarDeclaration,
+        StructFieldInitialization, StructInitialization, Type, UnaryOperator, VarDeclaration,
     },
     buildin::Buildins,
     types::{intersection, types_to_string, Ptr, SumType},
@@ -188,18 +188,20 @@ impl FileSemanticAnalyzer {
         file
     }
 
-    pub fn query_type_identifier(
+    pub fn query_struct_initialization(
         &mut self,
-        node: &NodeData,
+        struct_init: &StructInitialization,
         identifier: &String,
     ) -> Option<TypeIdentifierSemantics> {
-        if let Some(s) = self.type_identifiers.get(&node.id) {
+        if let Some(s) = self.type_identifiers.get(&struct_init.node.id) {
             return Some(s.clone());
         }
 
-        self.bind_type_identifier(&node, identifier);
+        self.bind_type_identifier(&struct_init.node, identifier);
 
-        self.type_identifiers.get(&node.id).map(|s| s.clone())
+        self.type_identifiers
+            .get(&struct_init.node.id)
+            .map(|s| s.clone())
     }
 
     pub fn query_type(&mut self, r#type: &RefType) -> Option<TypeIdentifierSemantics> {
@@ -304,6 +306,23 @@ impl FileSemanticAnalyzer {
         self.struct_field_inits
             .get(&field.node.id)
             .map(|f| f.clone())
+    }
+
+    /// Either the resolved types or the declared type
+    pub fn query_var_types(&self, var_declaration: &Ptr<VarDeclaration>) -> SumType {
+        match self
+            .variable_declarations
+            .get(&var_declaration.node.id)
+            .map(|s| s.inferred_types.as_ref())
+            .flatten()
+        {
+            Some(resolved_types) => resolved_types.clone(),
+            None => var_declaration
+                .types
+                .as_ref()
+                .map(|t| SumType::from_types(&t))
+                .unwrap_or(SumType::from_types(&vec![])),
+        }
     }
 
     fn validate_file(&mut self) -> FileSemantics {
@@ -560,7 +579,7 @@ impl FileSemanticAnalyzer {
                 let Some(id) = self.identifiers.get(&expression.node.id).map(|s|s.binding.clone()).flatten()  else {return};
                 match id {
                     IdentifierBinding::VarDeclaration(var_declaration) => {
-                        let var_types = self.var_types(&var_declaration);
+                        let var_types = self.query_var_types(&var_declaration);
                         let types = var_types.into_iter().fold(vec![], |mut target, item| {
                             if let Type::Unresolved(unresolved) = &item.r#type {
                                 if !intersection(&unresolved, types.types()).is_empty() {
@@ -607,23 +626,6 @@ impl FileSemanticAnalyzer {
             ExpressionType::String(_) => {}
             ExpressionType::StructInitialization(_) => {}
             ExpressionType::SelectorExpression(_) => {}
-        }
-    }
-
-    /// Either the resolved types or the declared type
-    pub fn var_types(&self, var_declaration: &Ptr<VarDeclaration>) -> SumType {
-        match self
-            .variable_declarations
-            .get(&var_declaration.node.id)
-            .map(|s| s.inferred_types.as_ref())
-            .flatten()
-        {
-            Some(resolved_types) => resolved_types.clone(),
-            None => var_declaration
-                .types
-                .as_ref()
-                .map(|t| SumType::from_types(&t))
-                .unwrap_or(SumType::from_types(&vec![])),
         }
     }
 
@@ -743,7 +745,7 @@ impl FileSemanticAnalyzer {
                         }
                     };
                 match identifier {
-                    IdentifierBinding::VarDeclaration(var) => self.var_types(&var),
+                    IdentifierBinding::VarDeclaration(var) => self.query_var_types(&var),
                     IdentifierBinding::Parameter(param) => SumType::from_types(&param.types),
                 }
             }
@@ -1110,7 +1112,7 @@ impl FileSemanticAnalyzer {
         types: &SumType,
     ) -> Option<(RefType, bool)> {
         if types.len() > 2
-            || types.len() > 1 && !types.iter().any(|t| matches!(t.r#type, Type::Null))
+            || types.len() == 2 && !types.iter().any(|t| matches!(t.r#type, Type::Null))
         {
             self.errors.push(LangError::type_error(
                 node,

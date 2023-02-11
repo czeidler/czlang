@@ -1,7 +1,8 @@
 use crate::{
     ast::{
-        Block, BlockTrait, Expression, ExpressionType, Field, Function, FunctionTrait, Parameter,
-        SelectorField, SourcePosition, Statement, Struct, VarDeclaration,
+        Block, BlockTrait, Expression, ExpressionType, Field, Function, FunctionTrait,
+        IfAlternative, IfStatement, Parameter, SelectorField, SourcePosition, Statement, Struct,
+        VarDeclaration,
     },
     semantics::{
         FileSemanticAnalyzer, FileSemantics, FunctionCallSemantics, IdentifierBinding,
@@ -162,7 +163,7 @@ fn find_in_expression(
         ExpressionType::StructInitialization(struct_init) => {
             if struct_init.name_node.contains(position) {
                 return analyzer
-                    .query_type_identifier(&struct_init.name_node, &struct_init.name)
+                    .query_struct_initialization(&struct_init, &struct_init.name)
                     .and_then(|r| r.binding)
                     .and_then(|binding| match binding {
                         TypeBinding::Struct(struct_dec) => {
@@ -214,4 +215,58 @@ fn find_in_selector_field(
     };
 
     return Some(QueryResult::SelectorField((selector_field.clone(), result)));
+}
+
+fn find_completions_in_if(
+    if_statement: &Ptr<IfStatement>,
+    position: SourcePosition,
+) -> Vec<Ptr<VarDeclaration>> {
+    let mut vars = find_completions_in_block(&if_statement.consequence, position);
+    if let Some(alternative) = &if_statement.alternative {
+        let mut alternative_vars = match alternative {
+            IfAlternative::Else(e) => find_completions_in_block(&e, position),
+            IfAlternative::If(i) => find_completions_in_if(&i, position),
+        };
+        vars.append(&mut alternative_vars);
+    }
+    vars
+}
+
+fn find_completions_in_block(
+    block: &Ptr<Block>,
+    position: SourcePosition,
+) -> Vec<Ptr<VarDeclaration>> {
+    let mut vars = vec![];
+    if !block.node.contains(position) {
+        return vars;
+    }
+
+    for statement in block.statements() {
+        if statement.node().span.start.row >= position.row {
+            break;
+        }
+        match statement {
+            Statement::VarDeclaration(var) => vars.push(var),
+            Statement::IfStatement(if_statement) => {
+                let mut if_vars = find_completions_in_if(&if_statement, position);
+                vars.append(&mut if_vars);
+            }
+            _ => continue,
+        }
+    }
+    vars
+}
+
+pub fn find_completions(
+    analyzer: &mut FileSemanticAnalyzer,
+    position: SourcePosition,
+) -> (Ptr<FileSemantics>, Option<Vec<Ptr<VarDeclaration>>>) {
+    let file = analyzer.query_file();
+    for (_, fun) in &file.functions {
+        let body = fun.body();
+
+        let var = find_completions_in_block(&body, position);
+        return (file, Some(var));
+    }
+    (file, None)
 }

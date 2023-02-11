@@ -9,8 +9,8 @@ use czlanglib::{
     ast::{SelectorFieldType, SourcePosition, SourceSpan},
     init,
     project::{FileChange, Project},
-    query::{find_in_file, QueryResult},
-    semantics::IdentifierBinding,
+    query::{find_completions, find_in_file, QueryResult},
+    semantics::{IdentifierBinding, SelectorFieldBinding, TypeBinding},
     types::types_to_string,
 };
 use lsp_server::{Connection, Message, Notification, RequestId};
@@ -87,7 +87,6 @@ impl Server {
             references_provider: Some(OneOf::Left(true)),
             hover_provider: Some(HoverProviderCapability::Simple(true)),
             completion_provider: Some(CompletionOptions {
-                resolve_provider: Some(true),
                 trigger_characters: Some(vec![".".into()]),
                 ..CompletionOptions::default()
             }),
@@ -99,13 +98,6 @@ impl Server {
             })),
             document_highlight_provider: Some(OneOf::Left(true)),
             document_formatting_provider: Some(OneOf::Left(true)),
-            execute_command_provider: Some(ExecuteCommandOptions {
-                commands: vec![
-                    "texlab.cleanAuxiliary".into(),
-                    "texlab.cleanArtifacts".into(),
-                ],
-                ..Default::default()
-            }),
             inlay_hint_provider: Some(OneOf::Left(true)),
             ..ServerCapabilities::default()
         }
@@ -284,9 +276,118 @@ impl Server {
         Ok(())
     }
 
-    fn completion(&self, _id: RequestId, mut params: CompletionParams) -> Result<()> {
+    fn completion(&self, id: RequestId, mut params: CompletionParams) -> Result<()> {
         normalize_uri(&mut params.text_document_position.text_document.uri);
-        let _uri = Arc::new(params.text_document_position.text_document.uri.clone());
+        let uri = Arc::new(params.text_document_position.text_document.uri.clone());
+
+        let position = params.text_document_position.position;
+        let project = self.project.clone();
+        self.handle_feature_request(id, params, uri.clone(), move |_request| {
+            let uri: String = uri.as_ref().clone().into();
+            let mut project = project.lock().unwrap();
+            let file = project.open_files.get_mut(&uri);
+            let Some(file) = file else {return None};
+
+            let position = SourcePosition::new(position.line as usize, position.character as usize);
+
+            if position.column > 1 {
+                let pos = position.to_byte_position(&file.file.source);
+                let slice = file.file.source.get(pos - 2..pos);
+                if let Some(slice) = slice {
+                    if slice.get(1..).unwrap() == "." {
+                        if let Some(result) = find_in_file(
+                            &mut file.file_analyzer,
+                            SourcePosition::new(position.row, position.column - 2),
+                        ) {
+                            match result {
+                                QueryResult::Identifier(bindings) => {
+                                    match bindings {
+                                        IdentifierBinding::VarDeclaration(var) => {
+                                            let var_type = file.file_analyzer.query_var_types(&var);
+                                            if var_type.len() == 1 {
+                                                let t = &var_type.types()[0];
+                                                let type_semantics =
+                                                    file.file_analyzer.query_type(t);
+                                                if let Some(bindings) =
+                                                    type_semantics.and_then(|s| s.binding)
+                                                {
+                                                    match bindings {
+                                                        TypeBinding::Struct(struct_dec) => {
+                                                            return Some(
+                                                                struct_dec
+                                                                    .fields
+                                                                    .iter()
+                                                                    .map(|f| {
+                                                                        CompletionItem::new_simple(
+                                                                            f.name.clone(),
+                                                                            types_to_string(
+                                                                                &f.types,
+                                                                            ),
+                                                                        )
+                                                                    })
+                                                                    .collect(),
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        IdentifierBinding::Parameter(_) => return None,
+                                    }
+                                    return Some(vec![CompletionItem::new_simple(
+                                        "id".to_string(),
+                                        "".to_string(),
+                                    )]);
+                                }
+                                QueryResult::SelectorField((_, field_semantics)) => {
+                                    if let Some(binding) = field_semantics.binding {
+                                        match binding {
+                                            SelectorFieldBinding::Struct(struct_dec) => {
+                                                return Some(
+                                                    struct_dec
+                                                        .fields
+                                                        .iter()
+                                                        .map(|f| {
+                                                            CompletionItem::new_simple(
+                                                                f.name.clone(),
+                                                                types_to_string(&f.types),
+                                                            )
+                                                        })
+                                                        .collect(),
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+
+            let (file_semantics, vars) = find_completions(&mut file.file_analyzer, position);
+            let mut list = vec![];
+            for (name, _) in &file_semantics.structs {
+                let mut item = CompletionItem::new_simple(name.clone(), "".to_string());
+                item.kind = Some(CompletionItemKind::CLASS);
+                list.push(item);
+            }
+            for (name, _) in &file_semantics.functions {
+                let mut item = CompletionItem::new_simple(name.clone(), "".to_string());
+                item.kind = Some(CompletionItemKind::FUNCTION);
+                list.push(item);
+            }
+            if let Some(vars) = vars {
+                for var in vars {
+                    let mut item = CompletionItem::new_simple(var.name.clone(), "".to_string());
+                    item.kind = Some(CompletionItemKind::VARIABLE);
+                    list.push(item);
+                }
+            }
+
+            Some(list)
+        })?;
 
         Ok(())
     }
@@ -329,7 +430,7 @@ impl Server {
                         format!(
                             "identifier: {} {}",
                             var.name,
-                            types_to_string(file.file_analyzer.var_types(&var).types())
+                            types_to_string(file.file_analyzer.query_var_types(&var).types())
                         )
                     }
                     IdentifierBinding::Parameter(param) => {
@@ -340,7 +441,7 @@ impl Server {
                     format!(
                         "var {} {}",
                         var.name,
-                        types_to_string(file.file_analyzer.var_types(&var).types())
+                        types_to_string(file.file_analyzer.query_var_types(&var).types())
                     )
                 }
                 QueryResult::FunctionCall(fun) => {
