@@ -702,7 +702,7 @@ fn parse_fun<'a>(file: &Ptr<FileContext>, node: &Node<'a>) -> Option<Ptr<Functio
 fn parse_struct<'a>(context: &Ptr<FileContext>, node: &Node<'a>) -> Option<Ptr<Struct>> {
     let name = child_by_field(&node, "name")?;
     let fields = child_by_field(&node, "fields")?;
-    let fields = parse_struct_fields(context, &fields, node)?;
+    let fields = parse_struct_fields(context, &fields, node);
     Some(Ptr::new(Struct {
         node: NodeData::from_node(&node),
         name: node_text(&name, context)?,
@@ -715,13 +715,17 @@ fn parse_struct_fields<'a>(
     context: &Ptr<FileContext>,
     node: &Node<'a>,
     parent: &Node<'a>,
-) -> Option<Vec<Field>> {
+) -> Vec<Field> {
     let mut fields = Vec::new();
     let mut cursor = node.walk();
     for field_node in node.children_by_field_name("field", &mut cursor) {
-        fields.push(parse_struct_field(context, &field_node, parent)?);
+        if let Some(field) = parse_struct_field(context, &field_node, parent) {
+            fields.push(field);
+        } else {
+            break;
+        }
     }
-    Some(fields)
+    fields
 }
 
 fn parse_struct_field<'a>(
