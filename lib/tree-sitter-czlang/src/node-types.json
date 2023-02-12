@@ -2498,16 +2498,6 @@
             "named": true
           }
         ]
-      },
-      "variable": {
-        "multiple": false,
-        "required": true,
-        "types": [
-          {
-            "type": "var",
-            "named": false
-          }
-        ]
       }
     }
   },

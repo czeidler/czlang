@@ -867,12 +867,8 @@
       "type": "SEQ",
       "members": [
         {
-          "type": "FIELD",
-          "name": "variable",
-          "content": {
-            "type": "STRING",
-            "value": "var"
-          }
+          "type": "STRING",
+          "value": "var"
         },
         {
           "type": "FIELD",

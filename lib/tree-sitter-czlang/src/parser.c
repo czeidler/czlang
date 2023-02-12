@@ -12,7 +12,7 @@
 #define ALIAS_COUNT 0
 #define TOKEN_COUNT 69
 #define EXTERNAL_TOKEN_COUNT 0
-#define FIELD_COUNT 35
+#define FIELD_COUNT 34
 #define MAX_ALIAS_SEQUENCE_LENGTH 7
 #define PRODUCTION_ID_COUNT 60
 
@@ -930,7 +930,6 @@ enum {
   field_start = 32,
   field_type = 33,
   field_value = 34,
-  field_variable = 35,
 };
 
 static const char * const ts_field_names[] = {
@@ -969,7 +968,6 @@ static const char * const ts_field_names[] = {
   [field_start] = "start",
   [field_type] = "type",
   [field_value] = "value",
-  [field_variable] = "variable",
 };
 
 static const TSFieldMapSlice ts_field_map_slices[PRODUCTION_ID_COUNT] = {
@@ -1013,25 +1011,25 @@ static const TSFieldMapSlice ts_field_map_slices[PRODUCTION_ID_COUNT] = {
   [38] = {.index = 74, .length = 4},
   [39] = {.index = 78, .length = 2},
   [40] = {.index = 80, .length = 2},
-  [41] = {.index = 82, .length = 3},
-  [42] = {.index = 85, .length = 1},
-  [43] = {.index = 86, .length = 2},
-  [44] = {.index = 88, .length = 1},
-  [45] = {.index = 89, .length = 2},
-  [46] = {.index = 91, .length = 4},
-  [47] = {.index = 95, .length = 4},
-  [48] = {.index = 99, .length = 3},
-  [49] = {.index = 102, .length = 2},
-  [50] = {.index = 104, .length = 2},
-  [51] = {.index = 106, .length = 2},
-  [52] = {.index = 108, .length = 1},
-  [53] = {.index = 109, .length = 3},
-  [54] = {.index = 112, .length = 2},
-  [55] = {.index = 114, .length = 2},
-  [56] = {.index = 116, .length = 2},
-  [57] = {.index = 118, .length = 5},
-  [58] = {.index = 123, .length = 3},
-  [59] = {.index = 126, .length = 2},
+  [41] = {.index = 82, .length = 2},
+  [42] = {.index = 84, .length = 1},
+  [43] = {.index = 85, .length = 2},
+  [44] = {.index = 87, .length = 1},
+  [45] = {.index = 88, .length = 2},
+  [46] = {.index = 90, .length = 3},
+  [47] = {.index = 93, .length = 3},
+  [48] = {.index = 96, .length = 3},
+  [49] = {.index = 99, .length = 2},
+  [50] = {.index = 101, .length = 2},
+  [51] = {.index = 103, .length = 2},
+  [52] = {.index = 105, .length = 1},
+  [53] = {.index = 106, .length = 3},
+  [54] = {.index = 109, .length = 2},
+  [55] = {.index = 111, .length = 2},
+  [56] = {.index = 113, .length = 2},
+  [57] = {.index = 115, .length = 4},
+  [58] = {.index = 119, .length = 3},
+  [59] = {.index = 122, .length = 2},
 };
 
 static const TSFieldMapEntry ts_field_map_entries[] = {
@@ -1160,66 +1158,62 @@ static const TSFieldMapEntry ts_field_map_entries[] = {
   [82] =
     {field_name, 1},
     {field_value, 3},
-    {field_variable, 0},
-  [85] =
+  [84] =
     {field_argument, 1},
-  [86] =
+  [85] =
     {field_field_init, 2},
     {field_name, 0},
-  [88] =
+  [87] =
     {field_operand, 0},
-  [89] =
+  [88] =
     {field_selector_field, 0, .inherited = true},
     {field_selector_field, 1, .inherited = true},
-  [91] =
+  [90] =
     {field_mutable, 2},
     {field_name, 1},
     {field_value, 4},
-    {field_variable, 0},
-  [95] =
+  [93] =
     {field_name, 1},
     {field_type, 2},
     {field_value, 4},
-    {field_variable, 0},
-  [99] =
+  [96] =
     {field_alternative, 4},
     {field_condition, 1},
     {field_consequence, 2},
-  [102] =
+  [99] =
     {field_argument, 1},
     {field_argument, 2, .inherited = true},
-  [104] =
+  [101] =
     {field_argument, 0, .inherited = true},
     {field_argument, 1, .inherited = true},
-  [106] =
+  [103] =
     {field_field, 2},
     {field_name, 0},
-  [108] =
+  [105] =
     {field_field_init, 1},
-  [109] =
+  [106] =
     {field_field_init, 2},
     {field_field_init, 3, .inherited = true},
     {field_name, 0},
-  [112] =
+  [109] =
     {field_field_init, 0, .inherited = true},
     {field_field_init, 1, .inherited = true},
-  [114] =
+  [111] =
     {field_end, 3},
     {field_operand, 0},
-  [116] =
+  [113] =
     {field_operand, 0},
     {field_start, 2},
-  [118] =
+  [115] =
     {field_mutable, 2},
     {field_name, 1},
     {field_type, 3},
     {field_value, 5},
-    {field_variable, 0},
-  [123] =
+  [119] =
     {field_end, 4},
     {field_operand, 0},
     {field_start, 2},
-  [126] =
+  [122] =
     {field_block, 4},
     {field_error, 2},
 };
