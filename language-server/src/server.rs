@@ -9,8 +9,8 @@ use czlanglib::{
     ast::{SelectorFieldType, SourcePosition, SourceSpan},
     init,
     project::{FileChange, Project},
-    query::{find_completions, find_in_file, QueryResult},
-    semantics::{IdentifierBinding, SelectorFieldBinding, TypeBinding},
+    query::{find_in_file, QueryResult},
+    semantics::IdentifierBinding,
     types::types_to_string,
 };
 use lsp_server::{Connection, Message, Notification, RequestId};
@@ -19,6 +19,7 @@ use serde::Serialize;
 use threadpool::ThreadPool;
 
 use crate::{
+    completion::{dot_completion, scope_symbols_completion},
     dispatch::{NotificationDispatcher, RequestDispatcher},
     normalize_uri,
 };
@@ -290,102 +291,11 @@ impl Server {
 
             let position = SourcePosition::new(position.line as usize, position.character as usize);
 
-            if position.column > 1 {
-                let pos = position.to_byte_position(&file.file.source);
-                let slice = file.file.source.get(pos - 2..pos);
-                if let Some(slice) = slice {
-                    if slice.get(1..).unwrap() == "." {
-                        if let Some(result) = find_in_file(
-                            &mut file.file_analyzer,
-                            SourcePosition::new(position.row, position.column - 2),
-                        ) {
-                            match result {
-                                QueryResult::Identifier(bindings) => {
-                                    match bindings {
-                                        IdentifierBinding::VarDeclaration(var) => {
-                                            let var_type = file.file_analyzer.query_var_types(&var);
-                                            if var_type.len() == 1 {
-                                                let t = &var_type.types()[0];
-                                                let type_semantics =
-                                                    file.file_analyzer.query_type(t);
-                                                if let Some(bindings) =
-                                                    type_semantics.and_then(|s| s.binding)
-                                                {
-                                                    match bindings {
-                                                        TypeBinding::Struct(struct_dec) => {
-                                                            return Some(
-                                                                struct_dec
-                                                                    .fields
-                                                                    .iter()
-                                                                    .map(|f| {
-                                                                        CompletionItem::new_simple(
-                                                                            f.name.clone(),
-                                                                            types_to_string(
-                                                                                &f.types,
-                                                                            ),
-                                                                        )
-                                                                    })
-                                                                    .collect(),
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        IdentifierBinding::Parameter(_) => return None,
-                                    }
-                                    return Some(vec![CompletionItem::new_simple(
-                                        "id".to_string(),
-                                        "".to_string(),
-                                    )]);
-                                }
-                                QueryResult::SelectorField((_, field_semantics)) => {
-                                    if let Some(binding) = field_semantics.binding {
-                                        match binding {
-                                            SelectorFieldBinding::Struct(struct_dec) => {
-                                                return Some(
-                                                    struct_dec
-                                                        .fields
-                                                        .iter()
-                                                        .map(|f| {
-                                                            CompletionItem::new_simple(
-                                                                f.name.clone(),
-                                                                types_to_string(&f.types),
-                                                            )
-                                                        })
-                                                        .collect(),
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-                }
+            if let Some(dot_completions) = dot_completion(file, &position) {
+                return Some(dot_completions);
             }
 
-            let (file_semantics, vars) = find_completions(&mut file.file_analyzer, position);
-            let mut list = vec![];
-            for (name, _) in &file_semantics.structs {
-                let mut item = CompletionItem::new_simple(name.clone(), "".to_string());
-                item.kind = Some(CompletionItemKind::CLASS);
-                list.push(item);
-            }
-            for (name, _) in &file_semantics.functions {
-                let mut item = CompletionItem::new_simple(name.clone(), "".to_string());
-                item.kind = Some(CompletionItemKind::FUNCTION);
-                list.push(item);
-            }
-            if let Some(vars) = vars {
-                for var in vars {
-                    let mut item = CompletionItem::new_simple(var.name.clone(), "".to_string());
-                    item.kind = Some(CompletionItemKind::VARIABLE);
-                    list.push(item);
-                }
-            }
-
+            let list = scope_symbols_completion(file, position);
             Some(list)
         })?;
 

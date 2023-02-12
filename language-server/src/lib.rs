@@ -1,3 +1,4 @@
+mod completion;
 mod dispatch;
 mod server;
 
