@@ -12,11 +12,13 @@ use crate::{
     types::{intersection, types_to_string, Ptr, SumType},
 };
 
+#[derive(Debug, Clone)]
 pub struct FileSemantics {
     pub functions: HashMap<String, Ptr<Function>>,
     pub structs: HashMap<String, Ptr<Struct>>,
 }
 
+#[derive(Debug, Clone)]
 struct BlockSemantics {
     pub vars: HashMap<String, Ptr<VarDeclaration>>,
 }
@@ -1052,9 +1054,15 @@ impl FileSemanticAnalyzer {
                             return None;
                         };
 
+                        let mut types = found_field.types.clone();
+                        if nullable_chain && !types.iter().any(|t| matches!(t.r#type, Type::Null)) {
+                            types.push(RefType::value(field.node.clone(), Type::Null));
+                            types.sort();
+                        }
+
                         let (found_struct, nullable) = self.bind_selector_field_to_struct(
                             &field.node,
-                            &found_field.types,
+                            &types,
                             Some(current_struct.clone()),
                         )?;
 
@@ -1068,6 +1076,10 @@ impl FileSemanticAnalyzer {
         return None;
     }
 
+    /// Takes:
+    /// 1) the field_node either from the root expression or from the fields
+    /// 2) the field type either the root expression type or the type of the fields
+    /// 3) the parent struct, None for the root expression
     fn bind_selector_field_to_struct(
         &mut self,
         field_node: &NodeData,

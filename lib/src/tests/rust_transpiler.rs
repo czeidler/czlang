@@ -158,7 +158,7 @@ fun main() {
         }
     }
 
-    var field2 i32 | null = struct2?.field1.field2
+    var field2 i32 | null = struct2?.field1?.field2
 }
         "#,
         )
