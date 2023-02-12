@@ -1,0 +1,132 @@
+==================
+Struct expression
+==================
+
+fun x() {
+    struct1.
+}
+
+---
+
+(source_file
+      (function_definition
+        (identifier)
+        (parameter_list)
+        (block
+          (expression_statement
+            (identifier))
+          (ERROR)
+        )
+    )
+)
+
+==================
+Struct expression which followup statement
+==================
+
+fun x() {
+    struct1.
+    var test = true
+}
+
+---
+
+(source_file
+      (function_definition
+        (identifier)
+        (parameter_list)
+        (block
+          (expression_statement
+            (selector_expression
+              (identifier)
+              (selector_field
+                (ERROR
+                  (identifier))
+                (identifier))))
+          (ERROR
+            (true)
+          )
+        )
+    )
+)
+
+==================
+Var assignment
+==================
+
+fun x() {
+    var test = struct1.
+}
+
+---
+
+(source_file
+      (function_definition
+        (identifier)
+        (parameter_list)
+        (block
+          (var_declaration
+            (identifier)
+            (identifier))
+          (ERROR)
+        )
+    )
+)
+
+==================
+Var assignment with follow up statement
+==================
+
+fun x() {
+    var test = struct1.
+    var some = true
+}
+
+---
+
+(source_file
+      (function_definition
+        (identifier)
+        (parameter_list)
+        (block
+          (var_declaration
+            (identifier)
+            (selector_expression
+              (identifier)
+              (selector_field
+                (ERROR
+                  (identifier))
+                (identifier))))
+          (ERROR
+            (true)
+          )
+        )
+    )
+)
+
+==================
+Var assignment with selector field
+==================
+
+fun x() {
+    var test = struct2.field1.
+}
+
+---
+
+(source_file
+      (function_definition
+        (identifier)
+        (parameter_list)
+        (block
+          (var_declaration
+            (identifier)
+            (selector_expression
+              (identifier)
+              (selector_field
+                (identifier))))
+          (ERROR)
+        )
+    )
+)
+
