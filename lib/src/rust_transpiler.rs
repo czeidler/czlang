@@ -163,7 +163,7 @@ impl RustTranspiler {
         &self,
         analyzer: &mut FileSemanticAnalyzer,
         expression: &Expression,
-        fun: &Ptr<Function>,
+        block: &Block,
         writer: &mut Writer,
     ) {
         match &expression.r#type {
@@ -175,7 +175,7 @@ impl RustTranspiler {
                         StringTemplatePart::Expression(expression) => {
                             let mut buffer = "".to_string();
                             let mut fmt_writer = Writer::new(&mut buffer);
-                            self.transpile_expression(analyzer, expression, fun, &mut fmt_writer);
+                            self.transpile_expression(analyzer, expression, block, &mut fmt_writer);
 
                             fmt_params.push(buffer);
                             fmt_string += "{}";
@@ -215,7 +215,7 @@ impl RustTranspiler {
                     UnaryOperator::TypeOf => "",
                 };
                 writer.write(op);
-                self.transpile_expression(analyzer, &expr.operand, fun, writer);
+                self.transpile_expression(analyzer, &expr.operand, block, writer);
             }
             ExpressionType::BinaryExpression(expr) => {
                 let op = match expr.operator {
@@ -232,31 +232,31 @@ impl RustTranspiler {
                     BinaryOperator::And => "&&",
                     BinaryOperator::Or => "||",
                 };
-                self.transpile_expression(analyzer, &expr.left, fun, writer);
+                self.transpile_expression(analyzer, &expr.left, block, writer);
                 writer.write(" ");
                 writer.write(op);
                 writer.write(" ");
-                self.transpile_expression(analyzer, &expr.right, fun, writer);
+                self.transpile_expression(analyzer, &expr.right, block, writer);
             }
             ExpressionType::ParenthesizedExpression(expr) => {
                 writer.write("(");
-                self.transpile_expression(analyzer, &expr.expression, fun, writer);
+                self.transpile_expression(analyzer, &expr.expression, block, writer);
                 writer.write(")");
             }
             ExpressionType::ArrayExpression(array) => {
-                self.transpile_array_expr(analyzer, array, fun, writer)
+                self.transpile_array_expr(analyzer, array, block, writer)
             }
             ExpressionType::SliceExpression(slice) => {
-                self.transpile_slice_expr(analyzer, slice, fun, writer)
+                self.transpile_slice_expr(analyzer, slice, block, writer)
             }
             ExpressionType::FunctionCall(call) => {
-                self.transpile_function_call(analyzer, call, fun, writer);
+                self.transpile_function_call(analyzer, call, block, writer);
             }
             ExpressionType::StructInitialization(struct_init) => {
-                self.transpile_struct_init(analyzer, struct_init, fun, writer);
+                self.transpile_struct_init(analyzer, struct_init, block, writer);
             }
             ExpressionType::SelectorExpression(selector) => {
-                self.transpile_selector_expr(analyzer, expression, selector, fun, writer);
+                self.transpile_selector_expr(analyzer, expression, selector, block, writer);
             }
         };
     }
@@ -266,12 +266,12 @@ impl RustTranspiler {
         analyzer: &mut FileSemanticAnalyzer,
         expression: &Expression,
         selector: &SelectorExpression,
-        fun: &Ptr<Function>,
+        block: &Block,
         writer: &mut Writer,
     ) {
         let has_optional_chaining = selector.fields.iter().any(|f| f.optional_chaining);
         if !has_optional_chaining {
-            self.transpile_expression(analyzer, &selector.root, fun, writer);
+            self.transpile_expression(analyzer, &selector.root, block, writer);
             for field in &selector.fields {
                 match &field.field {
                     SelectorFieldType::Identifier(identifier) => {
@@ -288,19 +288,17 @@ impl RustTranspiler {
         self.transpile_expression(
             analyzer,
             &selector.root,
-            fun,
+            block,
             &mut Writer::new(&mut selector_start),
         );
 
         let mut encountered_first_optional = false;
         let mut current_types = analyzer
-            .expressions
-            .get(&selector.root.node.id)
-            .map(|s| s.resolved_types.clone())
-            .flatten()
+            .query_expression(block, &selector.root)
+            .and_then(|s| s.resolved_types)
             .unwrap();
         let mut current_struct = match analyzer
-            .query_selector(&fun.body(), selector)
+            .query_selector(&block, selector)
             .unwrap()
             .binding
             .unwrap()
@@ -349,7 +347,7 @@ impl RustTranspiler {
                                     .types,
                             );
                             current_struct = match analyzer
-                                .query_selector_field(&fun.body(), &field)
+                                .query_selector_field(&block, &field)
                                 .unwrap()
                                 .binding
                                 .unwrap()
@@ -372,10 +370,8 @@ impl RustTranspiler {
             }
         }
         let resolved_types = analyzer
-            .expressions
-            .get(&expression.node.id)
-            .map(|s| s.resolved_types.clone())
-            .flatten()
+            .query_expression(block, &expression)
+            .and_then(|s| s.resolved_types.clone())
             .unwrap();
         let target_sum_type = resolved_types.sum_type_name();
         let target_type = resolved_types
@@ -402,13 +398,13 @@ impl RustTranspiler {
         &self,
         analyzer: &mut FileSemanticAnalyzer,
         array: &ArrayExpression,
-        fun: &Ptr<Function>,
+        block: &Block,
         writer: &mut Writer,
     ) {
         writer.write("[");
         let mut iter = array.expressions.iter().peekable();
         while let Some(expr) = iter.next() {
-            self.transpile_expression(analyzer, expr, fun, writer);
+            self.transpile_expression(analyzer, expr, block, writer);
             if iter.peek().is_some() {
                 writer.write(", ");
             }
@@ -420,10 +416,10 @@ impl RustTranspiler {
         &self,
         analyzer: &mut FileSemanticAnalyzer,
         slice: &SliceExpression,
-        fun: &Ptr<Function>,
+        block: &Block,
         writer: &mut Writer,
     ) {
-        self.transpile_expression(analyzer, &slice.operand, fun, writer);
+        self.transpile_expression(analyzer, &slice.operand, block, writer);
         writer.write("[");
         if let Some(start) = slice.start {
             writer.write(&format!("{}", start));
@@ -439,7 +435,7 @@ impl RustTranspiler {
         &self,
         analyzer: &mut FileSemanticAnalyzer,
         call: &FunctionCall,
-        fun: &Ptr<Function>,
+        block: &Block,
         writer: &mut Writer,
     ) -> bool {
         let buildin = match self.buildins.functions.get(&call.name) {
@@ -453,7 +449,7 @@ impl RustTranspiler {
                     match arg0.r#type {
                         ExpressionType::String(_) => {
                             writer.write("println!(\"{}\", ");
-                            self.transpile_expression(analyzer, arg0, fun, writer);
+                            self.transpile_expression(analyzer, arg0, block, writer);
                             writer.write(")");
                             return true;
                         }
@@ -463,7 +459,7 @@ impl RustTranspiler {
                 writer.write("println!(\"{}\", ");
                 let mut iter = call.arguments.iter().peekable();
                 while let Some(expr) = iter.next() {
-                    self.transpile_expression(analyzer, expr, fun, writer);
+                    self.transpile_expression(analyzer, expr, block, writer);
                     if iter.peek().is_some() {
                         writer.write(", ");
                     }
@@ -481,30 +477,28 @@ impl RustTranspiler {
         analyzer: &mut FileSemanticAnalyzer,
         expression: &Expression,
         target: Option<&Vec<RefType>>,
-        fun: &Ptr<Function>,
+        block: &Block,
         writer: &mut Writer,
     ) {
         let Some(target) = target else {
-            self.transpile_expression(analyzer,&expression, fun, writer);
+            self.transpile_expression(analyzer,&expression, block, writer);
             return;
         };
         let target = SumType::from_types(&target);
         if matches!(expression.r#type, ExpressionType::Null) {
             writer.write(&target.sum_type_name());
             writer.write("::");
-            self.transpile_expression(analyzer, &expression, fun, writer);
+            self.transpile_expression(analyzer, &expression, block, writer);
             return;
         }
 
         if target.len() == 1 {
             // the target is a simple type, i.e. we can directly assign the expression
-            self.transpile_expression(analyzer, &expression, fun, writer);
+            self.transpile_expression(analyzer, &expression, block, writer);
         } else {
             let resolved_type = analyzer
-                .expressions
-                .get(&expression.node.id)
-                .map(|s| s.resolved_types.clone())
-                .flatten()
+                .query_expression(block, &expression)
+                .and_then(|s| s.resolved_types.clone())
                 .unwrap();
             if resolved_type.len() == 1 {
                 writer.write(&target.sum_type_name());
@@ -518,11 +512,11 @@ impl RustTranspiler {
                 };
                 writer.write(&format!("{}", t));
                 writer.write("(");
-                self.transpile_expression(analyzer, &expression, fun, writer);
+                self.transpile_expression(analyzer, &expression, block, writer);
                 writer.write(")");
             } else {
                 // just the expresion
-                self.transpile_expression(analyzer, &expression, fun, writer);
+                self.transpile_expression(analyzer, &expression, block, writer);
             }
         }
     }
@@ -531,10 +525,10 @@ impl RustTranspiler {
         &self,
         analyzer: &mut FileSemanticAnalyzer,
         call: &FunctionCall,
-        fun: &Ptr<Function>,
+        block: &Block,
         writer: &mut Writer,
     ) {
-        if self.transpile_buildin_function_call(analyzer, call, fun, writer) {
+        if self.transpile_buildin_function_call(analyzer, call, block, writer) {
             return;
         }
 
@@ -542,7 +536,7 @@ impl RustTranspiler {
         writer.write("(");
 
         let fun_call_binding = analyzer
-            .query_function_call(&fun.body(), call)
+            .query_function_call(&block, call)
             .unwrap()
             .binding
             .unwrap();
@@ -555,7 +549,7 @@ impl RustTranspiler {
                 analyzer,
                 expr,
                 Some(&parameter.types),
-                fun,
+                block,
                 writer,
             );
             if iter.peek().is_some() {
@@ -570,7 +564,7 @@ impl RustTranspiler {
         &self,
         analyzer: &mut FileSemanticAnalyzer,
         var_declaration: &VarDeclaration,
-        fun: &Ptr<Function>,
+        block: &Block,
         writer: &mut Writer,
     ) {
         writer.write("let ");
@@ -590,7 +584,7 @@ impl RustTranspiler {
             analyzer,
             &var_declaration.value,
             var_declaration.types.as_ref(),
-            fun,
+            block,
             writer,
         );
         writer.write(";");
@@ -600,17 +594,18 @@ impl RustTranspiler {
         &self,
         analyzer: &mut FileSemanticAnalyzer,
         expression: &Option<Expression>,
-        fun: &Ptr<Function>,
+        block: &Block,
         writer: &mut Writer,
     ) {
         writer.write("return");
         if let Some(expression) = expression {
             writer.write(" ");
+            let fun = block.fun().unwrap();
             self.transpile_expression_with_mapping(
                 analyzer,
                 expression,
                 Some(&fun.signature.return_types),
-                fun,
+                block,
                 writer,
             );
         }
@@ -663,7 +658,7 @@ impl RustTranspiler {
         &self,
         analyzer: &mut FileSemanticAnalyzer,
         if_statement: &IfStatement,
-        fun: &Ptr<Function>,
+        block: &Block,
         writer: &mut Writer,
     ) {
         writer.write("if ");
@@ -675,12 +670,12 @@ impl RustTranspiler {
         if let Some(type_narrowing) = &type_narrowing {
             self.transpile_if_type_narrowing(type_narrowing, writer);
         } else {
-            self.transpile_expression(analyzer, &if_statement.condition, fun, writer);
+            self.transpile_expression(analyzer, &if_statement.condition, block, writer);
         }
         writer.write(" {");
         writer.new_line();
         writer.indented(|writer| {
-            self.transpile_block(analyzer, &if_statement.consequence, fun, writer);
+            self.transpile_block(analyzer, &if_statement.consequence, writer);
         });
         writer.write("}");
         if let Some(alternative) = &if_statement.alternative {
@@ -689,13 +684,13 @@ impl RustTranspiler {
                     writer.write(" else {");
                     writer.new_line();
                     writer.indented(|writer| {
-                        self.transpile_block(analyzer, else_block, fun, writer);
+                        self.transpile_block(analyzer, else_block, writer);
                     });
                     writer.write("}");
                 }
                 IfAlternative::If(if_statement) => {
                     writer.write(" else ");
-                    self.transpile_if_statement(analyzer, &if_statement, fun, writer);
+                    self.transpile_if_statement(analyzer, &if_statement, block, writer);
                 }
             }
         }
@@ -705,26 +700,25 @@ impl RustTranspiler {
         &self,
         analyzer: &mut FileSemanticAnalyzer,
         block: &Ptr<Block>,
-        fun: &Ptr<Function>,
         writer: &mut Writer,
     ) {
         for statement in block.statements() {
             match statement {
                 Statement::Expression(expr) => {
-                    self.transpile_expression(analyzer, &expr, fun, writer);
+                    self.transpile_expression(analyzer, &expr, block, writer);
                     writer.write(";");
                     writer.new_line();
                 }
                 Statement::VarDeclaration(var) => {
-                    self.transpile_var_declaration(analyzer, &var, fun, writer);
+                    self.transpile_var_declaration(analyzer, &var, block, writer);
                     writer.new_line();
                 }
                 Statement::Return(ret) => {
-                    self.transpile_return_statement(analyzer, &ret.expression, fun, writer);
+                    self.transpile_return_statement(analyzer, &ret.expression, block, writer);
                     writer.new_line();
                 }
                 Statement::IfStatement(if_statement) => {
-                    self.transpile_if_statement(analyzer, &if_statement, fun, writer);
+                    self.transpile_if_statement(analyzer, &if_statement, block, writer);
                     writer.new_line();
                 }
             }
@@ -746,7 +740,7 @@ impl RustTranspiler {
         writer.write(" {");
         writer.new_line();
         writer.indented(|writer| {
-            self.transpile_block(analyzer, &fun.body(), fun, writer);
+            self.transpile_block(analyzer, &fun.body(), writer);
         });
         writer.write("}");
     }
@@ -787,7 +781,7 @@ impl RustTranspiler {
         analyzer: &mut FileSemanticAnalyzer,
         struct_field_init: &StructFieldInitialization,
         struct_def: &Ptr<Struct>,
-        fun: &Ptr<Function>,
+        block: &Block,
         writer: &mut Writer,
     ) {
         writer.write(&struct_field_init.name);
@@ -803,7 +797,7 @@ impl RustTranspiler {
             analyzer,
             &struct_field_init.value,
             Some(&field.types),
-            fun,
+            block,
             writer,
         )
     }
@@ -812,7 +806,7 @@ impl RustTranspiler {
         &self,
         analyzer: &mut FileSemanticAnalyzer,
         struct_init: &StructInitialization,
-        fun: &Ptr<Function>,
+        block: &Block,
         writer: &mut Writer,
     ) {
         writer.write(&struct_init.name);
@@ -822,7 +816,7 @@ impl RustTranspiler {
             let file = analyzer.query_file();
             let struct_def = file.structs.get(&struct_init.name).unwrap();
             for field in &struct_init.fields {
-                self.transpile_struct_field_init(analyzer, field, &struct_def, fun, writer);
+                self.transpile_struct_field_init(analyzer, field, &struct_def, block, writer);
                 writer.write(",");
                 writer.new_line();
             }

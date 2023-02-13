@@ -54,15 +54,18 @@ pub struct FunctionCallSemantics {
     pub binding: Option<FunctionCallBinding>,
 }
 
+#[derive(Debug, Clone)]
 pub struct ExpressionSemantics {
     pub resolved_types: Option<SumType>,
 }
 
+#[derive(Debug, Clone)]
 pub struct VarDeclarationSemantics {
     /// Inferred variable types if var types where not declared
     pub inferred_types: Option<SumType>,
 }
 
+#[derive(Debug, Clone)]
 pub struct IfStatementSemantics {
     /// Type narrowing from the if contition
     pub type_narrowing: Option<TypeNarrowing>,
@@ -115,7 +118,7 @@ pub struct FileSemanticAnalyzer {
     type_identifiers: HashMap<usize, TypeIdentifierSemantics>,
     // TODO make private by adding a query method:
     pub if_statements: HashMap<usize, IfStatementSemantics>,
-    pub expressions: HashMap<usize, ExpressionSemantics>,
+    expressions: HashMap<usize, ExpressionSemantics>,
     selector_fields: HashMap<usize, SelectorFieldSemantics>,
     variable_declarations: HashMap<usize, VarDeclarationSemantics>,
     function_calls: HashMap<usize, FunctionCallSemantics>,
@@ -190,6 +193,22 @@ impl FileSemanticAnalyzer {
         self.file_semantics = Some(file.clone());
 
         file
+    }
+
+    pub fn query_expression(
+        &mut self,
+        block: &Block,
+        expression: &Expression,
+    ) -> Option<ExpressionSemantics> {
+        if let Some(s) = self.expressions.get(&expression.node.id) {
+            return Some(s.clone());
+        }
+        let Some(fun) = block.fun() else {
+            return None;
+        };
+        self.query_fun(&fun);
+
+        self.expressions.get(&expression.node.id).map(|s| s.clone())
     }
 
     pub fn query_struct_initialization(
