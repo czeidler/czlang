@@ -117,7 +117,7 @@ pub struct FileSemanticAnalyzer {
     fun_symbols: HashSet<usize>,
     type_identifiers: HashMap<usize, TypeIdentifierSemantics>,
     // TODO make private by adding a query method:
-    pub if_statements: HashMap<usize, IfStatementSemantics>,
+    if_statements: HashMap<usize, IfStatementSemantics>,
     expressions: HashMap<usize, ExpressionSemantics>,
     selector_fields: HashMap<usize, SelectorFieldSemantics>,
     variable_declarations: HashMap<usize, VarDeclarationSemantics>,
@@ -209,6 +209,24 @@ impl FileSemanticAnalyzer {
         self.query_fun(&fun);
 
         self.expressions.get(&expression.node.id).map(|s| s.clone())
+    }
+
+    pub fn query_if_statement(
+        &mut self,
+        block: &Block,
+        statement: &IfStatement,
+    ) -> Option<IfStatementSemantics> {
+        if let Some(s) = self.if_statements.get(&statement.node.id) {
+            return Some(s.clone());
+        }
+        let Some(fun) = block.fun() else {
+            return None;
+        };
+        self.query_fun(&fun);
+
+        self.if_statements
+            .get(&statement.node.id)
+            .map(|s| s.clone())
     }
 
     pub fn query_struct_initialization(

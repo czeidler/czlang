@@ -663,10 +663,8 @@ impl RustTranspiler {
     ) {
         writer.write("if ");
         let type_narrowing = analyzer
-            .if_statements
-            .get(&if_statement.node.id)
-            .map(|s| s.type_narrowing.as_ref())
-            .flatten();
+            .query_if_statement(block, &if_statement)
+            .and_then(|s| s.type_narrowing);
         if let Some(type_narrowing) = &type_narrowing {
             self.transpile_if_type_narrowing(type_narrowing, writer);
         } else {
