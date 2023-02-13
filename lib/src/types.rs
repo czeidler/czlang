@@ -1,13 +1,7 @@
-use std::{
-    fmt,
-    slice::Iter,
-    sync::{Arc, RwLock},
-    vec::IntoIter,
-};
+use std::{fmt, slice::Iter, sync::Arc, vec::IntoIter};
 
 use crate::ast::{Array, RefType, Slice, Type};
 
-pub type PtrMut<T> = Arc<RwLock<T>>;
 pub type Ptr<T> = Arc<T>;
 
 #[derive(Debug, Clone)]

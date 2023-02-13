@@ -5,7 +5,7 @@ use rust_transpiler::transpile_project;
 pub mod ast;
 mod buildin;
 mod rust_transpiler;
-mod semantics;
+pub mod semantics;
 mod tree_sitter;
 mod types;
 
