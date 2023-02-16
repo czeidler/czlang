@@ -191,4 +191,23 @@ fun main() {
         "#,
         )
     }
+
+    #[test]
+    fn fun_blocks() {
+        transpile_and_validate_project(
+            "test_projects/transpile_fun_blocks",
+            r#"
+fun main() {
+    var v1 = {
+        var v2 = true
+        {
+            var v3 = false
+            v3
+        }
+    }
+    var v3 bool = v1
+}
+        "#,
+        )
+    }
 }

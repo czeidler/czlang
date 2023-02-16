@@ -258,6 +258,14 @@ impl RustTranspiler {
             ExpressionType::SelectorExpression(selector) => {
                 self.transpile_selector_expr(analyzer, expression, selector, block, writer);
             }
+            ExpressionType::Block(block) => {
+                writer.write("{");
+                writer.new_line();
+                writer.indented(|writer| {
+                    self.transpile_block(analyzer, block, writer);
+                });
+                writer.write("}");
+            }
         };
     }
 
@@ -700,11 +708,18 @@ impl RustTranspiler {
         block: &Ptr<Block>,
         writer: &mut Writer,
     ) {
-        for statement in block.statements() {
+        let iterator = block.statements().peekable();
+        for statement in iterator {
             match statement {
                 Statement::Expression(expr) => {
                     self.transpile_expression(analyzer, &expr, block, writer);
-                    writer.write(";");
+                    if analyzer
+                        .query_block(block)
+                        .and_then(|s| s.return_type)
+                        .is_none()
+                    {
+                        writer.write(";");
+                    }
                     writer.new_line();
                 }
                 Statement::VarDeclaration(var) => {
