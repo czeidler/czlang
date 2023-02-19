@@ -110,6 +110,7 @@ pub struct SelectorFieldSemantics {
 
 pub struct FileSemanticAnalyzer {
     pub file: Ptr<FileContext>,
+    /// List of all sum_types in the file
     pub sum_types: HashMap<String, SumType>,
     pub errors: Vec<LangError>,
 
@@ -118,6 +119,8 @@ pub struct FileSemanticAnalyzer {
     /// Just keep track of analyzed/checked functions
     fun_symbols: HashSet<usize>,
     type_identifiers: HashMap<usize, TypeIdentifierSemantics>,
+    /// Validated SumType for type nodes
+    types: HashMap<usize, SumType>,
     // TODO make private by adding a query method:
     if_statements: HashMap<usize, IfStatementSemantics>,
     expressions: HashMap<usize, ExpressionSemantics>,
@@ -141,6 +144,7 @@ impl FileSemanticAnalyzer {
             structs: HashSet::new(),
             fun_symbols: HashSet::new(),
             type_identifiers: HashMap::new(),
+            types: HashMap::new(),
             if_statements: HashMap::new(),
             expressions: HashMap::new(),
             selector_fields: HashMap::new(),
@@ -259,6 +263,7 @@ impl FileSemanticAnalyzer {
             .map(|s| s.clone())
     }
 
+    /// Query type information for a specific type, e.g. for the resolved identifier
     pub fn query_type(&mut self, r#type: &RefType) -> Option<TypeIdentifierSemantics> {
         if let Some(s) = self.type_identifiers.get(&r#type.node.id) {
             return Some(s.clone());
@@ -274,6 +279,44 @@ impl FileSemanticAnalyzer {
         self.type_identifiers
             .get(&r#type.node.id)
             .map(|s| s.clone())
+    }
+
+    pub fn query_parameter_type(&mut self, param: &Parameter) -> Option<SumType> {
+        if let Some(s) = self.types.get(&param.node.id) {
+            return Some(s.clone());
+        }
+
+        Some(self.bind_types(param.node.id, &param.types))
+    }
+
+    pub fn query_return_type(&mut self, signature: &FunctionSignature) -> Option<SumType> {
+        let Some(return_type) = &signature.return_type else {
+            return None;
+        };
+        if let Some(s) = self.types.get(&return_type.node.id) {
+            return Some(s.clone());
+        }
+
+        Some(self.bind_types(return_type.node.id, &return_type.types))
+    }
+
+    pub fn query_variable_type(&mut self, var: &VarDeclaration) -> Option<SumType> {
+        let Some(var_types) = &var.types else {
+            return None;
+        };
+        if let Some(s) = self.types.get(&var.node.id) {
+            return Some(s.clone());
+        }
+
+        Some(self.bind_types(var.node.id, var_types))
+    }
+
+    pub fn query_field_type(&mut self, field: &Field) -> Option<SumType> {
+        if let Some(s) = self.types.get(&field.node.id) {
+            return Some(s.clone());
+        }
+
+        Some(self.bind_types(field.node.id, &field.types))
     }
 
     /// node_id is the node id of the identifier expression
@@ -413,11 +456,11 @@ impl FileSemanticAnalyzer {
         // TODO: struct name clash with other definitions?
 
         for field in &struct_def.fields {
-            self.validate_types(&field.types);
+            self.query_field_type(&field);
         }
     }
 
-    fn validate_types(&mut self, types: &Vec<RefType>) -> SumType {
+    fn bind_types(&mut self, node_id: usize, types: &Vec<RefType>) -> SumType {
         let mut result_types = vec![];
         for t in types {
             if result_types.iter().find(|v| *v == t).is_none() {
@@ -433,6 +476,9 @@ impl FileSemanticAnalyzer {
         }
 
         let result_types = SumType::new(result_types);
+
+        let existing = self.types.insert(node_id, result_types.clone());
+        assert!(existing.is_none());
 
         // Add sum type
         if result_types.len() > 1 {
@@ -484,11 +530,11 @@ impl FileSemanticAnalyzer {
         // TODO: fun name clash with other definitions?
 
         for par_ref in &fun.signature.parameters {
-            self.validate_types(&par_ref.types);
+            self.query_parameter_type(&par_ref);
         }
-        let block = fun.body();
+        self.query_return_type(&fun.signature);
 
-        self.validate_block(fun, &block, false);
+        self.validate_block(fun, &fun.body(), false);
     }
 
     fn bind_block_return_value(&mut self, block: &Ptr<Block>, return_value: Option<SumType>) {
@@ -559,20 +605,38 @@ impl FileSemanticAnalyzer {
                     (SumType::new(vec![]), None)
                 };
 
-                if ret_types.is_empty() && !fun.signature.return_types.is_empty() {
-                    self.errors.push(LangError::type_error(
-                        &expression
-                            .map(|e| e.node.clone())
-                            .unwrap_or(fun.signature.node.clone()),
-                        format!("Expected return type {:?}", fun.signature.return_types),
-                    ));
-                    return None;
-                }
-                if ret_types.is_empty() && fun.signature.return_types.is_empty() {
-                    return None;
-                }
-                let fun_ret_type = fun.signature.return_types.clone();
-                let overlap = intersection(&ret_types.types(), &fun_ret_type);
+                let fun_ret_type = self.query_return_type(&fun.signature);
+                let fun_ret_type = match fun_ret_type {
+                    Some(fun_ret_type) => {
+                        if ret_types.is_empty() {
+                            self.errors.push(LangError::type_error(
+                                &expression
+                                    .map(|e| e.node.clone())
+                                    .unwrap_or(fun.signature.node.clone()),
+                                format!("Expected return type {:?}", fun.signature.return_type),
+                            ));
+                            return None;
+                        }
+                        fun_ret_type
+                    }
+                    None => {
+                        if ret_types.is_empty() {
+                            return None;
+                        }
+                        self.errors.push(LangError::type_error(
+                            &expression
+                                .map(|e| e.node.clone())
+                                .unwrap_or(fun.signature.node.clone()),
+                            format!(
+                                "Return type expected: fun == {:?}, expr == {:?}",
+                                fun.signature.return_type, ret_types,
+                            ),
+                        ));
+                        return None;
+                    }
+                };
+
+                let overlap = intersection(&ret_types.types(), &fun_ret_type.types());
                 if overlap.is_empty() {
                     self.errors.push(LangError::type_error(
                         &expression
@@ -580,7 +644,7 @@ impl FileSemanticAnalyzer {
                             .unwrap_or(fun.signature.node.clone()),
                         format!(
                             "Incompatible return type: fun == {:?}, expr == {:?}",
-                            fun.signature.return_types, ret_types,
+                            fun.signature.return_type, ret_types,
                         ),
                     ));
                     return None;
@@ -599,11 +663,9 @@ impl FileSemanticAnalyzer {
         block: &Ptr<Block>,
         var_declaration: Ptr<VarDeclaration>,
     ) {
-        let mut var_types = if let Some(types) = &var_declaration.types {
-            self.validate_types(types)
-        } else {
-            SumType::new(vec![])
-        };
+        let mut var_types = self
+            .query_variable_type(&var_declaration)
+            .unwrap_or(SumType::empty());
 
         let expr = self
             .validate_expression(fun, block, &var_declaration.value, true)
@@ -952,21 +1014,21 @@ impl FileSemanticAnalyzer {
                         return None;
                     }
                 };
-                let fun_declaration = fun_declaration.as_function_signature();
+                let fun_signature = fun_declaration.as_function_signature();
 
-                if fun_declaration.parameters.len() != fun_call.arguments.len() {
+                if fun_signature.parameters.len() != fun_call.arguments.len() {
                     self.errors.push(LangError::type_error(
                         &expression.node,
                         format!(
                             "Expected {} arguments but found {}",
-                            fun_declaration.parameters.len(),
+                            fun_signature.parameters.len(),
                             fun_call.arguments.len()
                         ),
                     ));
                     return None;
                 }
 
-                for (i, parameter) in fun_declaration.parameters.iter().enumerate() {
+                for (i, parameter) in fun_signature.parameters.iter().enumerate() {
                     let arg = fun_call.arguments.get(i).unwrap();
                     let arg_types = self.validate_expression(fun, block, arg, is_assignment)?;
                     let intersection = intersection(&arg_types.types(), &parameter.types);
@@ -989,7 +1051,7 @@ impl FileSemanticAnalyzer {
                     );
                 }
 
-                Some(SumType::from_types(&fun_declaration.return_types))
+                self.query_return_type(&fun_signature)
             }
             ExpressionType::StructInitialization(struct_init) => {
                 let Some(binding) = self.bind_type_identifier(&struct_init.name_node, &struct_init.name) else {

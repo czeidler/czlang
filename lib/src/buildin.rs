@@ -43,7 +43,7 @@ impl Buildins {
 
                     origin: None,
                 }],
-                return_types: vec![],
+                return_type: None,
             },
         );
         Buildins { functions }

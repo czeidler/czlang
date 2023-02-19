@@ -15,6 +15,10 @@ impl SumType {
         SumType { types }
     }
 
+    pub fn empty() -> Self {
+        SumType::new(vec![])
+    }
+
     pub fn from_type(t: RefType) -> Self {
         SumType { types: vec![t] }
     }

@@ -252,13 +252,19 @@ impl Field {
 }
 
 #[derive(Debug, Clone)]
+pub struct ReturnType {
+    pub node: NodeData,
+    pub types: Vec<RefType>,
+}
+
+#[derive(Debug, Clone)]
 pub struct FunctionSignature {
     pub node: NodeData,
 
     pub name: String,
     pub name_node: NodeData,
     pub parameters: Vec<Parameter>,
-    pub return_types: Vec<RefType>,
+    pub return_type: Option<ReturnType>,
 }
 
 #[derive(Debug, Clone)]
@@ -707,8 +713,11 @@ impl FileContext {
 fn parse_fun<'a>(file: &Ptr<FileContext>, node: &Node<'a>) -> Option<Ptr<Function>> {
     let name = child_by_field(&node, "name")?;
     let parameter_list = child_by_field(&node, "parameters")?;
-    let return_types = match node.child_by_field_name("result".as_bytes()) {
-        Some(return_node) => parse_types(file, &return_node),
+    let return_type = match node.child_by_field_name("result".as_bytes()) {
+        Some(return_node) => Some(ReturnType {
+            node: NodeData::from_node(&return_node),
+            types: parse_types(file, &return_node)?,
+        }),
         None => None,
     };
     let body_node: Node = child_by_field(&node, "body")?;
@@ -720,7 +729,7 @@ fn parse_fun<'a>(file: &Ptr<FileContext>, node: &Node<'a>) -> Option<Ptr<Functio
             name: node_text(&name, file)?,
             name_node: NodeData::from_node(&name),
             parameters: parse_parameters(file, parameter_list)?,
-            return_types: return_types.unwrap_or(vec![]),
+            return_type,
         },
         body_node: NodeData::from_node(&body_node),
     });

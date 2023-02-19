@@ -615,7 +615,7 @@ impl RustTranspiler {
             self.transpile_expression_with_mapping(
                 analyzer,
                 expression,
-                Some(&fun.signature.return_types),
+                fun.signature.return_type.as_ref().map(|r| &r.types),
                 block,
                 writer,
             );
@@ -749,9 +749,9 @@ impl RustTranspiler {
     ) {
         writer.write(&format!("fn {}", fun.signature.name));
         self.transpile_parameters(&fun.signature.parameters, writer);
-        if !fun.signature.return_types.is_empty() {
+        if let Some(return_type) = &fun.signature.return_type {
             writer.write(" -> ");
-            self.transpile_types(&fun.signature.return_types, writer);
+            self.transpile_types(&return_type.types, writer);
         }
         writer.write(" {");
         writer.new_line();
