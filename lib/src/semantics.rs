@@ -636,7 +636,7 @@ impl FileSemanticAnalyzer {
                     }
                 };
 
-                let overlap = intersection(&ret_types.types(), &fun_ret_type.types());
+                let overlap = intersection(&ret_types, &fun_ret_type);
                 if overlap.is_empty() {
                     self.errors.push(LangError::type_error(
                         &expression
@@ -673,7 +673,7 @@ impl FileSemanticAnalyzer {
         if var_types.types().is_empty() {
             var_types = expr
         } else {
-            let overlap = SumType::new(intersection(&var_types.types(), &expr.types()));
+            let overlap = intersection(&var_types, &expr);
             if overlap.len() == 0 {
                 self.errors.push(LangError::type_error(
                     &var_declaration.node,
@@ -732,7 +732,9 @@ impl FileSemanticAnalyzer {
                         let var_types = self.query_var_types(&var_declaration);
                         let types = var_types.into_iter().fold(vec![], |mut target, item| {
                             if let Type::Unresolved(unresolved) = &item.r#type {
-                                if !intersection(&unresolved, types.types()).is_empty() {
+                                if !intersection(&SumType::from_types(&unresolved), types)
+                                    .is_empty()
+                                {
                                     target.append(&mut types.types().clone());
                                     return target;
                                 }
@@ -966,7 +968,7 @@ impl FileSemanticAnalyzer {
                 let right = self
                     .validate_expression(fun, block, &binary.right, is_assignment)
                     .unwrap_or(SumType::new(vec![]));
-                let overlap = intersection(&left.types(), &right.types());
+                let overlap = intersection(&left, &right);
                 if overlap.is_empty() {
                     self.errors.push(LangError::type_error(
                         &expression.node,
@@ -977,7 +979,7 @@ impl FileSemanticAnalyzer {
                     ));
                     return None;
                 }
-                Some(SumType::new(overlap))
+                Some(overlap)
             }
             ExpressionType::ParenthesizedExpression(_) => todo!(),
             ExpressionType::ArrayExpression(array) => Some(SumType::from_type(RefType::value(
@@ -1031,7 +1033,10 @@ impl FileSemanticAnalyzer {
                 for (i, parameter) in fun_signature.parameters.iter().enumerate() {
                     let arg = fun_call.arguments.get(i).unwrap();
                     let arg_types = self.validate_expression(fun, block, arg, is_assignment)?;
-                    let intersection = intersection(&arg_types.types(), &parameter.types);
+                    let parameter_type = self
+                        .query_parameter_type(parameter)
+                        .unwrap_or(SumType::empty());
+                    let intersection = intersection(&arg_types, &parameter_type);
                     if intersection.is_empty() {
                         self.errors.push(LangError::type_error(
                             &arg.node,
@@ -1046,7 +1051,7 @@ impl FileSemanticAnalyzer {
                     self.expressions.insert(
                         arg.node.id,
                         ExpressionSemantics {
-                            resolved_types: Some(SumType::new(intersection)),
+                            resolved_types: Some(intersection),
                         },
                     );
                 }
@@ -1080,7 +1085,10 @@ impl FileSemanticAnalyzer {
 
                     self.bind_struct_field_initialization(field, &struct_field);
 
-                    let overlap = intersection(&field_type.types(), &struct_field.types);
+                    let struct_field_type = self
+                        .query_field_type(&struct_field)
+                        .unwrap_or(SumType::empty());
+                    let overlap = intersection(&field_type, &struct_field_type);
                     if overlap.is_empty() {
                         self.errors.push(LangError::type_error(
                             &field.node,
