@@ -40,6 +40,10 @@
             "named": true
           },
           {
+            "type": "if_statement",
+            "named": true
+          },
+          {
             "type": "int_literal",
             "named": true
           },
@@ -117,6 +121,10 @@
           },
           {
             "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "if_statement",
             "named": true
           },
           {
@@ -234,6 +242,10 @@
             "named": true
           },
           {
+            "type": "if_statement",
+            "named": true
+          },
+          {
             "type": "int_literal",
             "named": true
           },
@@ -311,6 +323,10 @@
           },
           {
             "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "if_statement",
             "named": true
           },
           {
@@ -462,6 +478,10 @@
             "named": true
           },
           {
+            "type": "if_statement",
+            "named": true
+          },
+          {
             "type": "int_literal",
             "named": true
           },
@@ -599,6 +619,10 @@
             "named": true
           },
           {
+            "type": "if_statement",
+            "named": true
+          },
+          {
             "type": "int_literal",
             "named": true
           },
@@ -679,6 +703,10 @@
             "named": true
           },
           {
+            "type": "if_statement",
+            "named": true
+          },
+          {
             "type": "int_literal",
             "named": true
           },
@@ -756,6 +784,10 @@
           },
           {
             "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "if_statement",
             "named": true
           },
           {
@@ -1063,6 +1095,10 @@
             "named": true
           },
           {
+            "type": "if_statement",
+            "named": true
+          },
+          {
             "type": "int_literal",
             "named": true
           },
@@ -1202,6 +1238,10 @@
           },
           {
             "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "if_statement",
             "named": true
           },
           {
@@ -1445,6 +1485,10 @@
             "named": true
           },
           {
+            "type": "if_statement",
+            "named": true
+          },
+          {
             "type": "int_literal",
             "named": true
           },
@@ -1620,6 +1664,10 @@
             "named": true
           },
           {
+            "type": "if_statement",
+            "named": true
+          },
+          {
             "type": "int_literal",
             "named": true
           },
@@ -1697,6 +1745,10 @@
           },
           {
             "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "if_statement",
             "named": true
           },
           {
@@ -1873,6 +1925,10 @@
             "named": true
           },
           {
+            "type": "if_statement",
+            "named": true
+          },
+          {
             "type": "int_literal",
             "named": true
           },
@@ -1947,6 +2003,10 @@
             "named": true
           },
           {
+            "type": "if_statement",
+            "named": true
+          },
+          {
             "type": "int_literal",
             "named": true
           },
@@ -2018,6 +2078,10 @@
           },
           {
             "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "if_statement",
             "named": true
           },
           {
@@ -2306,6 +2370,10 @@
             "named": true
           },
           {
+            "type": "if_statement",
+            "named": true
+          },
+          {
             "type": "int_literal",
             "named": true
           },
@@ -2459,6 +2527,10 @@
           },
           {
             "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "if_statement",
             "named": true
           },
           {

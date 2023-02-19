@@ -123,3 +123,48 @@ fun x() i32 {
     )
   )
 )
+
+==================
+Block Expression
+==================
+
+fun x() {
+  var test = if true {
+    4
+  } else if false {
+    true
+  } else {
+    6
+  }
+}
+
+---
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameter_list)
+    (block
+      (var_declaration
+        (identifier)
+        (if_statement
+          (true)
+          (block
+            (expression_statement
+              (int_literal)))
+          (if_statement
+            (false)
+            (block
+              (expression_statement
+                (true)))
+            (block
+              (expression_statement
+                (int_literal)
+              )
+            )
+          )
+        )
+      )
+    )
+  )
+)
