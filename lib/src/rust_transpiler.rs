@@ -266,6 +266,9 @@ impl RustTranspiler {
                 });
                 writer.write("}");
             }
+            ExpressionType::If(if_statement) => {
+                self.transpile_if_statement(analyzer, if_statement, block, writer)
+            }
         };
     }
 

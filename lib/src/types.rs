@@ -44,8 +44,12 @@ impl SumType {
         self.types.sort();
     }
 
-    pub fn append(&mut self, mut t: SumType) {
-        self.types.append(&mut t.types);
+    pub fn union(&mut self, t: SumType) {
+        for t in t.types {
+            if !self.types.contains(&t) {
+                self.types.push(t);
+            }
+        }
         self.types.sort();
     }
 

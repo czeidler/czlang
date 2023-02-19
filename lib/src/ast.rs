@@ -1,4 +1,4 @@
-use std::{hash::Hash, sync::Arc};
+use std::{cmp::Ordering, hash::Hash, sync::Arc};
 
 use tree_sitter::{Node, Tree};
 
@@ -368,7 +368,7 @@ impl<'a> Iterator for StatementIterator<'a> {
                     parse_return_statement(&self.file, &statement_node, &self.block)
                         .map(|statement| Statement::Return(statement))
                 }
-                "if_statement" => parse_if(&self.file, statement_node, self.block.clone())
+                "if_statement" => parse_if(&self.file, &statement_node, &self.block)
                     .map(|statement| Statement::IfStatement(statement)),
 
                 _ => None,
@@ -417,11 +417,35 @@ pub enum Type {
     Unresolved(Vec<RefType>),
 }
 
-#[derive(Debug, Clone, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Eq, Hash)]
 pub struct RefType {
     pub node: NodeData,
     pub is_reference: bool,
     pub r#type: Type,
+}
+
+impl PartialOrd for RefType {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(Ord::cmp(self, other))
+    }
+}
+
+impl Ord for RefType {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self.r#type.cmp(&other.r#type) {
+            Ordering::Less => Ordering::Less,
+            Ordering::Greater => Ordering::Greater,
+            Ordering::Equal => {
+                if self.is_reference == other.is_reference {
+                    Ordering::Equal
+                } else if self.node.id < other.node.id {
+                    Ordering::Less
+                } else {
+                    Ordering::Greater
+                }
+            }
+        }
+    }
 }
 
 impl PartialEq for RefType {
@@ -578,6 +602,7 @@ pub enum ExpressionType {
     StructInitialization(StructInitialization),
     SelectorExpression(SelectorExpression),
     Block(Ptr<Block>),
+    If(Ptr<IfStatement>),
 }
 
 #[derive(Debug, Clone)]
@@ -912,6 +937,7 @@ fn parse_expression(
             &node,
             BlockParent::Block(block.clone()),
         )),
+        "if_statement" => ExpressionType::If(parse_if(context, &node, block)?),
         _ => {
             log::error!("Unknown expression kind: {}", node.kind());
             return None;
@@ -1101,8 +1127,8 @@ fn parse_return_statement<'a>(
 
 fn parse_if<'a>(
     context: &Ptr<FileContext>,
-    node: Node<'a>,
-    block: Ptr<Block>,
+    node: &Node<'a>,
+    block: &Ptr<Block>,
 ) -> Option<Ptr<IfStatement>> {
     let condition = child_by_field(&node, "condition")?;
     let consequence = child_by_field(&node, "consequence")?;
@@ -1114,16 +1140,12 @@ fn parse_if<'a>(
     let alternative = match alternative {
         Some(alternative) => {
             if alternative.kind() == "if_statement" {
-                Some(IfAlternative::If(parse_if(
-                    context,
-                    alternative.clone(),
-                    block,
-                )?))
+                Some(IfAlternative::If(parse_if(context, &alternative, block)?))
             } else {
                 Some(IfAlternative::Else(parse_block(
                     context,
                     &alternative,
-                    BlockParent::Block(block),
+                    BlockParent::Block(block.clone()),
                 )))
             }
         }

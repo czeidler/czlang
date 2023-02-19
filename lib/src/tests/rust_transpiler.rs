@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod rust_transpiler_tests {
-    use crate::test_utils::transpile_and_validate_project;
+    use crate::test_utils::{transpile_and_validate_project, validate_project};
 
     #[test]
     fn function_call() {
@@ -206,6 +206,47 @@ fun main() {
         }
     }
     var v3 bool = v1
+}
+        "#,
+        )
+    }
+
+    #[test]
+    fn fun_if_blocks_err() {
+        validate_project(
+            "test_projects/transpile_fun_if_blocks_err",
+            r#"
+fun main() {
+    var v1 = if true {
+        1
+    } else if false {
+        5
+    }
+    var v2 i32 = v1
+}
+        "#,
+        )
+        .unwrap_err();
+    }
+
+    #[test]
+    fn fun_if_blocks() {
+        transpile_and_validate_project(
+            "test_projects/transpile_fun_if_blocks",
+            r#"
+fun main() {
+    var v1 = if true {
+        1
+    } else if false {
+        2
+    } else {
+        6
+    }
+    var v2 i32 = v1
+}
+        "#,
+        )
+    }
 }
         "#,
         )

@@ -413,7 +413,7 @@ impl FileSemanticAnalyzer {
         // TODO: struct name clash with other definitions?
 
         for field in &struct_def.fields {
-            self.validate_declaration_types(&field.types);
+            self.validate_types(&field.types);
         }
     }
 
@@ -431,11 +431,8 @@ impl FileSemanticAnalyzer {
                 ))
             }
         }
-        SumType::new(result_types)
-    }
 
-    fn validate_declaration_types(&mut self, types: &Vec<RefType>) -> SumType {
-        let result_types = self.validate_types(types);
+        let result_types = SumType::new(result_types);
 
         // Add sum type
         if result_types.len() > 1 {
@@ -487,11 +484,7 @@ impl FileSemanticAnalyzer {
         // TODO: fun name clash with other definitions?
 
         for par_ref in &fun.signature.parameters {
-            // Add sum type
-            if par_ref.types.len() > 1 {
-                let sum_type = self.validate_types(&par_ref.types);
-                self.sum_types.insert(sum_type.sum_type_name(), sum_type);
-            }
+            self.validate_types(&par_ref.types);
         }
         let block = fun.body();
 
@@ -519,7 +512,7 @@ impl FileSemanticAnalyzer {
             if last_statement.map(|s| s.is_return()).unwrap_or(false) {
                 self.errors.push(LangError::type_error(
                     statement.node(),
-                    "Not statements allowed after return statement".to_string(),
+                    "No statements allowed after return statement".to_string(),
                 ));
             }
 
@@ -594,7 +587,7 @@ impl FileSemanticAnalyzer {
                 }
             }
             Statement::IfStatement(if_statement) => {
-                self.validate_if_statement(fun, block, if_statement, is_assignment)
+                self.validate_if_statement(fun, block, if_statement, is_assignment);
             }
         };
         None
@@ -607,7 +600,7 @@ impl FileSemanticAnalyzer {
         var_declaration: Ptr<VarDeclaration>,
     ) {
         let mut var_types = if let Some(types) = &var_declaration.types {
-            self.validate_declaration_types(types)
+            self.validate_types(types)
         } else {
             SumType::new(vec![])
         };
@@ -722,6 +715,7 @@ impl FileSemanticAnalyzer {
             ExpressionType::StructInitialization(_) => {}
             ExpressionType::SelectorExpression(_) => {}
             ExpressionType::Block(_) => {}
+            ExpressionType::If(_) => {}
         }
     }
 
@@ -816,6 +810,12 @@ impl FileSemanticAnalyzer {
         }
     }
 
+    /// Returns the resolved type of the expression.
+    /// If None is returned the type couldn't be resolved.
+    /// If an empty SumType is returned this means the expression didn't return, e.g. a block containing a return
+    /// statement.
+    ///
+    /// # Arguments
     /// * is_assignment: If the expression is expected to return a value, e.g. from a block
     fn validate_expression(
         &mut self,
@@ -825,9 +825,10 @@ impl FileSemanticAnalyzer {
         is_assignment: bool,
     ) -> Option<SumType> {
         let types = match &expression.r#type {
-            ExpressionType::String(_) => {
-                SumType::from_type(RefType::value(expression.node.clone(), Type::String))
-            }
+            ExpressionType::String(_) => Some(SumType::from_type(RefType::value(
+                expression.node.clone(),
+                Type::String,
+            ))),
 
             ExpressionType::Identifier(identifier) => {
                 let identifier =
@@ -843,33 +844,35 @@ impl FileSemanticAnalyzer {
                         }
                     };
                 match identifier {
-                    IdentifierBinding::VarDeclaration(var) => self.query_var_types(&var),
-                    IdentifierBinding::Parameter(param) => SumType::from_types(&param.types),
+                    IdentifierBinding::VarDeclaration(var) => Some(self.query_var_types(&var)),
+                    IdentifierBinding::Parameter(param) => Some(SumType::from_types(&param.types)),
                 }
             }
-            ExpressionType::IntLiteral(_) => SumType::from_type(RefType::value(
+            ExpressionType::IntLiteral(_) => Some(SumType::from_type(RefType::value(
                 expression.node.clone(),
                 Type::Unresolved(vec![
                     RefType::value(expression.node.clone(), Type::I32),
                     RefType::value(expression.node.clone(), Type::U32),
                 ]),
-            )),
-            ExpressionType::Null => {
-                SumType::from_type(RefType::value(expression.node.clone(), Type::Null))
-            }
-            ExpressionType::Bool(_) => {
-                SumType::from_type(RefType::value(expression.node.clone(), Type::Bool))
-            }
+            ))),
+            ExpressionType::Null => Some(SumType::from_type(RefType::value(
+                expression.node.clone(),
+                Type::Null,
+            ))),
+            ExpressionType::Bool(_) => Some(SumType::from_type(RefType::value(
+                expression.node.clone(),
+                Type::Bool,
+            ))),
 
             ExpressionType::UnaryExpression(unary) => match unary.operator {
                 UnaryOperator::Minus => match unary.operand.r#type {
-                    ExpressionType::IntLiteral(_) => SumType::from_type(RefType::value(
+                    ExpressionType::IntLiteral(_) => Some(SumType::from_type(RefType::value(
                         unary.operand.node.clone(),
                         Type::Unresolved(vec![RefType::value(
                             unary.operand.node.clone(),
                             Type::I32,
                         )]),
-                    )),
+                    ))),
                     _ => {
                         self.errors.push(LangError::type_error(
                             &expression.node,
@@ -878,19 +881,18 @@ impl FileSemanticAnalyzer {
                         return None;
                     }
                 },
-                UnaryOperator::Not => self
-                    .validate_expression(fun, block, &unary.operand, is_assignment)
-                    .unwrap_or(SumType::new(vec![])),
+                UnaryOperator::Not => {
+                    self.validate_expression(fun, block, &unary.operand, is_assignment)
+                }
                 UnaryOperator::Reference => {
-                    let types = self
-                        .validate_expression(fun, block, &unary.operand, is_assignment)
-                        .unwrap_or(SumType::new(vec![]));
+                    let types = self.validate_expression(fun, block, &unary.operand, is_assignment);
 
-                    types
-                        .types()
-                        .into_iter()
-                        .map(|it| RefType::reference(it.node.clone(), it.r#type.clone()))
-                        .collect()
+                    types.map(|s| {
+                        s.types()
+                            .into_iter()
+                            .map(|it| RefType::reference(it.node.clone(), it.r#type.clone()))
+                            .collect()
+                    })
                 }
                 UnaryOperator::TypeOf => todo!(),
             },
@@ -913,10 +915,10 @@ impl FileSemanticAnalyzer {
                     ));
                     return None;
                 }
-                SumType::new(overlap)
+                Some(SumType::new(overlap))
             }
             ExpressionType::ParenthesizedExpression(_) => todo!(),
-            ExpressionType::ArrayExpression(array) => SumType::from_type(RefType::value(
+            ExpressionType::ArrayExpression(array) => Some(SumType::from_type(RefType::value(
                 expression.node.clone(),
                 Type::Array(Array {
                     types: Ptr::new(self.validate_expression_list(
@@ -927,8 +929,8 @@ impl FileSemanticAnalyzer {
                     )),
                     length: array.expressions.len(),
                 }),
-            )),
-            ExpressionType::SliceExpression(slice) => SumType::from_type(RefType::value(
+            ))),
+            ExpressionType::SliceExpression(slice) => Some(SumType::from_type(RefType::value(
                 expression.node.clone(),
                 Type::Slice(Slice {
                     types: Ptr::new(self.validate_expression_list(
@@ -938,7 +940,7 @@ impl FileSemanticAnalyzer {
                         is_assignment,
                     )),
                 }),
-            )),
+            ))),
             ExpressionType::FunctionCall(fun_call) => {
                 let fun_declaration = match self.lookup_function_declaration(block, &fun_call) {
                     Some(fun) => fun,
@@ -987,7 +989,7 @@ impl FileSemanticAnalyzer {
                     );
                 }
 
-                SumType::from_types(&fun_declaration.return_types)
+                Some(SumType::from_types(&fun_declaration.return_types))
             }
             ExpressionType::StructInitialization(struct_init) => {
                 let Some(binding) = self.bind_type_identifier(&struct_init.name_node, &struct_init.name) else {
@@ -1036,27 +1038,28 @@ impl FileSemanticAnalyzer {
                     ));
                 };
 
-                SumType::from_type(RefType::value(
+                Some(SumType::from_type(RefType::value(
                     expression.node.clone(),
                     Type::Identifier(struct_init.name.clone()),
-                ))
+                )))
             }
             ExpressionType::SelectorExpression(select) => {
-                self.validate_selector_expression(fun, block, select, is_assignment)?
+                Some(self.validate_selector_expression(fun, block, select, is_assignment)?)
             }
-            ExpressionType::Block(block) => self
-                .validate_block(fun, block, is_assignment)
-                .unwrap_or(SumType::new(vec![])),
+            ExpressionType::Block(block) => self.validate_block(fun, block, is_assignment),
+            ExpressionType::If(if_statement) => {
+                self.validate_if_statement(fun, block, if_statement, is_assignment)
+            }
         };
         let existing = self.expressions.insert(
             expression.node.id,
             ExpressionSemantics {
-                resolved_types: Some(types.clone()),
+                resolved_types: types.clone(),
             },
         );
         assert!(existing.is_none());
 
-        Some(types)
+        types
     }
 
     fn validate_expression_list(
@@ -1235,7 +1238,7 @@ impl FileSemanticAnalyzer {
         block: &Ptr<Block>,
         if_statement: &Ptr<IfStatement>,
         is_assignment: bool,
-    ) {
+    ) -> Option<SumType> {
         if let Some(binary) = match &if_statement.condition.r#type {
             ExpressionType::BinaryExpression(binary) => Some(binary),
             _ => None,
@@ -1253,18 +1256,30 @@ impl FileSemanticAnalyzer {
             }
         }
 
-        self.validate_block(fun, &if_statement.consequence, is_assignment);
+        let mut sum_type = self.validate_block(fun, &if_statement.consequence, is_assignment);
 
         if let Some(alternative) = &if_statement.alternative {
-            match alternative {
+            let alternative_type = match alternative {
                 IfAlternative::Else(else_block) => {
-                    self.validate_block(fun, else_block, is_assignment);
+                    self.validate_block(fun, else_block, is_assignment)
                 }
                 IfAlternative::If(nested_if) => {
-                    self.validate_if_statement(fun, block, nested_if, is_assignment);
+                    self.validate_if_statement(fun, block, nested_if, is_assignment)
                 }
+            };
+            if let Some(alternative_type) = alternative_type {
+                let mut temp = sum_type.unwrap_or(SumType::new(vec![]));
+                temp.union(alternative_type);
+                sum_type = Some(temp);
             }
+        } else if is_assignment {
+            self.errors.push(LangError::type_error(
+                &if_statement.node,
+                "Else alternative required for if assignment".to_string(),
+            ));
         }
+
+        sum_type
     }
 
     fn validate_typeof_expression(
@@ -1318,7 +1333,7 @@ impl FileSemanticAnalyzer {
                 ));
                 return None;
             }
-            left.types.append(right.types);
+            left.types.union(right.types);
             return Some(left);
         }
 
