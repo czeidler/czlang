@@ -247,6 +247,26 @@ fun main() {
         "#,
         )
     }
+
+    #[test]
+    fn fun_if_blocks_2() {
+        transpile_and_validate_project(
+            "test_projects/transpile_fun_if_blocks_2",
+            r#"
+fun main() {
+    var v1 = if true {
+        1
+    } else if false {
+        -2
+    } else {
+        6
+    }
+    var v2 i32 = v1
+}
+        "#,
+        )
+    }
+
 }
         "#,
         )

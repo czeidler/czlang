@@ -637,7 +637,7 @@ impl FileSemanticAnalyzer {
                 };
 
                 let overlap = intersection(&ret_types, &fun_ret_type);
-                if overlap.is_empty() {
+                if overlap.is_none() {
                     self.errors.push(LangError::type_error(
                         &expression
                             .map(|e| e.node.clone())
@@ -673,8 +673,7 @@ impl FileSemanticAnalyzer {
         if var_types.types().is_empty() {
             var_types = expr
         } else {
-            let overlap = intersection(&var_types, &expr);
-            if overlap.len() == 0 {
+            let Some(overlap) = intersection(&expr, &var_types ) else {
                 self.errors.push(LangError::type_error(
                     &var_declaration.node,
                     format!(
@@ -684,9 +683,8 @@ impl FileSemanticAnalyzer {
                     ),
                 ));
                 return;
-            }
+            };
             self.back_propagate_types(block, &var_declaration.value, &overlap);
-
             if var_types.types().is_empty() {
                 var_types = overlap;
             }
@@ -732,8 +730,7 @@ impl FileSemanticAnalyzer {
                         let var_types = self.query_var_types(&var_declaration);
                         let types = var_types.into_iter().fold(vec![], |mut target, item| {
                             if let Type::Unresolved(unresolved) = &item.r#type {
-                                if !intersection(&SumType::from_types(&unresolved), types)
-                                    .is_empty()
+                                if !intersection(&SumType::from_types(&unresolved), types).is_some()
                                 {
                                     target.append(&mut types.types().clone());
                                     return target;
@@ -968,8 +965,7 @@ impl FileSemanticAnalyzer {
                 let right = self
                     .validate_expression(fun, block, &binary.right, is_assignment)
                     .unwrap_or(SumType::new(vec![]));
-                let overlap = intersection(&left, &right);
-                if overlap.is_empty() {
+                let Some(overlap) = intersection(&left, &right) else {
                     self.errors.push(LangError::type_error(
                         &expression.node,
                         format!(
@@ -978,7 +974,8 @@ impl FileSemanticAnalyzer {
                         ),
                     ));
                     return None;
-                }
+                };
+                println!("{}", overlap.to_string());
                 Some(overlap)
             }
             ExpressionType::ParenthesizedExpression(_) => todo!(),
@@ -1036,8 +1033,7 @@ impl FileSemanticAnalyzer {
                     let parameter_type = self
                         .query_parameter_type(parameter)
                         .unwrap_or(SumType::empty());
-                    let intersection = intersection(&arg_types, &parameter_type);
-                    if intersection.is_empty() {
+                    let Some(intersection) = intersection(&arg_types, &parameter_type) else {
                         self.errors.push(LangError::type_error(
                             &arg.node,
                             format!(
@@ -1046,7 +1042,7 @@ impl FileSemanticAnalyzer {
                             ),
                         ));
                         return None;
-                    }
+                    };
                     // overwrite previous results
                     self.expressions.insert(
                         arg.node.id,
@@ -1089,7 +1085,7 @@ impl FileSemanticAnalyzer {
                         .query_field_type(&struct_field)
                         .unwrap_or(SumType::empty());
                     let overlap = intersection(&field_type, &struct_field_type);
-                    if overlap.is_empty() {
+                    if overlap.is_none() {
                         self.errors.push(LangError::type_error(
                             &field.node,
                             format!(

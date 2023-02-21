@@ -10,9 +10,13 @@ pub struct SumType {
 }
 
 impl SumType {
-    pub fn new(mut types: Vec<RefType>) -> Self {
-        types.sort();
-        SumType { types }
+    pub fn new(types: Vec<RefType>) -> Self {
+        let mut result = SumType { types: vec![] };
+        for t in types {
+            result.push(t);
+        }
+
+        result
     }
 
     pub fn empty() -> Self {
@@ -24,11 +28,7 @@ impl SumType {
     }
 
     pub fn from_types(types: &Vec<RefType>) -> Self {
-        let mut sum_type = SumType {
-            types: types.clone(),
-        };
-        sum_type.types.sort();
-        sum_type
+        SumType::new(types.clone())
     }
 
     pub fn types(&self) -> &Vec<RefType> {
@@ -44,8 +44,10 @@ impl SumType {
     }
 
     pub fn push(&mut self, t: RefType) {
-        self.types.push(t);
-        self.types.sort();
+        if !self.types.contains(&t) {
+            self.types.push(t);
+            self.types.sort();
+        }
     }
 
     pub fn union(&mut self, t: SumType) {
@@ -59,6 +61,10 @@ impl SumType {
 
     pub fn iter(&self) -> Iter<RefType> {
         self.types.iter()
+    }
+
+    pub fn to_string(&self) -> String {
+        types_to_string(&self.types)
     }
 
     pub fn sum_type_name(&self) -> String {
@@ -167,50 +173,13 @@ impl fmt::Display for RefType {
     }
 }
 
-/// Test if left is fully in right
-/// Usages:
-/// - return expr matches return type
-/// - var declaration matches var type
-/// - back_propagate_types: unresolved contains right side
-/// - binary expression: left intersects right
-/// - function parameter: input intersects with param types
-/// - struct init: expression intersects with field types
-pub fn intersection(left_types: &SumType, right_types: &SumType) -> SumType {
-    if left_types.len() == 1 {
-        if let Some(l) = left_types.types().get(0) {
-            if let Type::Unresolved(types) = &l.r#type {
-                let inter = intersection(&SumType::from_types(types), right_types);
-                if inter.len() <= 1 {
-                    return inter;
-                }
-                // still unresolved
-                return SumType::new(vec![RefType::value(
-                    l.node.clone(),
-                    Type::Unresolved(inter.types().clone()),
-                )]);
-            }
-        }
-    }
-
-    if right_types.len() == 1 {
-        if let Some(r) = right_types.types().get(0) {
-            if let Type::Unresolved(types) = &r.r#type {
-                let inter = intersection(left_types, &SumType::from_types(types));
-                if inter.len() <= 1 {
-                    return inter;
-                }
-                // still unresolved
-                return SumType::new(vec![RefType::value(
-                    r.node.clone(),
-                    Type::Unresolved(inter.types().clone()),
-                )]);
-            }
-        }
-    }
-
-    let mut output = Vec::new();
-    for left in left_types.types() {
-        for right in right_types.types() {
+/// For example:
+/// left: i8 | i32,   right: i8 |   => i8
+/// i8 | i32 | u32,   right: unresolved<i8 | i32> | u32   =>
+fn overlap(left_types: &Vec<RefType>, right_types: &Vec<RefType>) -> Vec<RefType> {
+    let mut output = vec![];
+    for left in left_types {
+        for right in right_types {
             if left.is_reference != right.is_reference {
                 continue;
             }
@@ -219,49 +188,207 @@ pub fn intersection(left_types: &SumType, right_types: &SumType) -> SumType {
                     if l.length != r.length {
                         continue;
                     } else {
-                        let inter = intersection(
-                            &SumType::from_types(&l.types),
-                            &SumType::from_types(&r.types),
-                        );
-                        if inter.len() == 0 {
+                        let inter = overlap(&l.types, &r.types);
+                        if inter.is_empty() {
                             continue;
-                        }
+                        };
                         output.push(RefType {
                             node: left.node.clone(),
                             is_reference: left.is_reference,
                             r#type: Type::Array(Array {
-                                types: Ptr::new(inter.types().clone()),
+                                types: Ptr::new(inter.clone()),
                                 length: l.length,
                             }),
                         });
                     }
                 }
                 (Type::Slice(l), Type::Slice(r)) => {
-                    let inter = intersection(
-                        &SumType::from_types(&l.types),
-                        &SumType::from_types(&r.types),
-                    );
-                    if inter.len() == 0 {
+                    let inter = overlap(&l.types, &r.types);
+                    if inter.is_empty() {
                         continue;
-                    }
+                    };
                     output.push(RefType {
                         node: left.node.clone(),
                         is_reference: left.is_reference,
                         r#type: Type::Slice(Slice {
-                            types: Ptr::new(inter.types().clone()),
+                            types: Ptr::new(inter.clone()),
                         }),
                     });
+                }
+                (Type::Unresolved(l), Type::Unresolved(r)) => {
+                    let mut over = overlap(l, r);
+                    if over.len() == 0 {
+                        continue;
+                    } else if over.len() == 1 {
+                        output.push(over.pop().unwrap())
+                    } else {
+                        output.push(RefType {
+                            node: left.node.clone(),
+                            is_reference: left.is_reference,
+                            r#type: Type::Unresolved(over),
+                        });
+                    }
+                }
+                (Type::Unresolved(l), _) => {
+                    let mut over = overlap(l, right_types);
+                    if over.len() == 0 {
+                        continue;
+                    } else if over.len() == 1 {
+                        output.push(over.pop().unwrap())
+                    } else {
+                        output.push(RefType {
+                            node: left.node.clone(),
+                            is_reference: left.is_reference,
+                            r#type: Type::Unresolved(over),
+                        });
+                    }
+                }
+                (_, Type::Unresolved(r)) => {
+                    let mut over = overlap(left_types, r);
+                    if over.len() == 0 {
+                        continue;
+                    } else if over.len() == 1 {
+                        output.push(over.pop().unwrap())
+                    } else {
+                        output.push(RefType {
+                            node: left.node.clone(),
+                            is_reference: left.is_reference,
+                            r#type: Type::Unresolved(over),
+                        });
+                    }
                 }
                 _ => {
                     if left.r#type == right.r#type {
                         output.push(left.clone());
-                        break;
                     }
                 }
             }
         }
     }
-    SumType::new(output)
+    output
+}
+
+/// Test if left is fully in right
+/// Usages:
+/// - return expr matches return type
+/// - var declaration matches var type
+/// - back_propagate_types: unresolved contains right side
+/// - binary expression: left intersects right
+/// - function parameter: input intersects with param types
+/// - struct init: expression intersects with field types
+///
+/// For example:
+/// left: bool | i32,                                right: bool | i32 | u32            => bool | i32
+/// left: bool | unresolved<i8 | i32>,               right: bool | u32 | i32            => bool | i32
+/// left: bool | i32,                                right: bool | unresolved<i8 | i32> => bool | i32
+/// left: bool | unresolved<i8 | i32 | u32>,         right: bool | unresolved<i8 | i32> => bool | unresolved<i8 | i32>
+/// left: bool | unresolved<i32 | u32>[],            right: bool | i32[]                => bool | i32[]
+/// left: bool | (string | unresolved<i32 | u32>)[], right: bool | (string | i32)[]     => bool | (string | i32)[]
+pub fn intersection(left_types: &SumType, right_types: &SumType) -> Option<SumType> {
+    let mut output = Vec::new();
+    for left in left_types.types() {
+        let found = right_types
+            .types()
+            .iter()
+            .filter_map(|right| {
+                if left.is_reference != right.is_reference {
+                    return None;
+                }
+                match (&left.r#type, &right.r#type) {
+                    (Type::Array(l), Type::Array(r)) => {
+                        if l.length != r.length {
+                            return None;
+                        } else {
+                            let inter = intersection(
+                                &SumType::from_types(&l.types),
+                                &SumType::from_types(&r.types),
+                            );
+                            let Some(inter) = inter else {
+                            return None;
+                        };
+                            return Some(RefType {
+                                node: left.node.clone(),
+                                is_reference: left.is_reference,
+                                r#type: Type::Array(Array {
+                                    types: Ptr::new(inter.types().clone()),
+                                    length: l.length,
+                                }),
+                            });
+                        }
+                    }
+                    (Type::Slice(l), Type::Slice(r)) => {
+                        let inter = intersection(
+                            &SumType::from_types(&l.types),
+                            &SumType::from_types(&r.types),
+                        );
+                        let Some(inter) = inter else {
+                        return None;
+                    };
+                        return Some(RefType {
+                            node: left.node.clone(),
+                            is_reference: left.is_reference,
+                            r#type: Type::Slice(Slice {
+                                types: Ptr::new(inter.types().clone()),
+                            }),
+                        });
+                    }
+                    (Type::Unresolved(l), Type::Unresolved(r)) => {
+                        let mut over = overlap(l, r);
+                        if over.len() == 0 {
+                            return None;
+                        } else if over.len() == 1 {
+                            over.pop()
+                        } else {
+                            Some(RefType {
+                                node: left.node.clone(),
+                                is_reference: left.is_reference,
+                                r#type: Type::Unresolved(over),
+                            })
+                        }
+                    }
+                    (Type::Unresolved(l), _) => {
+                        let mut over = overlap(l, right_types.types());
+                        if over.len() == 0 {
+                            return None;
+                        } else if over.len() == 1 {
+                            over.pop()
+                        } else {
+                            Some(RefType {
+                                node: left.node.clone(),
+                                is_reference: left.is_reference,
+                                r#type: Type::Unresolved(over),
+                            })
+                        }
+                    }
+                    (_, Type::Unresolved(r)) => {
+                        let mut over = overlap(left_types.types(), r);
+                        if over.len() == 0 {
+                            return None;
+                        } else if over.len() == 1 {
+                            over.pop()
+                        } else {
+                            Some(RefType {
+                                node: left.node.clone(),
+                                is_reference: left.is_reference,
+                                r#type: Type::Unresolved(over),
+                            })
+                        }
+                    }
+                    _ => {
+                        if left.r#type == right.r#type {
+                            return Some(left.clone());
+                        }
+                        None
+                    }
+                }
+            })
+            .next();
+        let Some(found) = found else {
+            return None;
+        };
+        output.push(found);
+    }
+    Some(SumType::new(output))
 }
 
 #[cfg(test)]
@@ -270,7 +397,7 @@ mod tests {
 
     use crate::{
         ast::{Array, NodeData, RefType, SourcePosition, SourceSpan, Type},
-        types::{intersection, types_to_string, Ptr, SumType},
+        types::{intersection, Ptr, SumType},
     };
 
     fn is_equal(left_types: &Vec<RefType>, right_types: &Vec<RefType>) -> bool {
@@ -332,7 +459,8 @@ mod tests {
                 ]),
             }),
         )];
-        let inter = intersection(&SumType::from_types(&left), &SumType::from_types(&right));
+        let inter =
+            intersection(&SumType::from_types(&left), &SumType::from_types(&right)).unwrap();
         assert!(is_equal(inter.types(), &left));
     }
 
@@ -377,15 +505,27 @@ mod tests {
                 ]),
             }),
         )];
-        let inter = intersection(&SumType::from_types(&left), &SumType::from_types(&right));
+        let inter =
+            intersection(&SumType::from_types(&left), &SumType::from_types(&right)).unwrap();
         assert!(is_equal(inter.types(), &left));
     }
 
-    // u32 | i32 | [](bool | string) intersection i32 | []bool | string => i32 | []bool
+    //  i32 | []bool intersection u32 | i32 | [](bool | string) => i32 | []bool
     #[test]
     fn test_intersection_3() {
-        // u32 | i32 | [2](bool | string)
+        // i32 | [2]bool
         let left = vec![
+            RefType::value(node(5), Type::I32),
+            RefType::value(
+                node(5),
+                Type::Array(Array {
+                    length: 2,
+                    types: Ptr::new(vec![RefType::value(node(5), Type::Bool)]),
+                }),
+            ),
+        ];
+        // u32 | i32 | [2](bool | string)
+        let right = vec![
             RefType::value(node(6), Type::U32),
             RefType::value(node(5), Type::I32),
             RefType::value(
@@ -399,19 +539,9 @@ mod tests {
                 }),
             ),
         ];
-        // i32 | [2]bool | string
-        let right = vec![
-            RefType::value(node(5), Type::I32),
-            RefType::value(
-                node(5),
-                Type::Array(Array {
-                    length: 2,
-                    types: Ptr::new(vec![RefType::value(node(5), Type::Bool)]),
-                }),
-            ),
-            RefType::value(node(5), Type::String),
-        ];
-        let inter = intersection(&SumType::from_types(&left), &SumType::from_types(&right));
+
+        let inter =
+            intersection(&SumType::from_types(&left), &SumType::from_types(&right)).unwrap();
         assert!(is_equal(
             inter.types(),
             // i32 | []bool
@@ -432,7 +562,7 @@ mod tests {
     // e.g.[](i32|u32) intersects typeof [1, 2, 3, 4]
     #[test]
     fn test_intersection_4() {
-        // u32 | i32 | [2](bool | string)
+        // [](i32 | u32)
         let left = &vec![RefType::value(
             node(5),
             Type::Array(Array {
@@ -443,7 +573,7 @@ mod tests {
                 ]),
             }),
         )];
-        // []unresolved
+        // []unresolved(i32 | u32 | u8)]
         let right = vec![RefType::value(
             node(5),
             Type::Array(Array {
@@ -458,7 +588,8 @@ mod tests {
                 )]),
             }),
         )];
-        let inter = intersection(&SumType::from_types(&left), &SumType::from_types(&right));
+        let inter =
+            intersection(&SumType::from_types(&left), &SumType::from_types(&right)).unwrap();
         assert!(is_equal(
             inter.types(),
             &vec![RefType::value(
@@ -474,6 +605,32 @@ mod tests {
                     )]),
                 })
             )]
+        ));
+    }
+
+    #[test]
+    fn test_intersection_5() {
+        // var value: i32 = unresolved<i32> | unresolved<i32 | u32>
+        let left = vec![RefType::value(node(5), Type::I32)];
+        // []unresolved
+        let right = vec![
+            RefType::value(
+                node(6),
+                Type::Unresolved(vec![RefType::value(node(0), Type::I32)]),
+            ),
+            RefType::value(
+                node(7),
+                Type::Unresolved(vec![
+                    RefType::value(node(0), Type::I32),
+                    RefType::value(node(0), Type::U32),
+                ]),
+            ),
+        ];
+        let inter =
+            intersection(&SumType::from_types(&left), &SumType::from_types(&right)).unwrap();
+        assert!(is_equal(
+            inter.types(),
+            &vec![RefType::value(node(5), Type::I32)]
         ));
     }
 }
