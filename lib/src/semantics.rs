@@ -728,18 +728,9 @@ impl FileSemanticAnalyzer {
                 match id {
                     IdentifierBinding::VarDeclaration(var_declaration) => {
                         let var_types = self.query_var_types(&var_declaration);
-                        let types = var_types.into_iter().fold(vec![], |mut target, item| {
-                            if let Type::Unresolved(unresolved) = &item.r#type {
-                                if !intersection(&SumType::from_types(&unresolved), types).is_some()
-                                {
-                                    target.append(&mut types.types().clone());
-                                    return target;
-                                }
-                            }
-                            target.push(item);
-                            target
-                        });
-                        let types = SumType::new(types);
+                        let Some(types) = intersection(types, &var_types) else {
+                            return;
+                        };
 
                         // follow the back propergation further
                         self.back_propagate_types(block, &var_declaration.value, &types);
@@ -766,7 +757,23 @@ impl FileSemanticAnalyzer {
             ExpressionType::ParenthesizedExpression(expr) => {
                 self.back_propagate_types(block, &expr.expression, types)
             }
-            ExpressionType::IntLiteral(_) => {}
+            ExpressionType::IntLiteral(_) => {
+                let resolved_types = match self
+                    .query_expression(block, expression)
+                    .and_then(|s| s.resolved_types)
+                    .and_then(|resolved_types| intersection(types, &resolved_types))
+                {
+                    Some(resolved_types) => resolved_types,
+                    None => types.clone(),
+                };
+                let entry =
+                    self.expressions
+                        .entry(expression.node.id)
+                        .or_insert(ExpressionSemantics {
+                            resolved_types: None,
+                        });
+                entry.resolved_types = Some(resolved_types);
+            }
             ExpressionType::Null => {}
             ExpressionType::Bool(_) => {}
             ExpressionType::ArrayExpression(_) => {}
