@@ -1311,7 +1311,13 @@ fn error_to_string(err: &Node, source: &str) -> String {
         .trim()
         .to_string();
 
-    format!("{}: {},,{}{}", error_type, text, &err.to_sexp(), children)
+    format!(
+        "{}: text: {}, err: {}, children: {}",
+        error_type,
+        text,
+        &err.to_sexp(),
+        children
+    )
 }
 
 fn node_text<'a>(node: &Node, context: &Ptr<FileContext>) -> Option<String> {
