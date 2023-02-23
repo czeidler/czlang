@@ -61,6 +61,25 @@ struct RustTranspiler {
     buildins: Buildins,
 }
 
+fn type_to_enum_variant(t: &Type) -> String {
+    match t {
+        Type::Null => "Null".to_string(),
+        Type::Str => todo!(),
+        Type::String => "String".to_string(),
+        Type::Bool => "Bool".to_string(),
+        Type::U8 => "U8".to_string(),
+        Type::I8 => "I8".to_string(),
+        Type::U32 => "U32".to_string(),
+        Type::I32 => "I32".to_string(),
+        Type::Identifier(identifier) => {
+            format!("{}", &identifier)
+        }
+        Type::Array(_) => todo!(),
+        Type::Slice(_) => todo!(),
+        Type::Unresolved(_) => panic!("Validation should have failed"),
+    }
+}
+
 impl RustTranspiler {
     fn transpile_types(&self, types: &Vec<RefType>, writer: &mut Writer) {
         if types.len() > 1 {
@@ -104,15 +123,16 @@ impl RustTranspiler {
         writer.new_line();
         writer.indented(|writer| {
             for t in types.types() {
+                let variant = type_to_enum_variant(&t.r#type);
                 match &t.r#type {
-                    Type::Null => writer.write("Null"),
+                    Type::Null => writer.write(&variant),
                     Type::Str => todo!(),
-                    Type::String => writer.write("String(String)"),
-                    Type::Bool => writer.write("Bool(bool)"),
-                    Type::U8 => writer.write("U8(u8)"),
-                    Type::I8 => writer.write("I8(i8)"),
-                    Type::U32 => writer.write("U32(u32)"),
-                    Type::I32 => writer.write("I32(i32)"),
+                    Type::String => writer.write(&format!("{}(String)", variant)),
+                    Type::Bool => writer.write(&format!("{}(bool)", variant)),
+                    Type::U8 => writer.write(&format!("{}(u8)", variant)),
+                    Type::I8 => writer.write(&format!("{}(i8)", variant)),
+                    Type::U32 => writer.write(&format!("{}(u32)", variant)),
+                    Type::I32 => writer.write(&format!("{}(i32)", variant)),
                     Type::Identifier(identifier) => {
                         writer.write(&format!("{}({})", &identifier, &identifier))
                     }
@@ -511,23 +531,46 @@ impl RustTranspiler {
                 .query_expression(block, &expression)
                 .and_then(|s| s.resolved_types.clone())
                 .unwrap();
+            let resolved_name = resolved_type.sum_type_name();
+            let target_name = target.sum_type_name();
+            if target_name == resolved_name {
+                self.transpile_expression(analyzer, &expression, block, writer);
+                return;
+            }
             if resolved_type.len() == 1 {
-                writer.write(&target.sum_type_name());
+                writer.write(&target_name);
                 writer.write("::");
-                // TODO refactor out:
-                let t = match &resolved_type.types()[0].r#type {
-                    Type::U32 => "U32",
-                    Type::I32 => "I32",
-                    Type::Identifier(identifier) => identifier,
-                    _ => panic!("{}", resolved_type.types()[0]),
-                };
-                writer.write(&format!("{}", t));
+                let variant = type_to_enum_variant(&resolved_type.types()[0].r#type);
+                writer.write(&variant);
                 writer.write("(");
                 self.transpile_expression(analyzer, &expression, block, writer);
                 writer.write(")");
             } else {
-                // just the expresion
+                writer.write("match ");
                 self.transpile_expression(analyzer, &expression, block, writer);
+                writer.write(" {");
+                writer.new_line();
+                writer.indented(|writer| {
+                    for resolved in resolved_type.types() {
+                        writer.write(&resolved_name);
+                        writer.write("::");
+                        let variant = type_to_enum_variant(&resolved.r#type);
+                        let full_variant = match resolved.r#type {
+                            Type::Null => variant,
+                            _ => format!("{}(e)", variant),
+                        };
+                        writer.write(&full_variant);
+                        writer.write(" => ");
+                        writer.write(&target_name);
+                        writer.write("::");
+                        writer.write(&full_variant);
+                        writer.write(",");
+                        writer.new_line();
+                    }
+                    writer.write("_ => panic!(\"Impossible\")");
+                    writer.new_line();
+                });
+                writer.write("}");
             }
         }
     }
@@ -574,7 +617,7 @@ impl RustTranspiler {
     fn transpile_var_declaration(
         &self,
         analyzer: &mut FileSemanticAnalyzer,
-        var_declaration: &VarDeclaration,
+        var_declaration: &Ptr<VarDeclaration>,
         block: &Block,
         writer: &mut Writer,
     ) {
@@ -591,10 +634,11 @@ impl RustTranspiler {
             None => {}
         }
         writer.write(" = ");
+        let var_types = analyzer.query_var_types(var_declaration);
         self.transpile_expression_with_mapping(
             analyzer,
             &var_declaration.value,
-            var_declaration.types.as_ref(),
+            Some(var_types.types()),
             block,
             writer,
         );
@@ -711,15 +755,16 @@ impl RustTranspiler {
         block: &Ptr<Block>,
         writer: &mut Writer,
     ) {
-        let iterator = block.statements().peekable();
-        for statement in iterator {
+        let mut iterator = block.statements().peekable().into_iter();
+        while let Some(statement) = iterator.next() {
             match statement {
                 Statement::Expression(expr) => {
                     self.transpile_expression(analyzer, &expr, block, writer);
-                    if analyzer
-                        .query_block(block)
-                        .and_then(|s| s.return_type)
-                        .is_none()
+                    if iterator.peek().is_none()
+                        && analyzer
+                            .query_block(block)
+                            .and_then(|s| s.return_type)
+                            .is_none()
                     {
                         writer.write(";");
                     }

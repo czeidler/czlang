@@ -212,6 +212,22 @@ fun main() {
     }
 
     #[test]
+    fn fun_block_sum_type() {
+        transpile_and_validate_project(
+            "test_projects/transpile_fun_block_sum_type",
+            r#"
+fun main() {
+    var v1 = {
+        var temp bool | i32 = 5
+        temp
+    }
+    var v2 i32 | bool | string = v1
+}
+        "#,
+        )
+    }
+
+    #[test]
     fn fun_if_blocks_err() {
         validate_project(
             "test_projects/transpile_fun_if_blocks_err",
