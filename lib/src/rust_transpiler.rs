@@ -507,7 +507,7 @@ impl RustTranspiler {
         &self,
         analyzer: &mut FileSemanticAnalyzer,
         expression: &Expression,
-        target: Option<&Vec<RefType>>,
+        target: Option<SumType>,
         block: &Block,
         writer: &mut Writer,
     ) {
@@ -515,7 +515,6 @@ impl RustTranspiler {
             self.transpile_expression(analyzer,&expression, block, writer);
             return;
         };
-        let target = SumType::from_types(&target);
         if matches!(expression.r#type, ExpressionType::Null) {
             writer.write(&target.sum_type_name());
             writer.write("::");
@@ -599,13 +598,8 @@ impl RustTranspiler {
         let mut iter = call.arguments.iter().enumerate().peekable();
         while let Some((i, expr)) = iter.next() {
             let parameter = function.parameters.get(i).unwrap();
-            self.transpile_expression_with_mapping(
-                analyzer,
-                expr,
-                Some(&parameter.types),
-                block,
-                writer,
-            );
+            let parameter_type = analyzer.query_parameter_type(parameter);
+            self.transpile_expression_with_mapping(analyzer, expr, parameter_type, block, writer);
             if iter.peek().is_some() {
                 writer.write(", ");
             }
@@ -638,7 +632,7 @@ impl RustTranspiler {
         self.transpile_expression_with_mapping(
             analyzer,
             &var_declaration.value,
-            Some(var_types.types()),
+            Some(var_types),
             block,
             writer,
         );
@@ -656,10 +650,11 @@ impl RustTranspiler {
         if let Some(expression) = expression {
             writer.write(" ");
             let fun = block.fun().unwrap();
+            let return_type = analyzer.query_return_type(&fun.signature);
             self.transpile_expression_with_mapping(
                 analyzer,
                 expression,
-                fun.signature.return_type.as_ref().map(|r| &r.types),
+                return_type,
                 block,
                 writer,
             );
@@ -850,10 +845,11 @@ impl RustTranspiler {
             .find(|it| it.name == struct_field_init.name)
             .map(|it| it.clone())
             .unwrap();
+        let field_type = analyzer.query_field_type(&field);
         self.transpile_expression_with_mapping(
             analyzer,
             &struct_field_init.value,
-            Some(&field.types),
+            field_type,
             block,
             writer,
         )
