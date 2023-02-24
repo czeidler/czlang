@@ -122,7 +122,7 @@ pub struct FileSemanticAnalyzer {
     /// Validated SumType for type nodes
     types: HashMap<usize, SumType>,
     // TODO make private by adding a query method:
-    if_statements: HashMap<usize, IfExpressionSemantics>,
+    if_expressions: HashMap<usize, IfExpressionSemantics>,
     expressions: HashMap<usize, ExpressionSemantics>,
     selector_fields: HashMap<usize, SelectorFieldSemantics>,
     variable_declarations: HashMap<usize, VarDeclarationSemantics>,
@@ -145,7 +145,7 @@ impl FileSemanticAnalyzer {
             fun_symbols: HashSet::new(),
             type_identifiers: HashMap::new(),
             types: HashMap::new(),
-            if_statements: HashMap::new(),
+            if_expressions: HashMap::new(),
             expressions: HashMap::new(),
             selector_fields: HashMap::new(),
             variable_declarations: HashMap::new(),
@@ -229,12 +229,12 @@ impl FileSemanticAnalyzer {
         self.expressions.get(&expression.node.id).map(|s| s.clone())
     }
 
-    pub fn query_if_statement(
+    pub fn query_if_expression(
         &mut self,
         block: &Block,
         statement: &IfExpression,
     ) -> Option<IfExpressionSemantics> {
-        if let Some(s) = self.if_statements.get(&statement.node.id) {
+        if let Some(s) = self.if_expressions.get(&statement.node.id) {
             return Some(s.clone());
         }
         let Some(fun) = block.fun() else {
@@ -242,7 +242,7 @@ impl FileSemanticAnalyzer {
         };
         self.query_fun(&fun);
 
-        self.if_statements
+        self.if_expressions
             .get(&statement.node.id)
             .map(|s| s.clone())
     }
@@ -1183,8 +1183,8 @@ impl FileSemanticAnalyzer {
                 Some(self.validate_selector_expression(fun, block, select, is_assignment)?)
             }
             ExpressionType::Block(block) => self.validate_block(fun, block, is_assignment),
-            ExpressionType::If(if_statement) => {
-                self.validate_if_statement(fun, block, if_statement, is_assignment)
+            ExpressionType::If(if_expression) => {
+                self.validate_if_expression(fun, block, if_expression, is_assignment)
             }
         };
 
@@ -1373,22 +1373,22 @@ impl FileSemanticAnalyzer {
         semantics
     }
 
-    fn validate_if_statement(
+    fn validate_if_expression(
         &mut self,
         fun: &Function,
         block: &Ptr<Block>,
-        if_statement: &Ptr<IfExpression>,
+        if_expression: &Ptr<IfExpression>,
         is_assignment: bool,
     ) -> Option<SumType> {
-        if let Some(binary) = match &if_statement.condition.r#type {
+        if let Some(binary) = match &if_expression.condition.r#type {
             ExpressionType::BinaryExpression(binary) => Some(binary),
             _ => None,
         } {
             if let Some(narrowing) =
                 self.validate_typeof_expression(fun, block, &binary, is_assignment)
             {
-                let existing = self.if_statements.insert(
-                    if_statement.node.id,
+                let existing = self.if_expressions.insert(
+                    if_expression.node.id,
                     IfExpressionSemantics {
                         type_narrowing: Some(narrowing),
                     },
@@ -1397,15 +1397,15 @@ impl FileSemanticAnalyzer {
             }
         }
 
-        let mut sum_type = self.validate_block(fun, &if_statement.consequence, is_assignment);
+        let mut sum_type = self.validate_block(fun, &if_expression.consequence, is_assignment);
 
-        if let Some(alternative) = &if_statement.alternative {
+        if let Some(alternative) = &if_expression.alternative {
             let alternative_type = match alternative {
                 IfAlternative::Else(else_block) => {
                     self.validate_block(fun, else_block, is_assignment)
                 }
                 IfAlternative::If(nested_if) => {
-                    self.validate_if_statement(fun, block, nested_if, is_assignment)
+                    self.validate_if_expression(fun, block, nested_if, is_assignment)
                 }
             };
             if let Some(alternative_type) = alternative_type {
@@ -1415,7 +1415,7 @@ impl FileSemanticAnalyzer {
             }
         } else if is_assignment {
             self.errors.push(LangError::type_error(
-                &if_statement.node,
+                &if_expression.node,
                 "Else alternative required for if assignment".to_string(),
             ));
         }

@@ -290,7 +290,7 @@ impl RustTranspiler {
                 let target = analyzer
                     .query_expression(block, expression)
                     .and_then(|s| s.resolved_types);
-                self.transpile_if_statement(analyzer, if_expression, block, &target, writer)
+                self.transpile_if_expression(analyzer, if_expression, block, &target, writer)
             }
         };
     }
@@ -707,30 +707,30 @@ impl RustTranspiler {
         writer.write("}");
     }
 
-    fn transpile_if_statement(
+    fn transpile_if_expression(
         &self,
         analyzer: &mut FileSemanticAnalyzer,
-        if_statement: &IfExpression,
+        if_expression: &IfExpression,
         block: &Block,
         target: &Option<SumType>,
         writer: &mut Writer,
     ) {
         writer.write("if ");
         let type_narrowing = analyzer
-            .query_if_statement(block, &if_statement)
+            .query_if_expression(block, &if_expression)
             .and_then(|s| s.type_narrowing);
         if let Some(type_narrowing) = &type_narrowing {
             self.transpile_if_type_narrowing(type_narrowing, writer);
         } else {
-            self.transpile_expression(analyzer, &if_statement.condition, block, writer);
+            self.transpile_expression(analyzer, &if_expression.condition, block, writer);
         }
         writer.write(" {");
         writer.new_line();
         writer.indented(|writer| {
-            self.transpile_block(analyzer, &if_statement.consequence, target, writer);
+            self.transpile_block(analyzer, &if_expression.consequence, target, writer);
         });
         writer.write("}");
-        if let Some(alternative) = &if_statement.alternative {
+        if let Some(alternative) = &if_expression.alternative {
             match alternative {
                 IfAlternative::Else(else_block) => {
                     writer.write(" else {");
@@ -740,9 +740,9 @@ impl RustTranspiler {
                     });
                     writer.write("}");
                 }
-                IfAlternative::If(if_statement) => {
+                IfAlternative::If(if_expression) => {
                     writer.write(" else ");
-                    self.transpile_if_statement(analyzer, &if_statement, block, target, writer);
+                    self.transpile_if_expression(analyzer, &if_expression, block, target, writer);
                 }
             }
         }

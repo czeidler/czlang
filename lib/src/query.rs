@@ -209,11 +209,11 @@ fn find_in_selector_field(
 }
 
 fn find_completions_in_if(
-    if_statement: &Ptr<IfExpression>,
+    if_expression: &Ptr<IfExpression>,
     position: SourcePosition,
 ) -> Vec<Ptr<VarDeclaration>> {
-    let mut vars = find_completions_in_block(&if_statement.consequence, position);
-    if let Some(alternative) = &if_statement.alternative {
+    let mut vars = find_completions_in_block(&if_expression.consequence, position);
+    if let Some(alternative) = &if_expression.alternative {
         let mut alternative_vars = match alternative {
             IfAlternative::Else(e) => find_completions_in_block(&e, position),
             IfAlternative::If(i) => find_completions_in_if(&i, position),
