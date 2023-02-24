@@ -301,4 +301,30 @@ fun main() {
         "#,
         )
     }
+
+    #[test]
+    fn fun_if_blocks_sum_types_2() {
+        transpile_and_validate_project(
+            "test_projects/transpile_fun_if_blocks_sum_types_2",
+            r#"
+fun main() {
+    var v1 = if true {
+        if true {
+            1
+        } else {
+            5
+        }
+    } else if false {
+        true
+    } else {
+        var v3 = 45
+        {
+            v3
+        }
+    }
+    var v2 i32 | bool = v1
+}
+        "#,
+        )
+    }
 }
