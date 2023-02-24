@@ -99,7 +99,7 @@ impl SumType {
                     name += "E";
                     continue;
                 }
-                Type::Unresolved(_) => panic!("Internal error"),
+                Type::Unresolved(_) => panic!("Internal error {}", t),
             };
             name += part;
         }

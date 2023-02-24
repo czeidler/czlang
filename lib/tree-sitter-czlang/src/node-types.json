@@ -40,7 +40,7 @@
             "named": true
           },
           {
-            "type": "if_statement",
+            "type": "if_expression",
             "named": true
           },
           {
@@ -124,7 +124,7 @@
             "named": true
           },
           {
-            "type": "if_statement",
+            "type": "if_expression",
             "named": true
           },
           {
@@ -242,7 +242,7 @@
             "named": true
           },
           {
-            "type": "if_statement",
+            "type": "if_expression",
             "named": true
           },
           {
@@ -326,7 +326,7 @@
             "named": true
           },
           {
-            "type": "if_statement",
+            "type": "if_expression",
             "named": true
           },
           {
@@ -478,7 +478,7 @@
             "named": true
           },
           {
-            "type": "if_statement",
+            "type": "if_expression",
             "named": true
           },
           {
@@ -531,10 +531,6 @@
       "types": [
         {
           "type": "expression_statement",
-          "named": true
-        },
-        {
-          "type": "if_statement",
           "named": true
         },
         {
@@ -619,7 +615,7 @@
             "named": true
           },
           {
-            "type": "if_statement",
+            "type": "if_expression",
             "named": true
           },
           {
@@ -703,7 +699,7 @@
             "named": true
           },
           {
-            "type": "if_statement",
+            "type": "if_expression",
             "named": true
           },
           {
@@ -787,7 +783,7 @@
             "named": true
           },
           {
-            "type": "if_statement",
+            "type": "if_expression",
             "named": true
           },
           {
@@ -1041,7 +1037,7 @@
     }
   },
   {
-    "type": "if_statement",
+    "type": "if_expression",
     "named": true,
     "fields": {
       "alternative": {
@@ -1053,7 +1049,7 @@
             "named": true
           },
           {
-            "type": "if_statement",
+            "type": "if_expression",
             "named": true
           }
         ]
@@ -1095,7 +1091,7 @@
             "named": true
           },
           {
-            "type": "if_statement",
+            "type": "if_expression",
             "named": true
           },
           {
@@ -1241,7 +1237,7 @@
             "named": true
           },
           {
-            "type": "if_statement",
+            "type": "if_expression",
             "named": true
           },
           {
@@ -1485,7 +1481,7 @@
             "named": true
           },
           {
-            "type": "if_statement",
+            "type": "if_expression",
             "named": true
           },
           {
@@ -1664,7 +1660,7 @@
             "named": true
           },
           {
-            "type": "if_statement",
+            "type": "if_expression",
             "named": true
           },
           {
@@ -1748,7 +1744,7 @@
             "named": true
           },
           {
-            "type": "if_statement",
+            "type": "if_expression",
             "named": true
           },
           {
@@ -1925,7 +1921,7 @@
             "named": true
           },
           {
-            "type": "if_statement",
+            "type": "if_expression",
             "named": true
           },
           {
@@ -2003,7 +1999,7 @@
             "named": true
           },
           {
-            "type": "if_statement",
+            "type": "if_expression",
             "named": true
           },
           {
@@ -2081,7 +2077,7 @@
             "named": true
           },
           {
-            "type": "if_statement",
+            "type": "if_expression",
             "named": true
           },
           {
@@ -2370,7 +2366,7 @@
             "named": true
           },
           {
-            "type": "if_statement",
+            "type": "if_expression",
             "named": true
           },
           {
@@ -2530,7 +2526,7 @@
             "named": true
           },
           {
-            "type": "if_statement",
+            "type": "if_expression",
             "named": true
           },
           {

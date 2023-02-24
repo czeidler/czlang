@@ -374,9 +374,6 @@ impl<'a> Iterator for StatementIterator<'a> {
                     parse_return_statement(&self.file, &statement_node, &self.block)
                         .map(|statement| Statement::Return(statement))
                 }
-                "if_statement" => parse_if(&self.file, &statement_node, &self.block)
-                    .map(|statement| Statement::IfStatement(statement)),
-
                 _ => None,
             };
 
@@ -511,7 +508,6 @@ pub enum Statement {
     Expression(Expression),
     VarDeclaration(Ptr<VarDeclaration>),
     Return(ReturnStatement),
-    IfStatement(Ptr<IfStatement>),
 }
 
 impl Statement {
@@ -527,7 +523,6 @@ impl Statement {
             Statement::Expression(expr) => &expr.node,
             Statement::VarDeclaration(var) => &var.node,
             Statement::Return(ret) => &ret.node,
-            Statement::IfStatement(if_statement) => &if_statement.node,
         }
     }
 }
@@ -608,7 +603,7 @@ pub enum ExpressionType {
     StructInitialization(StructInitialization),
     SelectorExpression(SelectorExpression),
     Block(Ptr<Block>),
-    If(Ptr<IfStatement>),
+    If(Ptr<IfExpression>),
 }
 
 #[derive(Debug, Clone)]
@@ -659,11 +654,11 @@ pub struct ParenthesizedExpression {
 #[derive(Debug, Clone)]
 pub enum IfAlternative {
     Else(Ptr<Block>),
-    If(Ptr<IfStatement>),
+    If(Ptr<IfExpression>),
 }
 
 #[derive(Debug, Clone)]
-pub struct IfStatement {
+pub struct IfExpression {
     pub node: NodeData,
     pub condition: Expression,
     pub consequence: Ptr<Block>,
@@ -946,7 +941,7 @@ fn parse_expression(
             &node,
             BlockParent::Block(block.clone()),
         )),
-        "if_statement" => ExpressionType::If(parse_if(context, &node, block)?),
+        "if_expression" => ExpressionType::If(parse_if(context, &node, block)?),
         _ => {
             log::error!("Unknown expression kind: {}", node.kind());
             return None;
@@ -1138,7 +1133,7 @@ fn parse_if<'a>(
     context: &Ptr<FileContext>,
     node: &Node<'a>,
     block: &Ptr<Block>,
-) -> Option<Ptr<IfStatement>> {
+) -> Option<Ptr<IfExpression>> {
     let condition = child_by_field(&node, "condition")?;
     let consequence = child_by_field(&node, "consequence")?;
     let alternative = node.child_by_field_name("alternative".as_bytes());
@@ -1148,7 +1143,7 @@ fn parse_if<'a>(
 
     let alternative = match alternative {
         Some(alternative) => {
-            if alternative.kind() == "if_statement" {
+            if alternative.kind() == "if_expression" {
                 Some(IfAlternative::If(parse_if(context, &alternative, block)?))
             } else {
                 Some(IfAlternative::Else(parse_block(
@@ -1160,7 +1155,7 @@ fn parse_if<'a>(
         }
         None => None,
     };
-    Some(Ptr::new(IfStatement {
+    Some(Ptr::new(IfExpression {
         node: NodeData::from_node(&node),
         condition,
         consequence,

@@ -5,9 +5,9 @@ use std::path::{Path, PathBuf};
 use crate::ast::{
     print_err, Array, ArrayExpression, BinaryOperator, Block, BlockTrait, Expression,
     ExpressionType, Field, FileContext, Function, FunctionCall, FunctionTrait, IfAlternative,
-    IfStatement, Parameter, RefType, SelectorExpression, SelectorFieldType, Slice, SliceExpression,
-    Statement, StringTemplatePart, Struct, StructFieldInitialization, StructInitialization, Type,
-    UnaryOperator, VarDeclaration,
+    IfExpression, Parameter, RefType, SelectorExpression, SelectorFieldType, Slice,
+    SliceExpression, Statement, StringTemplatePart, Struct, StructFieldInitialization,
+    StructInitialization, Type, UnaryOperator, VarDeclaration,
 };
 use crate::buildin::Buildins;
 use crate::semantics::{FileSemanticAnalyzer, SelectorFieldBinding, TypeNarrowing};
@@ -712,7 +712,7 @@ impl RustTranspiler {
     fn transpile_if_statement(
         &self,
         analyzer: &mut FileSemanticAnalyzer,
-        if_statement: &IfStatement,
+        if_statement: &IfExpression,
         block: &Block,
         writer: &mut Writer,
     ) {
@@ -763,7 +763,7 @@ impl RustTranspiler {
                     if iterator.peek().is_none()
                         && analyzer
                             .query_block(block)
-                            .and_then(|s| s.return_type)
+                            .and_then(|s| s.block_return)
                             .is_none()
                     {
                         writer.write(";");
@@ -776,10 +776,6 @@ impl RustTranspiler {
                 }
                 Statement::Return(ret) => {
                     self.transpile_return_statement(analyzer, &ret.expression, block, writer);
-                    writer.new_line();
-                }
-                Statement::IfStatement(if_statement) => {
-                    self.transpile_if_statement(analyzer, &if_statement, block, writer);
                     writer.new_line();
                 }
             }

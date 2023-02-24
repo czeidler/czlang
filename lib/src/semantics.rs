@@ -4,7 +4,7 @@ use crate::{
     ast::{
         Array, BinaryExpression, BinaryOperator, Block, BlockParent, BlockTrait, Expression,
         ExpressionType, Field, FileContext, FileTrait, Function, FunctionCall, FunctionSignature,
-        FunctionTrait, IfAlternative, IfStatement, LangError, NodeData, Parameter, RefType,
+        FunctionTrait, IfAlternative, IfExpression, LangError, NodeData, Parameter, RefType,
         RootSymbol, SelectorExpression, SelectorField, SelectorFieldType, Slice, Statement, Struct,
         StructFieldInitialization, StructInitialization, Type, UnaryOperator, VarDeclaration,
     },
@@ -21,8 +21,8 @@ pub struct FileSemantics {
 #[derive(Debug, Clone)]
 pub struct BlockSemantics {
     pub vars: HashMap<String, Ptr<VarDeclaration>>,
-    /// last statement return type
-    pub return_type: Option<SumType>,
+    /// block return expression from the last statement
+    pub block_return: Option<Expression>,
 }
 
 #[derive(Debug, Clone)]
@@ -68,7 +68,7 @@ pub struct VarDeclarationSemantics {
 }
 
 #[derive(Debug, Clone)]
-pub struct IfStatementSemantics {
+pub struct IfExpressionSemantics {
     /// Type narrowing from the if contition
     pub type_narrowing: Option<TypeNarrowing>,
 }
@@ -122,7 +122,7 @@ pub struct FileSemanticAnalyzer {
     /// Validated SumType for type nodes
     types: HashMap<usize, SumType>,
     // TODO make private by adding a query method:
-    if_statements: HashMap<usize, IfStatementSemantics>,
+    if_statements: HashMap<usize, IfExpressionSemantics>,
     expressions: HashMap<usize, ExpressionSemantics>,
     selector_fields: HashMap<usize, SelectorFieldSemantics>,
     variable_declarations: HashMap<usize, VarDeclarationSemantics>,
@@ -232,8 +232,8 @@ impl FileSemanticAnalyzer {
     pub fn query_if_statement(
         &mut self,
         block: &Block,
-        statement: &IfStatement,
-    ) -> Option<IfStatementSemantics> {
+        statement: &IfExpression,
+    ) -> Option<IfExpressionSemantics> {
         if let Some(s) = self.if_statements.get(&statement.node.id) {
             return Some(s.clone());
         }
@@ -537,12 +537,12 @@ impl FileSemanticAnalyzer {
         self.validate_block(fun, &fun.body(), false);
     }
 
-    fn bind_block_return_value(&mut self, block: &Ptr<Block>, return_value: Option<SumType>) {
+    fn bind_block_return(&mut self, block: &Ptr<Block>, last_expression: &Expression) {
         let mut entry = self.blocks.entry(block.node.id).or_insert(BlockSemantics {
             vars: HashMap::new(),
-            return_type: None,
+            block_return: None,
         });
-        entry.return_type = return_value;
+        entry.block_return = Some(last_expression.clone());
     }
 
     fn validate_block(
@@ -565,8 +565,11 @@ impl FileSemanticAnalyzer {
             last_statement = Some(statement);
         }
         if is_assignment {
-            if let Some(last_statement_type) = &last_statement_type {
-                self.bind_block_return_value(block, Some(last_statement_type.clone()))
+            if let Some(last_statement) = &last_statement {
+                match last_statement {
+                    Statement::Expression(expression) => self.bind_block_return(block, expression),
+                    _ => {}
+                }
             } else {
                 self.errors.push(LangError::type_error(
                     last_statement
@@ -650,9 +653,6 @@ impl FileSemanticAnalyzer {
                     return None;
                 }
             }
-            Statement::IfStatement(if_statement) => {
-                self.validate_if_statement(fun, block, if_statement, is_assignment);
-            }
         };
         None
     }
@@ -713,7 +713,7 @@ impl FileSemanticAnalyzer {
             .entry(block.node.id)
             .or_insert(BlockSemantics {
                 vars: HashMap::new(),
-                return_type: None,
+                block_return: None,
             })
             .vars
             .insert(var_declaration.name.clone(), var_declaration.clone())
@@ -728,28 +728,32 @@ impl FileSemanticAnalyzer {
                 match id {
                     IdentifierBinding::VarDeclaration(var_declaration) => {
                         let var_types = self.query_var_types(&var_declaration);
-                        let Some(types) = intersection(types, &var_types) else {
+                        let Some(inter) = intersection(types, &var_types) else {
                             return;
                         };
 
-                        // follow the back propergation further
-                        self.back_propagate_types(block, &var_declaration.value, &types);
                         // update resolved types
-
                         let entry = self
                             .variable_declarations
                             .entry(var_declaration.node.id)
                             .or_insert(VarDeclarationSemantics {
                                 inferred_types: None,
                             });
-                        entry.inferred_types = Some(types);
+                        entry.inferred_types = Some(inter);
+
+                        // follow the back propergation further
+                        self.back_propagate_types(block, &var_declaration.value, types);
                     }
                     IdentifierBinding::Parameter(_) => {}
                 }
             }
-            ExpressionType::UnaryExpression(expr) => {
-                self.back_propagate_types(block, &expr.operand, types)
-            }
+            ExpressionType::UnaryExpression(expr) => match expr.operand.r#type {
+                ExpressionType::IntLiteral(_) => {
+                    // narrow the unary expression and not the "base" expression (see validate_expression)
+                    self.narrow_expression_type(block, expression, types);
+                }
+                _ => self.back_propagate_types(block, &expr.operand, types),
+            },
             ExpressionType::BinaryExpression(expr) => {
                 self.back_propagate_types(block, &expr.left, types);
                 self.back_propagate_types(block, &expr.right, types);
@@ -758,6 +762,26 @@ impl FileSemanticAnalyzer {
                 self.back_propagate_types(block, &expr.expression, types)
             }
             ExpressionType::IntLiteral(_) => {
+                self.narrow_expression_type(block, expression, types);
+            }
+            ExpressionType::Null => {}
+            ExpressionType::Bool(_) => {}
+            ExpressionType::ArrayExpression(_) => {}
+            ExpressionType::SliceExpression(_) => {}
+            ExpressionType::FunctionCall(_) => {}
+            ExpressionType::String(_) => {}
+            ExpressionType::StructInitialization(_) => {}
+            ExpressionType::SelectorExpression(_) => {}
+            ExpressionType::Block(expr_block) => {
+                self.narrow_expression_type(block, expression, types);
+
+                if let Some(block_return) =
+                    self.query_block(expr_block).and_then(|s| s.block_return)
+                {
+                    self.back_propagate_types(block, &block_return, types)
+                }
+            }
+            ExpressionType::If(if_expression) => {
                 let resolved_types = match self
                     .query_expression(block, expression)
                     .and_then(|s| s.resolved_types)
@@ -773,17 +797,54 @@ impl FileSemanticAnalyzer {
                             resolved_types: None,
                         });
                 entry.resolved_types = Some(resolved_types);
+
+                self.back_propagate_types_in_if_expr_blocks(if_expression, types);
             }
-            ExpressionType::Null => {}
-            ExpressionType::Bool(_) => {}
-            ExpressionType::ArrayExpression(_) => {}
-            ExpressionType::SliceExpression(_) => {}
-            ExpressionType::FunctionCall(_) => {}
-            ExpressionType::String(_) => {}
-            ExpressionType::StructInitialization(_) => {}
-            ExpressionType::SelectorExpression(_) => {}
-            ExpressionType::Block(_) => {}
-            ExpressionType::If(_) => {}
+        }
+    }
+
+    /// Gets the expression type and narrows it down
+    fn narrow_expression_type(&mut self, block: &Block, expression: &Expression, types: &SumType) {
+        let resolved_types = match self
+            .query_expression(block, expression)
+            .and_then(|s| s.resolved_types)
+            .and_then(|resolved_types| intersection(types, &resolved_types))
+        {
+            Some(resolved_types) => resolved_types,
+            None => return,
+        };
+        let entry = self
+            .expressions
+            .entry(expression.node.id)
+            .or_insert(ExpressionSemantics {
+                resolved_types: None,
+            });
+        entry.resolved_types = Some(resolved_types);
+    }
+
+    fn back_propagate_types_in_if_expr_blocks(
+        &mut self,
+        if_expression: &Ptr<IfExpression>,
+        types: &SumType,
+    ) {
+        if let Some(block_return) = self
+            .query_block(&if_expression.consequence)
+            .and_then(|s| s.block_return)
+        {
+            self.back_propagate_types(&if_expression.consequence, &block_return, types)
+        }
+        if let Some(alternative) = &if_expression.alternative {
+            match alternative {
+                IfAlternative::Else(block) => {
+                    if let Some(block_return) = self.query_block(block).and_then(|s| s.block_return)
+                    {
+                        self.back_propagate_types(block, &block_return, types)
+                    }
+                }
+                IfAlternative::If(if_expression) => {
+                    self.back_propagate_types_in_if_expr_blocks(if_expression, types)
+                }
+            }
         }
     }
 
@@ -982,7 +1043,6 @@ impl FileSemanticAnalyzer {
                     ));
                     return None;
                 };
-                println!("{}", overlap.to_string());
                 Some(overlap)
             }
             ExpressionType::ParenthesizedExpression(_) => todo!(),
@@ -1124,6 +1184,13 @@ impl FileSemanticAnalyzer {
                 self.validate_if_statement(fun, block, if_statement, is_assignment)
             }
         };
+
+        self.bind_expression_type(expression, &types);
+
+        types
+    }
+
+    fn bind_expression_type(&mut self, expression: &Expression, types: &Option<SumType>) {
         let existing = self.expressions.insert(
             expression.node.id,
             ExpressionSemantics {
@@ -1131,8 +1198,6 @@ impl FileSemanticAnalyzer {
             },
         );
         assert!(existing.is_none());
-
-        types
     }
 
     fn validate_expression_list(
@@ -1309,7 +1374,7 @@ impl FileSemanticAnalyzer {
         &mut self,
         fun: &Function,
         block: &Ptr<Block>,
-        if_statement: &Ptr<IfStatement>,
+        if_statement: &Ptr<IfExpression>,
         is_assignment: bool,
     ) -> Option<SumType> {
         if let Some(binary) = match &if_statement.condition.r#type {
@@ -1321,7 +1386,7 @@ impl FileSemanticAnalyzer {
             {
                 let existing = self.if_statements.insert(
                     if_statement.node.id,
-                    IfStatementSemantics {
+                    IfExpressionSemantics {
                         type_narrowing: Some(narrowing),
                     },
                 );

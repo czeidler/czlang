@@ -20,12 +20,14 @@ fun x() {
                 (identifier)
                 (primitive_type)
                 (true))
-            (if_statement
-                (binary_expression
-                (unary_expression
+            (expression_statement
+                (if_expression
+                    (binary_expression
+                    (unary_expression
+                        (identifier))
                     (identifier))
-                (identifier))
-                (block)
+                    (block)
+                )
             )
         )
     )

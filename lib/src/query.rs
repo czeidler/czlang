@@ -1,7 +1,7 @@
 use crate::{
     ast::{
         Block, BlockTrait, Expression, ExpressionType, Field, Function, FunctionTrait,
-        IfAlternative, IfStatement, Parameter, SelectorField, SourcePosition, Statement, Struct,
+        IfAlternative, IfExpression, Parameter, SelectorField, SourcePosition, Statement, Struct,
         VarDeclaration,
     },
     semantics::{
@@ -91,15 +91,6 @@ fn find_in_function(
                     return find_in_expression(analyzer, &block, &var.value, position);
                 }
                 continue;
-            }
-            Statement::IfStatement(if_statement) => {
-                if !if_statement.node.contains(position) {
-                    continue;
-                }
-                if if_statement.condition.node.contains(position) {
-                    return find_in_expression(analyzer, &block, &if_statement.condition, position);
-                }
-                // TODO find in block
             }
             Statement::Return(ret) => {
                 if let Some(ret) = &ret.expression {
@@ -218,7 +209,7 @@ fn find_in_selector_field(
 }
 
 fn find_completions_in_if(
-    if_statement: &Ptr<IfStatement>,
+    if_statement: &Ptr<IfExpression>,
     position: SourcePosition,
 ) -> Vec<Ptr<VarDeclaration>> {
     let mut vars = find_completions_in_block(&if_statement.consequence, position);
@@ -247,10 +238,13 @@ fn find_completions_in_block(
         }
         match statement {
             Statement::VarDeclaration(var) => vars.push(var),
-            Statement::IfStatement(if_statement) => {
-                let mut if_vars = find_completions_in_if(&if_statement, position);
-                vars.append(&mut if_vars);
-            }
+            Statement::Expression(expr) => match expr.r#type {
+                ExpressionType::If(if_expression) => {
+                    let mut if_vars = find_completions_in_if(&if_expression, position);
+                    vars.append(&mut if_vars);
+                }
+                _ => {}
+            },
             _ => continue,
         }
     }

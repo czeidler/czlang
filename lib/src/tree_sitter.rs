@@ -63,9 +63,12 @@ mod tests {
         let fun = root.child(0).unwrap();
         assert_eq!(fun.kind(), "function_definition");
         let body_node = fun.child_by_field_name("body").unwrap();
-        let if_statement = body_node.child(1).unwrap();
-        assert_eq!(if_statement.kind(), "if_statement");
-        let if_block = if_statement.child_by_field_name("consequence").unwrap();
+        let expression_statement = body_node.child(1).unwrap();
+        let if_expression = expression_statement
+            .child_by_field_name("expression")
+            .unwrap();
+        assert_eq!(if_expression.kind(), "if_expression");
+        let if_block = if_expression.child_by_field_name("consequence").unwrap();
 
         let found = find_node(
             &tree,

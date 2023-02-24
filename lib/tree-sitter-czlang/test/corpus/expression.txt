@@ -22,65 +22,68 @@ fun x() i32 {
     (parameter_list)
     (primitive_type)
     (block
-        (if_statement
-            (binary_expression
-              (int_literal)
-              (int_literal))
-            (block))
-        (var_declaration
-            (identifier)
-            (binary_expression
-              (parenthesized_expression
-                (binary_expression
-                  (identifier)
-                  (identifier)))
-              (parenthesized_expression
-                (binary_expression
-                  (identifier)
-                  (parenthesized_expression
-                    (binary_expression
-                      (identifier)
-                      (identifier))
-                  )
+      (expression_statement
+        (if_expression
+          (binary_expression
+            (int_literal)
+            (int_literal))
+          (block)
+        )
+      )
+      (var_declaration
+          (identifier)
+          (binary_expression
+            (parenthesized_expression
+              (binary_expression
+                (identifier)
+                (identifier)))
+            (parenthesized_expression
+              (binary_expression
+                (identifier)
+                (parenthesized_expression
+                  (binary_expression
+                    (identifier)
+                    (identifier))
                 )
               )
             )
-        )
-        (var_declaration
-            (identifier)
-            (unary_expression
-              (parenthesized_expression
-                (binary_expression
-                  (int_literal)
-                  (int_literal)))))
-        (var_declaration
-            (identifier)
-            (unary_expression
-              (true)))
-        (var_declaration
-            (identifier)
-            (unary_expression
-              (identifier))
-        )
-        (var_declaration
-            (identifier)
+          )
+      )
+      (var_declaration
+          (identifier)
+          (unary_expression
+            (parenthesized_expression
+              (binary_expression
+                (int_literal)
+                (int_literal)))))
+      (var_declaration
+          (identifier)
+          (unary_expression
+            (true)))
+      (var_declaration
+          (identifier)
+          (unary_expression
+            (identifier))
+      )
+      (var_declaration
+          (identifier)
+          (binary_expression
             (binary_expression
               (binary_expression
-                (binary_expression
-                  (identifier)
-                  (identifier))
+                (identifier)
                 (identifier))
-              (binary_expression
-                (identifier)
-                (identifier)
-              )
+              (identifier))
+            (binary_expression
+              (identifier)
+              (identifier)
             )
-        )
-        (var_declaration
-            (identifier)
-            (unary_expression
-              (int_literal))
-        )
+          )
+      )
+      (var_declaration
+          (identifier)
+          (unary_expression
+            (int_literal))
+      )
     )
   )
 )
@@ -147,12 +150,12 @@ fun x() {
     (block
       (var_declaration
         (identifier)
-        (if_statement
+        (if_expression
           (true)
           (block
             (expression_statement
               (int_literal)))
-          (if_statement
+          (if_expression
             (false)
             (block
               (expression_statement
