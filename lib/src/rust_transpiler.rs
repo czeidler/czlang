@@ -278,16 +278,19 @@ impl RustTranspiler {
             ExpressionType::SelectorExpression(selector) => {
                 self.transpile_selector_expr(analyzer, expression, selector, block, writer);
             }
-            ExpressionType::Block(block) => {
+            ExpressionType::Block(child_block) => {
                 writer.write("{");
                 writer.new_line();
                 writer.indented(|writer| {
-                    self.transpile_block(analyzer, block, writer);
+                    self.transpile_block(analyzer, child_block, &None, writer);
                 });
                 writer.write("}");
             }
-            ExpressionType::If(if_statement) => {
-                self.transpile_if_statement(analyzer, if_statement, block, writer)
+            ExpressionType::If(if_expression) => {
+                let target = analyzer
+                    .query_expression(block, expression)
+                    .and_then(|s| s.resolved_types);
+                self.transpile_if_statement(analyzer, if_expression, block, &target, writer)
             }
         };
     }
@@ -507,7 +510,7 @@ impl RustTranspiler {
         &self,
         analyzer: &mut FileSemanticAnalyzer,
         expression: &Expression,
-        target: Option<SumType>,
+        target: &Option<SumType>,
         block: &Block,
         writer: &mut Writer,
     ) {
@@ -599,7 +602,7 @@ impl RustTranspiler {
         while let Some((i, expr)) = iter.next() {
             let parameter = function.parameters.get(i).unwrap();
             let parameter_type = analyzer.query_parameter_type(parameter);
-            self.transpile_expression_with_mapping(analyzer, expr, parameter_type, block, writer);
+            self.transpile_expression_with_mapping(analyzer, expr, &parameter_type, block, writer);
             if iter.peek().is_some() {
                 writer.write(", ");
             }
@@ -632,7 +635,7 @@ impl RustTranspiler {
         self.transpile_expression_with_mapping(
             analyzer,
             &var_declaration.value,
-            Some(var_types),
+            &Some(var_types),
             block,
             writer,
         );
@@ -654,7 +657,7 @@ impl RustTranspiler {
             self.transpile_expression_with_mapping(
                 analyzer,
                 expression,
-                return_type,
+                &return_type,
                 block,
                 writer,
             );
@@ -709,6 +712,7 @@ impl RustTranspiler {
         analyzer: &mut FileSemanticAnalyzer,
         if_statement: &IfExpression,
         block: &Block,
+        target: &Option<SumType>,
         writer: &mut Writer,
     ) {
         writer.write("if ");
@@ -723,7 +727,7 @@ impl RustTranspiler {
         writer.write(" {");
         writer.new_line();
         writer.indented(|writer| {
-            self.transpile_block(analyzer, &if_statement.consequence, writer);
+            self.transpile_block(analyzer, &if_statement.consequence, target, writer);
         });
         writer.write("}");
         if let Some(alternative) = &if_statement.alternative {
@@ -732,37 +736,52 @@ impl RustTranspiler {
                     writer.write(" else {");
                     writer.new_line();
                     writer.indented(|writer| {
-                        self.transpile_block(analyzer, else_block, writer);
+                        self.transpile_block(analyzer, else_block, target, writer);
                     });
                     writer.write("}");
                 }
                 IfAlternative::If(if_statement) => {
                     writer.write(" else ");
-                    self.transpile_if_statement(analyzer, &if_statement, block, writer);
+                    self.transpile_if_statement(analyzer, &if_statement, block, target, writer);
                 }
             }
         }
     }
 
+    /// * target if the block has a block return the target gives the target type for this returns
     fn transpile_block(
         &self,
         analyzer: &mut FileSemanticAnalyzer,
         block: &Ptr<Block>,
+        target: &Option<SumType>,
         writer: &mut Writer,
     ) {
         let mut iterator = block.statements().peekable().into_iter();
         while let Some(statement) = iterator.next() {
             match statement {
                 Statement::Expression(expr) => {
-                    self.transpile_expression(analyzer, &expr, block, writer);
-                    if iterator.peek().is_none()
-                        && analyzer
-                            .query_block(block)
-                            .and_then(|s| s.block_return)
-                            .is_none()
-                    {
+                    if iterator.peek().is_some() {
+                        self.transpile_expression(analyzer, &expr, block, writer);
                         writer.write(";");
+                        writer.new_line();
+                        continue;
                     }
+                    let Some(block_return) = analyzer
+                        .query_block(block)
+                        .and_then(|s| s.block_return) else {
+                        self.transpile_expression(analyzer, &expr, block, writer);
+                        writer.write(";");
+                        writer.new_line();
+                        return;
+                    };
+
+                    self.transpile_expression_with_mapping(
+                        analyzer,
+                        &block_return,
+                        target,
+                        block,
+                        writer,
+                    );
                     writer.new_line();
                 }
                 Statement::VarDeclaration(var) => {
@@ -792,7 +811,7 @@ impl RustTranspiler {
         writer.write(" {");
         writer.new_line();
         writer.indented(|writer| {
-            self.transpile_block(analyzer, &fun.body(), writer);
+            self.transpile_block(analyzer, &fun.body(), &None, writer);
         });
         writer.write("}");
     }
@@ -849,7 +868,7 @@ impl RustTranspiler {
         self.transpile_expression_with_mapping(
             analyzer,
             &struct_field_init.value,
-            field_type,
+            &field_type,
             block,
             writer,
         )

@@ -727,11 +727,14 @@ impl FileSemanticAnalyzer {
                 let Some(id) = self.identifiers.get(&expression.node.id).map(|s|s.binding.clone()).flatten()  else {return};
                 match id {
                     IdentifierBinding::VarDeclaration(var_declaration) => {
+                        // narrow the expression down
+                        self.narrow_expression_type(block, expression, types);
+
+                        // find identifier and continue there
                         let var_types = self.query_var_types(&var_declaration);
                         let Some(inter) = intersection(types, &var_types) else {
                             return;
                         };
-
                         // update resolved types
                         let entry = self
                             .variable_declarations
@@ -741,7 +744,7 @@ impl FileSemanticAnalyzer {
                             });
                         entry.inferred_types = Some(inter);
 
-                        // follow the back propergation further
+                        // follow the back propagation further
                         self.back_propagate_types(block, &var_declaration.value, types);
                     }
                     IdentifierBinding::Parameter(_) => {}

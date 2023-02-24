@@ -283,6 +283,20 @@ fun main() {
         )
     }
 
+    #[test]
+    fn fun_if_blocks_sum_types() {
+        transpile_and_validate_project(
+            "test_projects/transpile_fun_if_blocks_sum_types",
+            r#"
+fun main() {
+    var v1 = if true {
+        1
+    } else if false {
+        true
+    } else {
+        6
+    }
+    var v2 i32 | bool = v1
 }
         "#,
         )
