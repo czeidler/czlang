@@ -652,7 +652,7 @@ impl RustTranspiler {
         writer.write("return");
         if let Some(expression) = expression {
             writer.write(" ");
-            let fun = block.fun().unwrap();
+            let fun = block.fun();
             let return_type = analyzer.query_return_type(&fun.signature);
             self.transpile_expression_with_mapping(
                 analyzer,

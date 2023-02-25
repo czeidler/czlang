@@ -308,9 +308,9 @@ pub struct Block {
 }
 
 impl Block {
-    pub fn fun(&self) -> Option<Ptr<Function>> {
+    pub fn fun(&self) -> Ptr<Function> {
         match &self.parent {
-            BlockParent::Function(fun) => Some(fun.clone()),
+            BlockParent::Function(fun) => fun.clone(),
             BlockParent::Block(block) => block.fun(),
         }
     }
