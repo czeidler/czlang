@@ -118,17 +118,20 @@ pub struct FileSemanticAnalyzer {
     structs: HashSet<usize>,
     /// Just keep track of analyzed/checked functions
     fun_symbols: HashSet<usize>,
+    /// Bindings for an type identifier, e.g. a struct name
     type_identifiers: HashMap<usize, TypeIdentifierSemantics>,
     /// Validated SumType for type nodes
     types: HashMap<usize, SumType>,
-    // TODO make private by adding a query method:
     if_expressions: HashMap<usize, IfExpressionSemantics>,
     expressions: HashMap<usize, ExpressionSemantics>,
+    /// Various details about the selector field, e.g. if nullable or which the parent struct is
     selector_fields: HashMap<usize, SelectorFieldSemantics>,
     variable_declarations: HashMap<usize, VarDeclarationSemantics>,
     function_calls: HashMap<usize, FunctionCallSemantics>,
+    /// Contains details about an identifier pointing to a variable or parameter
     identifiers: HashMap<usize, IdentifierSemantics>,
     blocks: HashMap<usize, BlockSemantics>,
+    /// Binding for a struct field initialization to the matching Field in of the target struct
     struct_field_inits: HashMap<usize, Field>,
 }
 
