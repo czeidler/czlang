@@ -8,11 +8,12 @@ use crate::{
         FileSemanticAnalyzer, FileSemantics, FunctionCallSemantics, IdentifierBinding,
         SelectorFieldSemantics, TypeBinding,
     },
-    types::Ptr,
+    types::{Ptr, SumType},
 };
 
 #[derive(Debug, Clone)]
 pub enum QueryResult {
+    Literal(SumType),
     Function(Ptr<Function>),
     FunctionCall(FunctionCallSemantics),
     Parameter(Parameter),
@@ -194,6 +195,19 @@ fn find_in_expression(
         }
         ExpressionType::Block(block) => find_in_block(analyzer, block, position),
         ExpressionType::If(if_expression) => find_in_if(analyzer, block, &if_expression, position),
+        ExpressionType::Bool(_) => {
+            let Some(s) = analyzer.query_expression(block.block, expression) else {
+                return None;
+            };
+            s.resolved_types.map(|t| QueryResult::Literal(t))
+        }
+        ExpressionType::IntLiteral(_) => {
+            let Some(s) = analyzer.query_expression(block.block, expression) else {
+                return None;
+            };
+            s.resolved_types.map(|t| QueryResult::Literal(t))
+        }
+
         _ => None,
     }
 }

@@ -376,6 +376,9 @@ impl Server {
                 QueryResult::StructFieldInitialization(field) => {
                     format!("field {}", types_to_string(&field.types))
                 }
+                QueryResult::Literal(types) => {
+                    format!("literal {}", types_to_string(&types.types()))
+                }
             };
             Some(Hover {
                 contents: HoverContents::Scalar(MarkedString::String(result)),
