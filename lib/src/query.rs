@@ -63,25 +63,13 @@ fn find_in_structs(file: &FileSemantics, position: SourcePosition) -> Option<Que
     None
 }
 
-fn find_in_function(
+fn find_in_block(
     analyzer: &mut FileSemanticAnalyzer,
-    fun: &Ptr<Function>,
+    block: &Ptr<Block>,
     position: SourcePosition,
 ) -> Option<QueryResult> {
-    if fun.signature.name_node.contains(position) {
-        return Some(QueryResult::Function(fun.clone()));
-    }
-    for param in &fun.signature.parameters {
-        if !param.node.contains(position) {
-            continue;
-        }
-        //return Some(types_to_string(&param.types));
-        return Some(QueryResult::Parameter(param.clone()));
-    }
-
-    let body = fun.body();
-    for statement in body.statements() {
-        let block = FunctionBlock { block: &body };
+    for statement in block.statements() {
+        let block = FunctionBlock { block: &block };
         match statement {
             Statement::VarDeclaration(var) => {
                 if var.name_node.contains(position) {
@@ -106,9 +94,27 @@ fn find_in_function(
             }
         }
     }
-    //Some(format!("{}: span: {:?}", fun.name, fun.node.span))
-    //Some(fun.name.clone())
     None
+}
+
+fn find_in_function(
+    analyzer: &mut FileSemanticAnalyzer,
+    fun: &Ptr<Function>,
+    position: SourcePosition,
+) -> Option<QueryResult> {
+    if fun.signature.name_node.contains(position) {
+        return Some(QueryResult::Function(fun.clone()));
+    }
+    for param in &fun.signature.parameters {
+        if !param.node.contains(position) {
+            continue;
+        }
+        //return Some(types_to_string(&param.types));
+        return Some(QueryResult::Parameter(param.clone()));
+    }
+
+    let body = fun.body();
+    find_in_block(analyzer, &body, position)
 }
 
 // TODO remove:
@@ -186,7 +192,31 @@ fn find_in_expression(
             }
             None
         }
+        ExpressionType::Block(block) => find_in_block(analyzer, block, position),
+        ExpressionType::If(if_expression) => find_in_if(analyzer, block, &if_expression, position),
         _ => None,
+    }
+}
+
+fn find_in_if(
+    analyzer: &mut FileSemanticAnalyzer,
+    block: &FunctionBlock,
+    if_expression: &IfExpression,
+    position: SourcePosition,
+) -> Option<QueryResult> {
+    if let Some(result) = find_in_expression(analyzer, block, &if_expression.condition, position) {
+        return Some(result);
+    } else if let Some(result) = find_in_block(analyzer, &if_expression.consequence, position) {
+        return Some(result);
+    } else if let Some(alternative) = &if_expression.alternative {
+        match alternative {
+            IfAlternative::Else(block) => find_in_block(analyzer, &block, position),
+            IfAlternative::If(if_expression) => {
+                find_in_if(analyzer, block, if_expression, position)
+            }
+        }
+    } else {
+        None
     }
 }
 
