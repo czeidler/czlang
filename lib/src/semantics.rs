@@ -1352,6 +1352,8 @@ impl FileSemanticAnalyzer {
         if_expression: &Ptr<IfExpression>,
         is_assignment: bool,
     ) -> Option<SumType> {
+        self.validate_expression(block, &if_expression.condition, is_assignment)?;
+
         if let Some(binary) = match &if_expression.condition.r#type {
             ExpressionType::BinaryExpression(binary) => Some(binary),
             _ => None,
