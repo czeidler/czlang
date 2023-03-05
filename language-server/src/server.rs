@@ -335,18 +335,41 @@ impl Server {
                 QueryResult::Parameter(parameter) => {
                     format!("{}", types_to_string(&parameter.types))
                 }
-                QueryResult::Identifier(lookup) => match lookup {
-                    IdentifierBinding::VarDeclaration(var) => {
-                        format!(
-                            "identifier: {} {}",
-                            var.name,
-                            types_to_string(file.file_analyzer.query_var_types(&var).types())
-                        )
+                QueryResult::Identifier(identifier_semantics) => {
+                    let Some(binding) = identifier_semantics.binding else {
+                        return None;
+                    };
+                    match binding {
+                        IdentifierBinding::VarDeclaration(var) => {
+                            if let Some(types) = identifier_semantics.flow.lookup(&var.name) {
+                                format!(
+                                    "identifier (narrowed): {} {}",
+                                    var.name,
+                                    types_to_string(types.types())
+                                )
+                            } else {
+                                format!(
+                                    "identifier: {} {}",
+                                    var.name,
+                                    types_to_string(
+                                        file.file_analyzer.query_var_types(&var).types()
+                                    )
+                                )
+                            }
+                        }
+                        IdentifierBinding::Parameter(param) => {
+                            if let Some(types) = identifier_semantics.flow.lookup(&param.name) {
+                                format!(
+                                    "param (narrowed): {} {}",
+                                    param.name,
+                                    types_to_string(types.types())
+                                )
+                            } else {
+                                format!("param: {} {}", param.name, types_to_string(&param.types))
+                            }
+                        }
                     }
-                    IdentifierBinding::Parameter(param) => {
-                        format!("{} {}", param.name, types_to_string(&param.types))
-                    }
-                },
+                }
                 QueryResult::VarDeclaration(var) => {
                     format!(
                         "var {} {}",
@@ -409,10 +432,15 @@ impl Server {
             let Some(result) = find_in_file(&mut file.file_analyzer, position) else { return None };
 
             let target = match result {
-                QueryResult::Identifier(lookup) => match lookup {
-                    IdentifierBinding::VarDeclaration(var) => var.name_node.span.clone(),
-                    IdentifierBinding::Parameter(param) => param.node.span,
-                },
+                QueryResult::Identifier(identifier_semantics) => {
+                    let Some(binding) = identifier_semantics.binding else {
+                        return None;
+                    };
+                    match binding {
+                        IdentifierBinding::VarDeclaration(var) => var.name_node.span.clone(),
+                        IdentifierBinding::Parameter(param) => param.node.span,
+                    }
+                }
                 QueryResult::StructIdentifier(struct_dec) => struct_dec.name_node.span.clone(),
                 QueryResult::FunctionCall(fun) => {
                     if let Some(binding) = fun.binding {

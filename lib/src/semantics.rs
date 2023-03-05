@@ -33,7 +33,36 @@ pub enum IdentifierBinding {
 
 #[derive(Debug, Clone)]
 pub struct IdentifierSemantics {
+    pub flow: Ptr<FlowContainer>,
     pub binding: Option<IdentifierBinding>,
+}
+
+impl IdentifierSemantics {
+    /// Either:
+    /// 1) the narrowed type
+    /// 2) the inferred type
+    /// 3) the declared type
+    pub fn types(&self, file_analyzer: &FileSemanticAnalyzer) -> Option<SumType> {
+        let Some(binding) = &self.binding else {
+            return None;
+        };
+        Some(match binding {
+            IdentifierBinding::VarDeclaration(var) => {
+                if let Some(types) = self.flow.lookup(&var.name) {
+                    types.clone()
+                } else {
+                    file_analyzer.query_var_types(var)
+                }
+            }
+            IdentifierBinding::Parameter(param) => {
+                if let Some(types) = self.flow.lookup(&param.name) {
+                    types.clone()
+                } else {
+                    SumType::from_types(&param.types)
+                }
+            }
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -69,7 +98,7 @@ pub struct VarDeclarationSemantics {
 
 #[derive(Debug, Clone)]
 pub struct IfExpressionSemantics {
-    /// Type narrowing from the if contition
+    /// Type narrowing from the if condition
     pub type_narrowing: Option<TypeNarrowing>,
 }
 
@@ -106,6 +135,98 @@ pub struct SelectorFieldSemantics {
     /// Field is nullable
     pub nullable: bool,
     pub binding: Option<SelectorFieldBinding>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FlowContainer {
+    pub parent: Option<Ptr<FlowContainer>>,
+    /// Var path to the SumType in the current container
+    /// For example: var1.field1.field2 -> i32 | string
+    /// Only contains set of updates for this flow container.
+    /// If a variable is not found in the map the parent FlowContainer has to be searched.
+    pub vars: HashMap<String, SumType>,
+}
+
+impl FlowContainer {
+    pub fn lookup(&self, identifier: &str) -> Option<SumType> {
+        let mut current = Some(self);
+        while let Some(flow) = current {
+            if let Some(types) = flow.vars.get(identifier) {
+                return Some(types.clone());
+            }
+            let Some(parent) = &flow.parent else {
+                return None;
+            };
+            current = Some(&parent);
+        }
+        None
+    }
+}
+
+/// Wrapper to mutate the current flow container
+pub struct CurrentFlowContainer {
+    pub flow: Ptr<FlowContainer>,
+}
+
+impl FlowContainer {
+    pub fn start_flow() -> Ptr<Self> {
+        Ptr::new(FlowContainer {
+            parent: None,
+            vars: HashMap::new(),
+        })
+    }
+}
+
+fn apply_narrowing(flow: &Ptr<FlowContainer>, narrowing: &TypeNarrowing) -> Ptr<FlowContainer> {
+    let mut new_flow = FlowContainer {
+        parent: Some(flow.clone()),
+        vars: HashMap::new(),
+    };
+    // true if in the form (typeof X != bool && typeof X != i32)
+    // false if in the form (typeof X == bool || typeof X == i32)
+    if narrowing.reduction {
+        new_flow.vars.insert(
+            narrowing.identifier.clone(),
+            narrowing.original_types.subtract(&narrowing.types),
+        );
+    } else {
+        new_flow
+            .vars
+            .insert(narrowing.identifier.clone(), narrowing.types.clone());
+    };
+
+    Ptr::new(new_flow)
+}
+
+fn apply_inverse_narrowing(
+    flow: &Ptr<FlowContainer>,
+    narrowing: &TypeNarrowing,
+) -> Ptr<FlowContainer> {
+    let mut new_flow = FlowContainer {
+        parent: Some(flow.clone()),
+        vars: HashMap::new(),
+    };
+    // true if in the form (typeof X != bool && typeof X != i32)
+    // false if in the form (typeof X == bool || typeof X == i32)
+    if narrowing.reduction {
+        new_flow
+            .vars
+            .insert(narrowing.identifier.clone(), narrowing.types.clone());
+    } else {
+        new_flow.vars.insert(
+            narrowing.identifier.clone(),
+            narrowing.original_types.subtract(&narrowing.types),
+        );
+    };
+
+    Ptr::new(new_flow)
+}
+
+struct BlockValidationResult {
+    /// Return type is used in an assignment
+    pub block_return: Option<SumType>,
+    /// True if the block returns with a return statement
+    pub fun_return: bool,
 }
 
 pub struct FileSemanticAnalyzer {
@@ -518,7 +639,10 @@ impl FileSemanticAnalyzer {
         }
         self.query_return_type(&fun.signature);
 
-        self.validate_block(&fun.body(), false);
+        let mut flow_container = CurrentFlowContainer {
+            flow: FlowContainer::start_flow(),
+        };
+        self.validate_block(&mut flow_container, &fun.body(), false);
     }
 
     fn bind_block_return(&mut self, block: &Ptr<Block>, last_expression: &Expression) {
@@ -529,11 +653,16 @@ impl FileSemanticAnalyzer {
         entry.block_return = Some(last_expression.clone());
     }
 
-    fn validate_block(&mut self, block: &Ptr<Block>, is_assignment: bool) -> Option<SumType> {
+    fn validate_block(
+        &mut self,
+        flow: &mut CurrentFlowContainer,
+        block: &Ptr<Block>,
+        is_assignment: bool,
+    ) -> BlockValidationResult {
         let mut last_statement: Option<Statement> = None;
         let mut last_statement_type: Option<SumType> = None;
         for statement in block.statements() {
-            last_statement_type = self.validate_statement(block, &statement, is_assignment);
+            last_statement_type = self.validate_statement(flow, block, &statement, is_assignment);
             if last_statement.map(|s| s.is_return()).unwrap_or(false) {
                 self.errors.push(LangError::type_error(
                     statement.node(),
@@ -559,26 +688,30 @@ impl FileSemanticAnalyzer {
                 ));
             }
         }
-        last_statement_type
+        BlockValidationResult {
+            block_return: last_statement_type,
+            fun_return: last_statement.map(|s| s.is_return()).unwrap_or(false),
+        }
     }
 
     fn validate_statement(
         &mut self,
+        flow: &mut CurrentFlowContainer,
         block: &Ptr<Block>,
         statement: &Statement,
         is_assignment: bool,
     ) -> Option<SumType> {
         match statement {
             Statement::Expression(expression) => {
-                return self.validate_expression(block, expression, is_assignment);
+                return self.validate_expression(flow, block, expression, is_assignment);
             }
             Statement::VarDeclaration(var_declaration) => {
-                self.validate_var_declaration(block, var_declaration.clone());
+                self.validate_var_declaration(flow, block, var_declaration.clone());
             }
             Statement::Return(ret) => {
                 let fun = block.fun();
                 let (ret_types, expression) = if let Some(expression) = &ret.expression {
-                    let Some(ret_types) = self.validate_expression( block, expression, false) else {
+                    let Some(ret_types) = self.validate_expression(flow, block, expression, false) else {
                         // error validating the return expression
                         return None;
                     };
@@ -638,6 +771,7 @@ impl FileSemanticAnalyzer {
 
     fn validate_var_declaration(
         &mut self,
+        flow: &mut CurrentFlowContainer,
         block: &Ptr<Block>,
         var_declaration: Ptr<VarDeclaration>,
     ) {
@@ -646,7 +780,7 @@ impl FileSemanticAnalyzer {
             .unwrap_or(SumType::empty());
 
         let expr = self
-            .validate_expression(block, &var_declaration.value, true)
+            .validate_expression(flow, block, &var_declaration.value, true)
             .unwrap_or(SumType::new(vec![]));
         if var_types.types().is_empty() {
             var_types = expr
@@ -829,9 +963,10 @@ impl FileSemanticAnalyzer {
         }
     }
 
-    fn lookup_identifier_from_block(
+    fn bind_identifier(
         &mut self,
         block: &Block,
+        flow: &Ptr<FlowContainer>,
         id: usize,
         identifier: &String,
     ) -> Option<IdentifierBinding> {
@@ -851,6 +986,7 @@ impl FileSemanticAnalyzer {
                 let existing = self.identifiers.insert(
                     id,
                     IdentifierSemantics {
+                        flow: flow.clone(),
                         binding: Some(binding.clone()),
                     },
                 );
@@ -868,6 +1004,7 @@ impl FileSemanticAnalyzer {
                         let existing = self.identifiers.insert(
                             id,
                             IdentifierSemantics {
+                                flow: flow.clone(),
                                 binding: Some(binding.clone()),
                             },
                         );
@@ -929,6 +1066,7 @@ impl FileSemanticAnalyzer {
     /// * is_assignment: If the expression is expected to return a value, e.g. from a block
     fn validate_expression(
         &mut self,
+        flow: &mut CurrentFlowContainer,
         block: &Ptr<Block>,
         expression: &Expression,
         is_assignment: bool,
@@ -940,9 +1078,8 @@ impl FileSemanticAnalyzer {
             ))),
 
             ExpressionType::Identifier(identifier) => {
-                let identifier =
-                    match self.lookup_identifier_from_block(block, expression.node.id, &identifier)
-                    {
+                let binding =
+                    match self.bind_identifier(block, &flow.flow, expression.node.id, identifier) {
                         Some(identifier) => identifier,
                         None => {
                             self.errors.push(LangError::type_error(
@@ -952,9 +1089,15 @@ impl FileSemanticAnalyzer {
                             return None;
                         }
                     };
-                match identifier {
-                    IdentifierBinding::VarDeclaration(var) => Some(self.query_var_types(&var)),
-                    IdentifierBinding::Parameter(param) => Some(SumType::from_types(&param.types)),
+                if let Some(narrowed_type) = flow.flow.lookup(&identifier) {
+                    Some(narrowed_type)
+                } else {
+                    match binding {
+                        IdentifierBinding::VarDeclaration(var) => Some(self.query_var_types(&var)),
+                        IdentifierBinding::Parameter(param) => {
+                            Some(SumType::from_types(&param.types))
+                        }
+                    }
                 }
             }
             ExpressionType::IntLiteral(_) => Some(SumType::from_type(RefType::value(
@@ -991,10 +1134,11 @@ impl FileSemanticAnalyzer {
                     }
                 },
                 UnaryOperator::Not => {
-                    self.validate_expression(block, &unary.operand, is_assignment)
+                    self.validate_expression(flow, block, &unary.operand, is_assignment)
                 }
                 UnaryOperator::Reference => {
-                    let types = self.validate_expression(block, &unary.operand, is_assignment);
+                    let types =
+                        self.validate_expression(flow, block, &unary.operand, is_assignment);
 
                     types.map(|s| {
                         s.types()
@@ -1003,15 +1147,15 @@ impl FileSemanticAnalyzer {
                             .collect()
                     })
                 }
-                UnaryOperator::TypeOf => todo!(),
+                UnaryOperator::TypeOf => Some(SumType::empty()),
             },
             // var u32 i, i + 3
             ExpressionType::BinaryExpression(binary) => {
                 let left = self
-                    .validate_expression(block, &binary.left, is_assignment)
+                    .validate_expression(flow, block, &binary.left, is_assignment)
                     .unwrap_or(SumType::new(vec![]));
                 let right = self
-                    .validate_expression(block, &binary.right, is_assignment)
+                    .validate_expression(flow, block, &binary.right, is_assignment)
                     .unwrap_or(SumType::new(vec![]));
                 let Some(overlap) = intersection(&left, &right) else {
                     self.errors.push(LangError::type_error(
@@ -1030,6 +1174,7 @@ impl FileSemanticAnalyzer {
                 expression.node.clone(),
                 Type::Array(Array {
                     types: Ptr::new(self.validate_expression_list(
+                        flow,
                         block,
                         &array.expressions,
                         is_assignment,
@@ -1041,6 +1186,7 @@ impl FileSemanticAnalyzer {
                 expression.node.clone(),
                 Type::Slice(Slice {
                     types: Ptr::new(self.validate_expression_list(
+                        flow,
                         block,
                         &vec![slice.operand.as_ref().clone()],
                         is_assignment,
@@ -1074,7 +1220,7 @@ impl FileSemanticAnalyzer {
 
                 for (i, parameter) in fun_signature.parameters.iter().enumerate() {
                     let arg = fun_call.arguments.get(i).unwrap();
-                    let arg_types = self.validate_expression(block, arg, is_assignment)?;
+                    let arg_types = self.validate_expression(flow, block, arg, is_assignment)?;
                     let parameter_type = self
                         .query_parameter_type(parameter)
                         .unwrap_or(SumType::empty());
@@ -1112,7 +1258,7 @@ impl FileSemanticAnalyzer {
                         set
                     });
                 for field in &struct_init.fields {
-                    let Some(field_type) = self.validate_expression( block, &field.value, is_assignment) else {
+                    let Some(field_type) = self.validate_expression( flow, block, &field.value, is_assignment) else {
                         continue;
                     };
 
@@ -1155,11 +1301,13 @@ impl FileSemanticAnalyzer {
                 )))
             }
             ExpressionType::SelectorExpression(select) => {
-                Some(self.validate_selector_expression(block, select, is_assignment)?)
+                Some(self.validate_selector_expression(flow, block, select, is_assignment)?)
             }
-            ExpressionType::Block(block) => self.validate_block(block, is_assignment),
+            ExpressionType::Block(block) => {
+                self.validate_block(flow, block, is_assignment).block_return
+            }
             ExpressionType::If(if_expression) => {
-                self.validate_if_expression(block, if_expression, is_assignment)
+                self.validate_if_expression(flow, block, if_expression, is_assignment)
             }
         };
 
@@ -1180,13 +1328,14 @@ impl FileSemanticAnalyzer {
 
     fn validate_expression_list(
         &mut self,
+        flow: &mut CurrentFlowContainer,
         block: &Ptr<Block>,
         expressions: &Vec<Expression>,
         is_assignment: bool,
     ) -> Vec<RefType> {
         let mut output = Vec::new();
         for expression in expressions {
-            if let Some(types) = self.validate_expression(block, &expression, is_assignment) {
+            if let Some(types) = self.validate_expression(flow, block, &expression, is_assignment) {
                 for t in types {
                     if !output.contains(&t) {
                         output.push(t);
@@ -1201,11 +1350,12 @@ impl FileSemanticAnalyzer {
     /// Returns the type of the expression
     fn validate_selector_expression(
         &mut self,
+        flow: &mut CurrentFlowContainer,
         block: &Ptr<Block>,
         select: &SelectorExpression,
         is_assignment: bool,
     ) -> Option<SumType> {
-        let root_types = self.validate_expression(block, &select.root, is_assignment)?;
+        let root_types = self.validate_expression(flow, block, &select.root, is_assignment)?;
         let semantics =
             self.bind_selector_field_to_struct(&select.root.node, &root_types.types(), None);
         let Some(root_struct) = semantics.binding.map(|b| match &b {
@@ -1346,49 +1496,84 @@ impl FileSemanticAnalyzer {
         semantics
     }
 
+    fn bind_if_type_narrowing(
+        &mut self,
+        if_expression: &Ptr<IfExpression>,
+        narrowing: TypeNarrowing,
+    ) {
+        let existing = self.if_expressions.insert(
+            if_expression.node.id,
+            IfExpressionSemantics {
+                type_narrowing: Some(narrowing),
+            },
+        );
+        assert!(existing.is_none());
+    }
+
     fn validate_if_expression(
         &mut self,
+        flow: &mut CurrentFlowContainer,
         block: &Ptr<Block>,
         if_expression: &Ptr<IfExpression>,
         is_assignment: bool,
     ) -> Option<SumType> {
-        self.validate_expression(block, &if_expression.condition, is_assignment)?;
+        self.validate_expression(flow, block, &if_expression.condition, is_assignment)?;
 
-        if let Some(binary) = match &if_expression.condition.r#type {
-            ExpressionType::BinaryExpression(binary) => Some(binary),
-            _ => None,
-        } {
-            if let Some(narrowing) = self.validate_typeof_expression(block, &binary, is_assignment)
-            {
-                let existing = self.if_expressions.insert(
-                    if_expression.node.id,
-                    IfExpressionSemantics {
-                        type_narrowing: Some(narrowing),
-                    },
-                );
-                assert!(existing.is_none());
+        let original_flow = flow.flow.clone();
+
+        let narrowing =
+            if let ExpressionType::BinaryExpression(binary) = &if_expression.condition.r#type {
+                self.validate_typeof_expression(flow, block, &binary, is_assignment)
+                    .map(|narrowing| {
+                        self.bind_if_type_narrowing(if_expression, narrowing.clone());
+                        narrowing
+                    })
+            } else {
+                None
+            };
+        if let Some(narrowing) = &narrowing {
+            flow.flow = apply_narrowing(&original_flow, narrowing);
+        };
+
+        let if_block_result = self.validate_block(flow, &if_expression.consequence, is_assignment);
+        let Some(alternative) = &if_expression.alternative else {
+            if is_assignment {
+                self.errors.push(LangError::type_error(
+                    &if_expression.node,
+                    "Else alternative required for if assignment".to_string(),
+                ));
             }
+            if let Some(narrowing) = &narrowing {
+                if if_block_result.fun_return {
+                    flow.flow = apply_inverse_narrowing(&original_flow, narrowing);
+                } else {
+                    flow.flow = original_flow;
+                }
+            }
+            return None;
+        };
+
+        // if or if/else case:
+
+        if let Some(narrowing) = &narrowing {
+            flow.flow = apply_inverse_narrowing(&original_flow, narrowing);
         }
 
-        let mut sum_type = self.validate_block(&if_expression.consequence, is_assignment);
+        let mut sum_type = if_block_result.block_return;
 
-        if let Some(alternative) = &if_expression.alternative {
-            let alternative_type = match alternative {
-                IfAlternative::Else(else_block) => self.validate_block(else_block, is_assignment),
-                IfAlternative::If(nested_if) => {
-                    self.validate_if_expression(block, nested_if, is_assignment)
-                }
-            };
-            if let Some(alternative_type) = alternative_type {
-                let mut temp = sum_type.unwrap_or(SumType::new(vec![]));
-                temp.union(alternative_type);
-                sum_type = Some(temp);
+        let alternative_type = match alternative {
+            IfAlternative::Else(else_block) => {
+                let else_result = self.validate_block(flow, else_block, is_assignment);
+                else_result.block_return
             }
-        } else if is_assignment {
-            self.errors.push(LangError::type_error(
-                &if_expression.node,
-                "Else alternative required for if assignment".to_string(),
-            ));
+            IfAlternative::If(nested_if) => {
+                self.validate_if_expression(flow, block, nested_if, is_assignment)
+            }
+        };
+        if let Some(alternative_type) = alternative_type {
+            let mut temp = sum_type.unwrap_or(SumType::new(vec![]));
+            temp.union(alternative_type);
+            sum_type = Some(temp);
         }
 
         sum_type
@@ -1396,6 +1581,7 @@ impl FileSemanticAnalyzer {
 
     fn validate_typeof_expression(
         &mut self,
+        flow: &mut CurrentFlowContainer,
         block: &Ptr<Block>,
         expression: &BinaryExpression,
         is_assignment: bool,
@@ -1414,8 +1600,8 @@ impl FileSemanticAnalyzer {
                 _ => return None,
             };
             let (mut left, right) = match (
-                self.validate_typeof_expression(block, left, is_assignment),
-                self.validate_typeof_expression(block, right, is_assignment),
+                self.validate_typeof_expression(flow, block, left, is_assignment),
+                self.validate_typeof_expression(flow, block, right, is_assignment),
             ) {
                 (None, None) => return None,
                 (Some(left), Some(right)) => (left, right),
@@ -1482,7 +1668,7 @@ impl FileSemanticAnalyzer {
         };
 
         let original_types = self
-            .validate_expression(block, &unary.operand, is_assignment)
+            .validate_expression(flow, block, &unary.operand, is_assignment)
             .unwrap_or(SumType::new(vec![]));
         for t in original_types.types() {
             if let Type::Unresolved(_) = &t.r#type {
@@ -1502,9 +1688,21 @@ impl FileSemanticAnalyzer {
         match &expression.right.r#type {
             // TODO handle unary & case
             ExpressionType::Identifier(identifier) => match identifier.as_str() {
+                "string" => result
+                    .types
+                    .push(RefType::value(expression.right.node.clone(), Type::String)),
                 "bool" => result
                     .types
                     .push(RefType::value(expression.right.node.clone(), Type::Bool)),
+                "u8" => result
+                    .types
+                    .push(RefType::value(expression.right.node.clone(), Type::U8)),
+                "i8" => result
+                    .types
+                    .push(RefType::value(expression.right.node.clone(), Type::I8)),
+                "u32" => result
+                    .types
+                    .push(RefType::value(expression.right.node.clone(), Type::U32)),
                 "i32" => result
                     .types
                     .push(RefType::value(expression.right.node.clone(), Type::I32)),

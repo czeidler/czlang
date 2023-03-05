@@ -5,7 +5,7 @@ use crate::{
         VarDeclaration,
     },
     semantics::{
-        FileSemanticAnalyzer, FileSemantics, FunctionCallSemantics, IdentifierBinding,
+        FileSemanticAnalyzer, FileSemantics, FunctionCallSemantics, IdentifierSemantics,
         SelectorFieldSemantics, TypeBinding,
     },
     types::{Ptr, SumType},
@@ -17,7 +17,7 @@ pub enum QueryResult {
     Function(Ptr<Function>),
     FunctionCall(FunctionCallSemantics),
     Parameter(Parameter),
-    Identifier(IdentifierBinding),
+    Identifier(IdentifierSemantics),
     StructIdentifier(Ptr<Struct>),
     VarDeclaration(Ptr<VarDeclaration>),
     StructDeclaration(Ptr<Struct>),
@@ -131,11 +131,9 @@ fn find_in_expression(
 ) -> Option<QueryResult> {
     match &expression.r#type {
         ExpressionType::Identifier(_) => {
-            let Some(identifier) = analyzer
-                .query_identifier(block.block, expression.node.id)
-                .map(|s| s.binding.clone())
-                .flatten() else { return None };
-            Some(QueryResult::Identifier(identifier))
+            let Some(identifier_semantics) = analyzer
+                .query_identifier(block.block, expression.node.id) else { return None };
+            Some(QueryResult::Identifier(identifier_semantics))
         }
         ExpressionType::BinaryExpression(binary) => {
             if binary.left.node.contains(position) {

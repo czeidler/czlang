@@ -43,6 +43,21 @@ impl SumType {
         self.types.is_empty()
     }
 
+    pub fn contains(&self, t: &RefType) -> bool {
+        self.types.iter().any(|our| our == t)
+    }
+
+    pub fn subtract(&self, other: &SumType) -> SumType {
+        let mut output = SumType::empty();
+        for t in self.types() {
+            if other.contains(t) {
+                continue;
+            }
+            output.push(t.clone());
+        }
+        output
+    }
+
     pub fn push(&mut self, t: RefType) {
         if !self.types.contains(&t) {
             self.types.push(t);

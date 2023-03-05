@@ -30,36 +30,41 @@ pub fn dot_completion(
         return Some(vec![]);
     };
     match result {
-        QueryResult::Identifier(bindings) => match bindings {
-            IdentifierBinding::VarDeclaration(var) => {
-                let var_type = file.file_analyzer.query_var_types(&var);
-                if var_type.len() != 1 {
-                    return Some(vec![]);
-                }
-                let t = &var_type.types()[0];
-                let type_semantics = file.file_analyzer.query_type(t);
-                let Some(bindings) = type_semantics.and_then(|s| s.binding) else {
+        QueryResult::Identifier(identifier_semantics) => {
+            let Some(binding) = identifier_semantics.binding else {
+                return Some(vec![]);
+            };
+            match binding {
+                IdentifierBinding::VarDeclaration(var) => {
+                    let var_type = file.file_analyzer.query_var_types(&var);
+                    if var_type.len() != 1 {
+                        return Some(vec![]);
+                    }
+                    let t = &var_type.types()[0];
+                    let type_semantics = file.file_analyzer.query_type(t);
+                    let Some(bindings) = type_semantics.and_then(|s| s.binding) else {
                     return Some(vec![]);
                 };
-                match bindings {
-                    TypeBinding::Struct(struct_dec) => {
-                        return Some(
-                            struct_dec
-                                .fields
-                                .iter()
-                                .map(|f| {
-                                    CompletionItem::new_simple(
-                                        f.name.clone(),
-                                        types_to_string(&f.types),
-                                    )
-                                })
-                                .collect(),
-                        )
+                    match bindings {
+                        TypeBinding::Struct(struct_dec) => {
+                            return Some(
+                                struct_dec
+                                    .fields
+                                    .iter()
+                                    .map(|f| {
+                                        CompletionItem::new_simple(
+                                            f.name.clone(),
+                                            types_to_string(&f.types),
+                                        )
+                                    })
+                                    .collect(),
+                            )
+                        }
                     }
                 }
+                IdentifierBinding::Parameter(_) => {}
             }
-            IdentifierBinding::Parameter(_) => {}
-        },
+        }
         QueryResult::SelectorField((_, field_semantics)) => {
             if let Some(binding) = field_semantics.binding {
                 match binding {
