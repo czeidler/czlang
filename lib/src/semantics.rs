@@ -5,8 +5,9 @@ use crate::{
         Array, BinaryExpression, BinaryOperator, Block, BlockParent, BlockTrait, Expression,
         ExpressionType, Field, FileContext, FileTrait, Function, FunctionCall, FunctionSignature,
         FunctionTrait, IfAlternative, IfExpression, LangError, NodeData, Parameter, RefType,
-        RootSymbol, SelectorExpression, SelectorField, SelectorFieldType, Slice, Statement, Struct,
-        StructFieldInitialization, StructInitialization, Type, UnaryOperator, VarDeclaration,
+        ReturnStatement, RootSymbol, SelectorExpression, SelectorField, SelectorFieldType, Slice,
+        Statement, Struct, StructFieldInitialization, StructInitialization, Type, UnaryOperator,
+        VarDeclaration,
     },
     buildin::Buildins,
     types::{intersection, types_to_string, Ptr, SumType},
@@ -145,6 +146,8 @@ pub struct FlowContainer {
     /// Only contains set of updates for this flow container.
     /// If a variable is not found in the map the parent FlowContainer has to be searched.
     pub vars: HashMap<String, SumType>,
+    /// If not None a return statement has been encountered
+    pub returned: Option<SumType>,
 }
 
 impl FlowContainer {
@@ -173,6 +176,7 @@ impl FlowContainer {
         Ptr::new(FlowContainer {
             parent: None,
             vars: HashMap::new(),
+            returned: None,
         })
     }
 }
@@ -181,6 +185,7 @@ fn apply_narrowing(flow: &Ptr<FlowContainer>, narrowing: &TypeNarrowing) -> Ptr<
     let mut new_flow = FlowContainer {
         parent: Some(flow.clone()),
         vars: HashMap::new(),
+        returned: None,
     };
     // true if in the form (typeof X != bool && typeof X != i32)
     // false if in the form (typeof X == bool || typeof X == i32)
@@ -205,6 +210,7 @@ fn apply_inverse_narrowing(
     let mut new_flow = FlowContainer {
         parent: Some(flow.clone()),
         vars: HashMap::new(),
+        returned: None,
     };
     // true if in the form (typeof X != bool && typeof X != i32)
     // false if in the form (typeof X == bool || typeof X == i32)
@@ -220,13 +226,6 @@ fn apply_inverse_narrowing(
     };
 
     Ptr::new(new_flow)
-}
-
-struct BlockValidationResult {
-    /// Return type is used in an assignment
-    pub block_return: Option<SumType>,
-    /// True if the block returns with a return statement
-    pub fun_return: bool,
 }
 
 pub struct FileSemanticAnalyzer {
@@ -658,17 +657,23 @@ impl FileSemanticAnalyzer {
         flow: &mut CurrentFlowContainer,
         block: &Ptr<Block>,
         is_assignment: bool,
-    ) -> BlockValidationResult {
+    ) -> Option<SumType> {
         let mut last_statement: Option<Statement> = None;
         let mut last_statement_type: Option<SumType> = None;
+        let mut returned = false;
         for statement in block.statements() {
             last_statement_type = self.validate_statement(flow, block, &statement, is_assignment);
-            if last_statement.map(|s| s.is_return()).unwrap_or(false) {
+            if flow.flow.returned.is_some() && returned {
                 self.errors.push(LangError::type_error(
                     statement.node(),
                     "No statements allowed after return statement".to_string(),
                 ));
             }
+            returned = if !returned {
+                flow.flow.returned.is_some()
+            } else {
+                false
+            };
 
             last_statement = Some(statement);
         }
@@ -688,12 +693,83 @@ impl FileSemanticAnalyzer {
                 ));
             }
         }
-        BlockValidationResult {
-            block_return: last_statement_type,
-            fun_return: last_statement.map(|s| s.is_return()).unwrap_or(false),
-        }
+        last_statement_type
     }
 
+    fn validate_return_statement(
+        &mut self,
+        flow: &mut CurrentFlowContainer,
+        block: &Ptr<Block>,
+        ret: &ReturnStatement,
+    ) -> Option<SumType> {
+        let fun = block.fun();
+        let (ret_types, expression) = if let Some(expression) = &ret.expression {
+            let was_already_returned = flow.flow.returned.is_some();
+            let ret_types = self.validate_expression(flow, block, expression, false);
+            if flow.flow.returned.is_some() && !was_already_returned {
+                self.errors.push(LangError::type_error(
+                    &expression.node,
+                    format!("Return in return expression is not allowed"),
+                ));
+            }
+
+            let Some(ret_types) = ret_types else {
+                // error validating the return expression
+                return None;
+            };
+            (ret_types, Some(expression))
+        } else {
+            (SumType::new(vec![]), None)
+        };
+
+        let fun_ret_type = self.query_return_type(&fun.signature);
+        let fun_ret_type = match fun_ret_type {
+            Some(fun_ret_type) => {
+                if ret_types.is_empty() {
+                    self.errors.push(LangError::type_error(
+                        &expression
+                            .map(|e| e.node.clone())
+                            .unwrap_or(fun.signature.node.clone()),
+                        format!("Expected return type {:?}", fun.signature.return_type),
+                    ));
+                    return None;
+                }
+                fun_ret_type
+            }
+            None => {
+                if ret_types.is_empty() {
+                    return None;
+                }
+                self.errors.push(LangError::type_error(
+                    &expression
+                        .map(|e| e.node.clone())
+                        .unwrap_or(fun.signature.node.clone()),
+                    format!(
+                        "Return type expected: fun == {:?}, expr == {:?}",
+                        fun.signature.return_type, ret_types,
+                    ),
+                ));
+                return None;
+            }
+        };
+
+        let overlap = intersection(&ret_types, &fun_ret_type);
+        if overlap.is_none() {
+            self.errors.push(LangError::type_error(
+                &expression
+                    .map(|e| e.node.clone())
+                    .unwrap_or(fun.signature.node.clone()),
+                format!(
+                    "Incompatible return type: fun == {:?}, expr == {:?}",
+                    fun.signature.return_type, ret_types,
+                ),
+            ));
+            return None;
+        }
+        overlap
+    }
+
+    /// If statement is an expression this method returns the expression block return value otherwise None.
     fn validate_statement(
         &mut self,
         flow: &mut CurrentFlowContainer,
@@ -709,61 +785,12 @@ impl FileSemanticAnalyzer {
                 self.validate_var_declaration(flow, block, var_declaration.clone());
             }
             Statement::Return(ret) => {
-                let fun = block.fun();
-                let (ret_types, expression) = if let Some(expression) = &ret.expression {
-                    let Some(ret_types) = self.validate_expression(flow, block, expression, false) else {
-                        // error validating the return expression
-                        return None;
-                    };
-                    (ret_types, Some(expression))
-                } else {
-                    (SumType::new(vec![]), None)
-                };
-
-                let fun_ret_type = self.query_return_type(&fun.signature);
-                let fun_ret_type = match fun_ret_type {
-                    Some(fun_ret_type) => {
-                        if ret_types.is_empty() {
-                            self.errors.push(LangError::type_error(
-                                &expression
-                                    .map(|e| e.node.clone())
-                                    .unwrap_or(fun.signature.node.clone()),
-                                format!("Expected return type {:?}", fun.signature.return_type),
-                            ));
-                            return None;
-                        }
-                        fun_ret_type
-                    }
-                    None => {
-                        if ret_types.is_empty() {
-                            return None;
-                        }
-                        self.errors.push(LangError::type_error(
-                            &expression
-                                .map(|e| e.node.clone())
-                                .unwrap_or(fun.signature.node.clone()),
-                            format!(
-                                "Return type expected: fun == {:?}, expr == {:?}",
-                                fun.signature.return_type, ret_types,
-                            ),
-                        ));
-                        return None;
-                    }
-                };
-
-                let overlap = intersection(&ret_types, &fun_ret_type);
-                if overlap.is_none() {
-                    self.errors.push(LangError::type_error(
-                        &expression
-                            .map(|e| e.node.clone())
-                            .unwrap_or(fun.signature.node.clone()),
-                        format!(
-                            "Incompatible return type: fun == {:?}, expr == {:?}",
-                            fun.signature.return_type, ret_types,
-                        ),
-                    ));
-                    return None;
-                }
+                let return_type = self.validate_return_statement(flow, block, ret);
+                flow.flow = Ptr::new(FlowContainer {
+                    parent: Some(flow.flow.clone()),
+                    vars: HashMap::new(),
+                    returned: Some(return_type.unwrap_or(SumType::empty())),
+                });
             }
         };
         None
@@ -1147,7 +1174,7 @@ impl FileSemanticAnalyzer {
                             .collect()
                     })
                 }
-                UnaryOperator::TypeOf => Some(SumType::empty()),
+                UnaryOperator::TypeOf => None,
             },
             // var u32 i, i + 3
             ExpressionType::BinaryExpression(binary) => {
@@ -1303,9 +1330,7 @@ impl FileSemanticAnalyzer {
             ExpressionType::SelectorExpression(select) => {
                 Some(self.validate_selector_expression(flow, block, select, is_assignment)?)
             }
-            ExpressionType::Block(block) => {
-                self.validate_block(flow, block, is_assignment).block_return
-            }
+            ExpressionType::Block(block) => self.validate_block(flow, block, is_assignment),
             ExpressionType::If(if_expression) => {
                 self.validate_if_expression(flow, block, if_expression, is_assignment)
             }
@@ -1517,8 +1542,6 @@ impl FileSemanticAnalyzer {
         if_expression: &Ptr<IfExpression>,
         is_assignment: bool,
     ) -> Option<SumType> {
-        self.validate_expression(flow, block, &if_expression.condition, is_assignment)?;
-
         let original_flow = flow.flow.clone();
 
         let narrowing =
@@ -1529,6 +1552,7 @@ impl FileSemanticAnalyzer {
                         narrowing
                     })
             } else {
+                self.validate_expression(flow, block, &if_expression.condition, is_assignment)?;
                 None
             };
         if let Some(narrowing) = &narrowing {
@@ -1536,6 +1560,7 @@ impl FileSemanticAnalyzer {
         };
 
         let if_block_result = self.validate_block(flow, &if_expression.consequence, is_assignment);
+        let consequence_flow = flow.flow.clone();
         let Some(alternative) = &if_expression.alternative else {
             if is_assignment {
                 self.errors.push(LangError::type_error(
@@ -1544,7 +1569,7 @@ impl FileSemanticAnalyzer {
                 ));
             }
             if let Some(narrowing) = &narrowing {
-                if if_block_result.fun_return {
+                if consequence_flow.returned.is_some() {
                     flow.flow = apply_inverse_narrowing(&original_flow, narrowing);
                 } else {
                     flow.flow = original_flow;
@@ -1554,29 +1579,46 @@ impl FileSemanticAnalyzer {
         };
 
         // if or if/else case:
-
         if let Some(narrowing) = &narrowing {
             flow.flow = apply_inverse_narrowing(&original_flow, narrowing);
         }
 
-        let mut sum_type = if_block_result.block_return;
-
         let alternative_type = match alternative {
-            IfAlternative::Else(else_block) => {
-                let else_result = self.validate_block(flow, else_block, is_assignment);
-                else_result.block_return
-            }
+            IfAlternative::Else(else_block) => self.validate_block(flow, else_block, is_assignment),
             IfAlternative::If(nested_if) => {
                 self.validate_if_expression(flow, block, nested_if, is_assignment)
             }
         };
+
+        if let Some(narrowing) = &narrowing {
+            match (&consequence_flow.returned, &flow.flow.returned) {
+                (None, Some(_)) => {
+                    flow.flow = apply_inverse_narrowing(&consequence_flow, narrowing)
+                }
+                (None, None) => {}
+                (Some(_), None) => {
+                    // keep current, alternative flow
+                }
+                (Some(left), Some(right)) => {
+                    // both path returned
+                    let mut return_type = SumType::from_types(left.types());
+                    return_type.union(SumType::from_types(right.types()));
+                    flow.flow = Ptr::new(FlowContainer {
+                        parent: Some(original_flow.clone()),
+                        vars: HashMap::new(),
+                        returned: Some(return_type),
+                    });
+                }
+            };
+        };
+
         if let Some(alternative_type) = alternative_type {
-            let mut temp = sum_type.unwrap_or(SumType::new(vec![]));
+            let mut temp = if_block_result.unwrap_or(SumType::new(vec![]));
             temp.union(alternative_type);
-            sum_type = Some(temp);
+            return Some(temp);
         }
 
-        sum_type
+        if_block_result
     }
 
     fn validate_typeof_expression(

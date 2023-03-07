@@ -511,13 +511,6 @@ pub enum Statement {
 }
 
 impl Statement {
-    pub fn is_return(&self) -> bool {
-        match self {
-            Statement::Return(_) => true,
-            _ => false,
-        }
-    }
-
     pub fn node(&self) -> &NodeData {
         match self {
             Statement::Expression(expr) => &expr.node,
