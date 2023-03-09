@@ -124,7 +124,6 @@ fun main() { test() }
 
     #[test]
     fn type_of_validation() {
-        // invalid type check
         transpile_and_validate_project(
             "test_projects/type_of_validation",
             r#"
@@ -138,7 +137,7 @@ fun main() { test() }
         );
 
         transpile_and_validate_project(
-            "test_projects/type_of_validation_2",
+            "test_projects/type_of_validation_b",
             r#"
             fun test_call(arg0 bool | i32) bool {
                 if typeof arg0 == bool {
@@ -148,6 +147,52 @@ fun main() { test() }
                     //println("{arg0}")
                     return true
                 }
+            }
+
+            fun main() {
+                test_call(32)
+            }
+        "#,
+        );
+    }
+
+    #[test]
+    fn type_of_validation_2() {
+        transpile_and_validate_project(
+            "test_projects/type_of_validation_2",
+            r#"
+            fun test_call(arg bool | i32 | string) {
+                if typeof arg == bool {
+                    var b bool = arg
+                    return
+                }
+
+                var test i32 | string = arg
+            }
+
+            fun main() {
+                test_call(32)
+            }
+        "#,
+        );
+    }
+
+    #[test]
+    fn type_of_validation_3() {
+        transpile_and_validate_project(
+            "test_projects/type_of_validation_3",
+            r#"
+            fun test_call(arg bool | i32 | string) {
+                if typeof arg == bool {
+                    var b bool = arg
+                } else if typeof arg == i32 {
+                    var s i32 = arg
+                } else {
+                    var s string = arg
+                    return
+                }
+
+                var test string = arg
             }
 
             fun main() {

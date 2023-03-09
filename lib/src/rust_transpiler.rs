@@ -525,14 +525,40 @@ impl RustTranspiler {
             return;
         }
 
+        let (resolved_type, narrowed_type) = analyzer
+            .query_expression(block, &expression)
+            .map(|s| (s.resolved_types.clone().unwrap(), s.types().unwrap()))
+            .unwrap();
+
         if target.len() == 1 {
-            // the target is a simple type, i.e. we can directly assign the expression
-            self.transpile_expression(analyzer, &expression, block, writer);
+            if resolved_type.len() == 1 {
+                // the target is a simple type, i.e. we can directly assign the expression
+                self.transpile_expression(analyzer, &expression, block, writer);
+            } else {
+                writer.write("match ");
+                self.transpile_expression(analyzer, &expression, block, writer);
+                writer.write(" {");
+                writer.new_line();
+                writer.indented(|writer| {
+                    let resolved_name = resolved_type.sum_type_name();
+                    let target_type = &target.types()[0];
+                    writer.write(&resolved_name);
+                    writer.write("::");
+                    let variant = type_to_enum_variant(&target_type.r#type);
+                    let full_variant = match target_type.r#type {
+                        Type::Null => variant,
+                        _ => format!("{}(e)", variant),
+                    };
+                    writer.write(&full_variant);
+                    writer.write(" => e,");
+                    writer.new_line();
+
+                    writer.write("_ => panic!(\"Impossible\")");
+                    writer.new_line();
+                });
+                writer.write("}");
+            }
         } else {
-            let resolved_type = analyzer
-                .query_expression(block, &expression)
-                .and_then(|s| s.resolved_types.clone())
-                .unwrap();
             let resolved_name = resolved_type.sum_type_name();
             let target_name = target.sum_type_name();
             if target_name == resolved_name {
@@ -553,7 +579,7 @@ impl RustTranspiler {
                 writer.write(" {");
                 writer.new_line();
                 writer.indented(|writer| {
-                    for resolved in resolved_type.types() {
+                    for resolved in narrowed_type.types() {
                         writer.write(&resolved_name);
                         writer.write("::");
                         let variant = type_to_enum_variant(&resolved.r#type);
@@ -665,24 +691,36 @@ impl RustTranspiler {
         writer.write(";");
     }
 
-    fn transpile_if_type_narrowing(&self, type_narrowing: &TypeNarrowing, writer: &mut Writer) {
+    fn transpile_if_type_narrowing(
+        &self,
+        analyzer: &mut FileSemanticAnalyzer,
+        block: &Block,
+        type_narrowing: &TypeNarrowing,
+        writer: &mut Writer,
+    ) {
         if type_narrowing.original_types.len() == 1 {
             // nothing needs to be narrowed
             writer.write("true");
             return;
         }
 
-        //TODO extract correct condition type here (not typeof)
-        let condition_type = type_narrowing.original_types.sum_type_name();
+        let identifier_semantics = analyzer
+            .query_identifier(block, type_narrowing.identifier_node.id)
+            .unwrap();
+        let condition_type = identifier_semantics
+            .declared_types(analyzer)
+            .unwrap()
+            .sum_type_name();
         let target_type_name = type_narrowing.types.sum_type_name();
 
         writer.write(&format!(
-            "let Some({}) = match {} {{",
-            type_narrowing.identifier, type_narrowing.identifier
+            "let Some(_) = match {} {{",
+            type_narrowing.identifier
         ));
         writer.indented(|writer| {
             if type_narrowing.reduction {
                 // true if in the form (typeof X != bool && typeof X != i32)
+                todo!();
             } else {
                 // false if in the form (typeof X == bool || typeof X == i32)
                 for t in type_narrowing.types.types() {
@@ -720,7 +758,7 @@ impl RustTranspiler {
             .query_if_expression(block, &if_expression)
             .and_then(|s| s.type_narrowing);
         if let Some(type_narrowing) = &type_narrowing {
-            self.transpile_if_type_narrowing(type_narrowing, writer);
+            self.transpile_if_type_narrowing(analyzer, block, type_narrowing, writer);
         } else {
             self.transpile_expression(analyzer, &if_expression.condition, block, writer);
         }
