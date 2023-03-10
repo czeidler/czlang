@@ -7,6 +7,7 @@ use std::{
 use anyhow::Result;
 use czlanglib::{
     ast::{SelectorFieldType, SourcePosition, SourceSpan},
+    format::{format_fun_signature, format_param, format_var_declaration},
     init,
     project::{FileChange, Project},
     query::{find_in_file, QueryResult},
@@ -45,6 +46,13 @@ pub struct Server {
     connection: Arc<Connection>,
     pool: ThreadPool,
     project: Arc<Mutex<Project>>,
+}
+
+fn lang_string(value: String) -> LanguageString {
+    LanguageString {
+        language: "czlang".to_string(),
+        value,
+    }
 }
 
 impl Server {
@@ -329,47 +337,46 @@ impl Server {
             let Some(result) = find_in_file(&mut file.file_analyzer, position) else { return None };
 
             let result = match result {
-                QueryResult::Function(fun) => {
-                    format!("fun {}", &fun.signature.name)
-                }
+                QueryResult::Function(fun) => format_fun_signature(&fun.signature),
                 QueryResult::Parameter(parameter) => {
-                    format!("{}", types_to_string(&parameter.types))
+                    format!("(parameter) {}", format_param(&parameter))
                 }
                 QueryResult::Identifier(expression_semantics) => {
                     let Some(binding) = expression_semantics.binding.as_ref() else {
                         return None;
                     };
-                    let Some(types) = expression_semantics.types() else {
-                        return None;
-                    };
-                    let types_str = types_to_string(types.types());
                     match binding {
                         IdentifierBinding::VarDeclaration(var) => {
                             if expression_semantics.narrowed_types.is_some() {
-                                format!("identifier (narrowed): {} {}", var.name, types_str)
+                                format!(
+                                    "(narrowed variable): {}",
+                                    format_var_declaration(
+                                        &var,
+                                        &file.file_analyzer.query_var_types(&var)
+                                    )
+                                )
                             } else {
-                                format!("identifier: {} {}", var.name, types_str)
+                                format_var_declaration(
+                                    &var,
+                                    &file.file_analyzer.query_var_types(&var),
+                                )
                             }
                         }
                         IdentifierBinding::Parameter(param) => {
                             if expression_semantics.narrowed_types.is_some() {
-                                format!("param (narrowed): {} {}", param.name, types_str)
+                                format!("(narrowed parameter) {}", format_param(&param))
                             } else {
-                                format!("param: {} {}", param.name, types_str)
+                                format!("(parameter) {}", format_param(&param))
                             }
                         }
                     }
                 }
                 QueryResult::VarDeclaration(var) => {
-                    format!(
-                        "var {} {}",
-                        var.name,
-                        types_to_string(file.file_analyzer.query_var_types(&var).types())
-                    )
+                    format_var_declaration(&var, &file.file_analyzer.query_var_types(&var))
                 }
                 QueryResult::FunctionCall(fun) => {
                     if let Some(fun) = fun.binding {
-                        format!("fun {}", fun.as_function_signature().name)
+                        format_fun_signature(fun.as_function_signature())
                     } else {
                         return None;
                     }
@@ -394,7 +401,7 @@ impl Server {
                 }
             };
             Some(Hover {
-                contents: HoverContents::Scalar(MarkedString::String(result)),
+                contents: HoverContents::Scalar(MarkedString::LanguageString(lang_string(result))),
                 range: None,
             })
         })?;

@@ -6,6 +6,7 @@ pub mod rust_transpiler;
 mod tree_sitter;
 pub mod types;
 
+pub mod format;
 pub mod project;
 pub mod query;
 pub mod semantics;
