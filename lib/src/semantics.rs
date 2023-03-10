@@ -33,51 +33,6 @@ pub enum IdentifierBinding {
 }
 
 #[derive(Debug, Clone)]
-pub struct IdentifierSemantics {
-    pub flow: Ptr<FlowContainer>,
-    pub binding: Option<IdentifierBinding>,
-}
-
-impl IdentifierSemantics {
-    /// Either:
-    /// 1) the narrowed type
-    /// 2) the inferred type
-    /// 3) the declared type
-    pub fn types(&self, file_analyzer: &FileSemanticAnalyzer) -> Option<SumType> {
-        let Some(binding) = &self.binding else {
-            return None;
-        };
-        Some(match binding {
-            IdentifierBinding::VarDeclaration(var) => {
-                if let Some(types) = self.flow.lookup(&var.name) {
-                    types.clone()
-                } else {
-                    file_analyzer.query_var_types(var)
-                }
-            }
-            IdentifierBinding::Parameter(param) => {
-                if let Some(types) = self.flow.lookup(&param.name) {
-                    types.clone()
-                } else {
-                    SumType::from_types(&param.types)
-                }
-            }
-        })
-    }
-
-    pub fn declared_types(&self, file_analyzer: &FileSemanticAnalyzer) -> Option<SumType> {
-        let Some(binding) = &self.binding else {
-            return None;
-        };
-
-        Some(match binding {
-            IdentifierBinding::VarDeclaration(var) => file_analyzer.query_var_types(var),
-            IdentifierBinding::Parameter(param) => SumType::from_types(&param.types),
-        })
-    }
-}
-
-#[derive(Debug, Clone)]
 pub enum FunctionCallBinding {
     Function(Ptr<Function>),
     Buildin(FunctionSignature),
@@ -106,6 +61,9 @@ pub struct ExpressionSemantics {
     pub resolved_types: Option<SumType>,
     /// The narrowed type, e.g. through an `if typeof` expression.
     pub narrowed_types: Option<SumType>,
+
+    /// Binding if the expression is an identifier
+    pub binding: Option<IdentifierBinding>,
 }
 
 impl ExpressionSemantics {
@@ -113,6 +71,7 @@ impl ExpressionSemantics {
         ExpressionSemantics {
             resolved_types: None,
             narrowed_types: None,
+            binding: None,
         }
     }
 
@@ -120,6 +79,7 @@ impl ExpressionSemantics {
         ExpressionSemantics {
             resolved_types,
             narrowed_types: None,
+            binding: None,
         }
     }
 
@@ -292,8 +252,6 @@ pub struct FileSemanticAnalyzer {
     selector_fields: HashMap<usize, SelectorFieldSemantics>,
     variable_declarations: HashMap<usize, VarDeclarationSemantics>,
     function_calls: HashMap<usize, FunctionCallSemantics>,
-    /// Contains details about an identifier pointing to a variable or parameter
-    identifiers: HashMap<usize, IdentifierSemantics>,
     blocks: HashMap<usize, BlockSemantics>,
     /// Binding for a struct field initialization to the matching Field in of the target struct
     struct_field_inits: HashMap<usize, Field>,
@@ -307,7 +265,6 @@ impl FileSemanticAnalyzer {
             sum_types: HashMap::new(),
             errors: Vec::new(),
 
-            identifiers: HashMap::new(),
             structs: HashSet::new(),
             fun_symbols: HashSet::new(),
             type_identifiers: HashMap::new(),
@@ -483,14 +440,14 @@ impl FileSemanticAnalyzer {
         &mut self,
         block: &Block,
         node_id: usize,
-    ) -> Option<IdentifierSemantics> {
-        if let Some(s) = self.identifiers.get(&node_id) {
+    ) -> Option<ExpressionSemantics> {
+        if let Some(s) = self.expressions.get(&node_id) {
             return Some(s.clone());
         }
 
         self.query_fun(&block.fun());
 
-        self.identifiers.get(&node_id).map(|s| s.clone())
+        self.expressions.get(&node_id).map(|s| s.clone())
     }
 
     pub fn query_function_call(
@@ -909,7 +866,7 @@ impl FileSemanticAnalyzer {
     fn back_propagate_types(&mut self, block: &Block, expression: &Expression, types: &SumType) {
         match &expression.r#type {
             ExpressionType::Identifier(_) => {
-                let Some(id) = self.identifiers.get(&expression.node.id).map(|s|s.binding.clone()).flatten()  else {return};
+                let Some(id) = self.expressions.get(&expression.node.id).map(|s|s.binding.clone()).flatten()  else {return};
                 match id {
                     IdentifierBinding::VarDeclaration(var_declaration) => {
                         // narrow the expression down
@@ -1032,11 +989,9 @@ impl FileSemanticAnalyzer {
         }
     }
 
-    fn bind_identifier(
+    fn lookup_identifier(
         &mut self,
         block: &Block,
-        flow: &Ptr<FlowContainer>,
-        id: usize,
         identifier: &String,
     ) -> Option<IdentifierBinding> {
         let mut current: Option<Ptr<Block>> = None;
@@ -1051,16 +1006,7 @@ impl FileSemanticAnalyzer {
                 .map(|s| s.vars.get(identifier))
                 .flatten();
             if let Some(var) = var {
-                let binding = IdentifierBinding::VarDeclaration(var.clone());
-                let existing = self.identifiers.insert(
-                    id,
-                    IdentifierSemantics {
-                        flow: flow.clone(),
-                        binding: Some(binding.clone()),
-                    },
-                );
-                assert!(existing.is_none());
-                return Some(binding);
+                return Some(IdentifierBinding::VarDeclaration(var.clone()));
             }
 
             match &b.parent {
@@ -1069,16 +1015,7 @@ impl FileSemanticAnalyzer {
                         .into_iter()
                         .find(|it| &it.name == identifier)
                     {
-                        let binding = IdentifierBinding::Parameter(param.clone());
-                        let existing = self.identifiers.insert(
-                            id,
-                            IdentifierSemantics {
-                                flow: flow.clone(),
-                                binding: Some(binding.clone()),
-                            },
-                        );
-                        assert!(existing.is_none());
-                        return Some(binding);
+                        return Some(IdentifierBinding::Parameter(param.clone()));
                     } else {
                         return None;
                     }
@@ -1144,25 +1081,25 @@ impl FileSemanticAnalyzer {
             )),
 
             ExpressionType::Identifier(identifier) => {
-                let binding =
-                    match self.bind_identifier(block, &flow.flow, expression.node.id, identifier) {
-                        Some(identifier) => identifier,
-                        None => {
-                            self.errors.push(LangError::type_error(
-                                &expression.node,
-                                format!("Identifier not found: {:?}", identifier),
-                            ));
-                            return ExpressionSemantics::empty();
-                        }
-                    };
+                let binding = match self.lookup_identifier(block, identifier) {
+                    Some(identifier) => identifier,
+                    None => {
+                        self.errors.push(LangError::type_error(
+                            &expression.node,
+                            format!("Identifier not found: {:?}", identifier),
+                        ));
+                        return ExpressionSemantics::empty();
+                    }
+                };
 
-                let resolved_types = match binding {
+                let resolved_types = match &binding {
                     IdentifierBinding::VarDeclaration(var) => Some(self.query_var_types(&var)),
                     IdentifierBinding::Parameter(param) => Some(SumType::from_types(&param.types)),
                 };
                 ExpressionSemantics {
                     resolved_types,
                     narrowed_types: flow.flow.lookup(identifier),
+                    binding: Some(binding),
                 }
             }
             ExpressionType::IntLiteral(_) => {

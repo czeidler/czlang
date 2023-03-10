@@ -5,7 +5,7 @@ use crate::{
         VarDeclaration,
     },
     semantics::{
-        FileSemanticAnalyzer, FileSemantics, FunctionCallSemantics, IdentifierSemantics,
+        ExpressionSemantics, FileSemanticAnalyzer, FileSemantics, FunctionCallSemantics,
         SelectorFieldSemantics, TypeBinding,
     },
     types::{Ptr, SumType},
@@ -17,7 +17,7 @@ pub enum QueryResult {
     Function(Ptr<Function>),
     FunctionCall(FunctionCallSemantics),
     Parameter(Parameter),
-    Identifier(IdentifierSemantics),
+    Identifier(ExpressionSemantics),
     StructIdentifier(Ptr<Struct>),
     VarDeclaration(Ptr<VarDeclaration>),
     StructDeclaration(Ptr<Struct>),

@@ -335,37 +335,27 @@ impl Server {
                 QueryResult::Parameter(parameter) => {
                     format!("{}", types_to_string(&parameter.types))
                 }
-                QueryResult::Identifier(identifier_semantics) => {
-                    let Some(binding) = identifier_semantics.binding else {
+                QueryResult::Identifier(expression_semantics) => {
+                    let Some(binding) = expression_semantics.binding.as_ref() else {
                         return None;
                     };
+                    let Some(types) = expression_semantics.types() else {
+                        return None;
+                    };
+                    let types_str = types_to_string(types.types());
                     match binding {
                         IdentifierBinding::VarDeclaration(var) => {
-                            if let Some(types) = identifier_semantics.flow.lookup(&var.name) {
-                                format!(
-                                    "identifier (narrowed): {} {}",
-                                    var.name,
-                                    types_to_string(types.types())
-                                )
+                            if expression_semantics.narrowed_types.is_some() {
+                                format!("identifier (narrowed): {} {}", var.name, types_str)
                             } else {
-                                format!(
-                                    "identifier: {} {}",
-                                    var.name,
-                                    types_to_string(
-                                        file.file_analyzer.query_var_types(&var).types()
-                                    )
-                                )
+                                format!("identifier: {} {}", var.name, types_str)
                             }
                         }
                         IdentifierBinding::Parameter(param) => {
-                            if let Some(types) = identifier_semantics.flow.lookup(&param.name) {
-                                format!(
-                                    "param (narrowed): {} {}",
-                                    param.name,
-                                    types_to_string(types.types())
-                                )
+                            if expression_semantics.narrowed_types.is_some() {
+                                format!("param (narrowed): {} {}", param.name, types_str)
                             } else {
-                                format!("param: {} {}", param.name, types_to_string(&param.types))
+                                format!("param: {} {}", param.name, types_str)
                             }
                         }
                     }
