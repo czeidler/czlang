@@ -538,10 +538,6 @@
           "named": true
         },
         {
-          "type": "throw_statement",
-          "named": true
-        },
-        {
           "type": "var_declaration",
           "named": true
         }
@@ -572,6 +568,16 @@
           }
         ]
       }
+    },
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "error_op",
+          "named": true
+        }
+      ]
     }
   },
   {
@@ -740,6 +746,16 @@
           }
         ]
       }
+    },
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "error_op",
+          "named": true
+        }
+      ]
     }
   },
   {
@@ -926,6 +942,16 @@
           }
         ]
       }
+    },
+    "children": {
+      "multiple": false,
+      "required": false,
+      "types": [
+        {
+          "type": "error_op",
+          "named": true
+        }
+      ]
     }
   },
   {
@@ -1001,11 +1027,11 @@
         "required": false,
         "types": [
           {
-            "type": ",",
-            "named": false
+            "type": "array_type",
+            "named": true
           },
           {
-            "type": "array_type",
+            "type": "error_op",
             "named": true
           },
           {
@@ -1623,6 +1649,16 @@
     "type": "return_statement",
     "named": true,
     "fields": {
+      "error_return": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "error_op",
+            "named": true
+          }
+        ]
+      },
       "expression": {
         "multiple": false,
         "required": false,
@@ -2310,22 +2346,6 @@
     }
   },
   {
-    "type": "throw_statement",
-    "named": true,
-    "fields": {
-      "error": {
-        "multiple": false,
-        "required": true,
-        "types": [
-          {
-            "type": "identifier",
-            "named": true
-          }
-        ]
-      }
-    }
-  },
-  {
     "type": "unary_expression",
     "named": true,
     "fields": {
@@ -2682,15 +2702,7 @@
     "named": false
   },
   {
-    "type": "_",
-    "named": false
-  },
-  {
     "type": "bool",
-    "named": false
-  },
-  {
-    "type": "catch",
     "named": false
   },
   {
@@ -2700,6 +2712,10 @@
   {
     "type": "else",
     "named": false
+  },
+  {
+    "type": "error_op",
+    "named": true
   },
   {
     "type": "escape_sequence",
@@ -2783,10 +2799,6 @@
   },
   {
     "type": "struct",
-    "named": false
-  },
-  {
-    "type": "throw",
     "named": false
   },
   {

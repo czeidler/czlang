@@ -2,7 +2,7 @@
 Function declaration with error
 ==================
 
-fun x() i32 | bool, u32 {
+fun x() i32 | bool ? u32 {
 
 }
 
@@ -14,6 +14,7 @@ fun x() i32 | bool, u32 {
         (sum_type
           (primitive_type)
           (primitive_type))
+        (error_op)
         (primitive_type)
         (block)
     )
@@ -24,7 +25,7 @@ Function call with error catch
 ==================
 
 fun x() i32 {
-  callFunction(argument1, argument2) catch (err) {
+  callFunction(argument1, argument2) ? (err) {
 
   }
 }
@@ -44,6 +45,7 @@ fun x() i32 {
             (identifier)
             (identifier))
           (catch_block
+            (error_op)
             (identifier)
             (block)
           )
@@ -54,11 +56,11 @@ fun x() i32 {
 )
 
 ==================
-Throw statement
+Return error statement
 ==================
 
-fun x() i32, bool {
-  throw false
+fun x() i32 ? bool {
+  return ?false
 }
 
 ---
@@ -68,10 +70,14 @@ fun x() i32, bool {
     (identifier)
     (parameter_list)
     (primitive_type)
+    (error_op)
     (primitive_type)
     (block
-      (throw_statement
-        (identifier)
+      (return_statement
+        (error_expression
+          (error_op)
+          (false)
+        )
       )
     )
   )
@@ -82,9 +88,9 @@ fun x() i32, bool {
 Error expression
 ==================
 
-fun x() i32, bool {
-  var test = _, false
-  _ , true
+fun x() i32 ? bool {
+  var test = ?false
+  return ?true
 }
 
 ---
@@ -93,14 +99,52 @@ fun x() i32, bool {
     (identifier)
     (parameter_list)
     (primitive_type)
+    (error_op)
     (primitive_type)
     (block
       (var_declaration
         (identifier)
         (error_expression
-          (false)))
-      (expression_statement
+          (error_op)
+          (false)
+        )
+      )
+      (return_statement
         (error_expression
+          (error_op)
+          (true)
+        )
+      )
+    )
+  )
+)
+
+==================
+Error auto return
+==================
+
+fun x() i32 ? bool {
+  testCall()?
+  return ?true
+}
+
+---
+(source_file
+  (function_definition
+    (identifier)
+    (parameter_list)
+    (primitive_type)
+    (error_op)
+    (primitive_type)
+    (block
+      (expression_statement
+        (function_call
+          (identifier)
+          (argument_list)
+          (error_op)))
+      (return_statement
+        (error_expression
+          (error_op)
           (true)
         )
       )
