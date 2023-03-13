@@ -1,0 +1,54 @@
+==================
+Struct impl
+==================
+
+fun (s &MyStruct)member() {
+
+}
+
+---
+
+(source_file
+    (method_definition
+        (receiver
+          (parameter
+            (identifier)
+            (reference_type
+              (identifier)
+            )
+          )
+        )
+        (identifier)
+        (parameter_list)
+        (block)
+    )
+)
+
+==================
+Interface impl
+==================
+
+MyStruct implements MyInterface
+
+fun (s &MyStruct)MyInterface.test() {
+
+}
+
+---
+
+(source_file
+    (struct_impl_interface
+    (identifier)
+    (identifier))
+    (method_definition
+        (receiver
+            (parameter
+            (identifier)
+            (reference_type
+                (identifier))))
+        (identifier)
+        (identifier)
+        (parameter_list)
+        (block)
+    )
+)

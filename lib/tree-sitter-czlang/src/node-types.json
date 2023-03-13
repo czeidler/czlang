@@ -180,6 +180,10 @@
             "named": true
           },
           {
+            "type": "generic_type",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -865,6 +869,10 @@
             "named": true
           },
           {
+            "type": "generic_type",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -941,6 +949,16 @@
             "named": true
           }
         ]
+      },
+      "type_arguments": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "type_arguments",
+            "named": true
+          }
+        ]
       }
     },
     "children": {
@@ -974,6 +992,10 @@
         "types": [
           {
             "type": "array_type",
+            "named": true
+          },
+          {
+            "type": "generic_type",
             "named": true
           },
           {
@@ -1035,6 +1057,10 @@
             "named": true
           },
           {
+            "type": "generic_type",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -1056,6 +1082,42 @@
           },
           {
             "type": "sum_type",
+            "named": true
+          }
+        ]
+      },
+      "type_arguments": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "type_arguments",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "generic_type",
+    "named": true,
+    "fields": {
+      "type": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "type_arguments": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "type_arguments",
             "named": true
           }
         ]
@@ -1180,6 +1242,16 @@
         "types": [
           {
             "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "type_argument": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "type_arguments",
             "named": true
           }
         ]
@@ -1317,6 +1389,184 @@
     }
   },
   {
+    "type": "method_definition",
+    "named": true,
+    "fields": {
+      "body": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "block",
+            "named": true
+          }
+        ]
+      },
+      "error": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "array_type",
+            "named": true
+          },
+          {
+            "type": "generic_type",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "parenthesized_type",
+            "named": true
+          },
+          {
+            "type": "primitive_type",
+            "named": true
+          },
+          {
+            "type": "reference_type",
+            "named": true
+          },
+          {
+            "type": "slice_type",
+            "named": true
+          },
+          {
+            "type": "sum_type",
+            "named": true
+          }
+        ]
+      },
+      "interface": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": ".",
+            "named": false
+          },
+          {
+            "type": "array_type",
+            "named": true
+          },
+          {
+            "type": "generic_type",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "parenthesized_type",
+            "named": true
+          },
+          {
+            "type": "primitive_type",
+            "named": true
+          },
+          {
+            "type": "reference_type",
+            "named": true
+          },
+          {
+            "type": "slice_type",
+            "named": true
+          },
+          {
+            "type": "sum_type",
+            "named": true
+          }
+        ]
+      },
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "parameters": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "parameter_list",
+            "named": true
+          }
+        ]
+      },
+      "receiver": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "receiver",
+            "named": true
+          }
+        ]
+      },
+      "result": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "array_type",
+            "named": true
+          },
+          {
+            "type": "error_op",
+            "named": true
+          },
+          {
+            "type": "generic_type",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "parenthesized_type",
+            "named": true
+          },
+          {
+            "type": "primitive_type",
+            "named": true
+          },
+          {
+            "type": "reference_type",
+            "named": true
+          },
+          {
+            "type": "slice_type",
+            "named": true
+          },
+          {
+            "type": "sum_type",
+            "named": true
+          }
+        ]
+      },
+      "type_arguments": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "type_arguments",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "method_spec",
     "named": true,
     "fields": {
@@ -1346,6 +1596,10 @@
         "types": [
           {
             "type": "array_type",
+            "named": true
+          },
+          {
+            "type": "generic_type",
             "named": true
           },
           {
@@ -1421,6 +1675,10 @@
         "types": [
           {
             "type": "array_type",
+            "named": true
+          },
+          {
+            "type": "generic_type",
             "named": true
           },
           {
@@ -1563,6 +1821,10 @@
             "named": true
           },
           {
+            "type": "generic_type",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -1596,9 +1858,34 @@
     "fields": {}
   },
   {
+    "type": "receiver",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": false,
+      "required": true,
+      "types": [
+        {
+          "type": "parameter",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "reference_type",
     "named": true,
     "fields": {
+      "mutable": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "mut",
+            "named": false
+          }
+        ]
+      },
       "reference": {
         "multiple": false,
         "required": true,
@@ -1615,6 +1902,10 @@
         "types": [
           {
             "type": "array_type",
+            "named": true
+          },
+          {
+            "type": "generic_type",
             "named": true
           },
           {
@@ -2169,6 +2460,10 @@
             "named": true
           },
           {
+            "type": "generic_type",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -2213,7 +2508,15 @@
           "named": true
         },
         {
+          "type": "method_definition",
+          "named": true
+        },
+        {
           "type": "struct_definition",
+          "named": true
+        },
+        {
+          "type": "struct_impl_interface",
           "named": true
         }
       ]
@@ -2242,7 +2545,60 @@
             "named": true
           }
         ]
+      },
+      "type_arguments": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "type_arguments",
+            "named": true
+          }
+        ]
       }
+    }
+  },
+  {
+    "type": "struct_impl_interface",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "array_type",
+          "named": true
+        },
+        {
+          "type": "generic_type",
+          "named": true
+        },
+        {
+          "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "parenthesized_type",
+          "named": true
+        },
+        {
+          "type": "primitive_type",
+          "named": true
+        },
+        {
+          "type": "reference_type",
+          "named": true
+        },
+        {
+          "type": "slice_type",
+          "named": true
+        },
+        {
+          "type": "sum_type",
+          "named": true
+        }
+      ]
     }
   },
   {
@@ -2284,6 +2640,10 @@
             "named": true
           },
           {
+            "type": "generic_type",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -2318,6 +2678,10 @@
             "named": true
           },
           {
+            "type": "generic_type",
+            "named": true
+          },
+          {
             "type": "identifier",
             "named": true
           },
@@ -2343,6 +2707,49 @@
           }
         ]
       }
+    }
+  },
+  {
+    "type": "type_arguments",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "array_type",
+          "named": true
+        },
+        {
+          "type": "generic_type",
+          "named": true
+        },
+        {
+          "type": "identifier",
+          "named": true
+        },
+        {
+          "type": "parenthesized_type",
+          "named": true
+        },
+        {
+          "type": "primitive_type",
+          "named": true
+        },
+        {
+          "type": "reference_type",
+          "named": true
+        },
+        {
+          "type": "slice_type",
+          "named": true
+        },
+        {
+          "type": "sum_type",
+          "named": true
+        }
+      ]
     }
   },
   {
@@ -2481,6 +2888,10 @@
         "types": [
           {
             "type": "array_type",
+            "named": true
+          },
+          {
+            "type": "generic_type",
             "named": true
           },
           {
@@ -2763,6 +3174,10 @@
   },
   {
     "type": "if",
+    "named": false
+  },
+  {
+    "type": "implements",
     "named": false
   },
   {

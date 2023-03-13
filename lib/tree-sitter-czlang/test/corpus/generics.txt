@@ -1,0 +1,157 @@
+==================
+Struct generics
+==================
+
+struct Test<T> {
+    field1 T
+}
+
+struct Test2<T, T2<T3>> {
+    field1 T
+    field2 T2
+}
+
+---
+(source_file
+    (struct_definition
+        (identifier)
+        (type_arguments
+            (identifier)
+        )
+        (field_definition_list
+            (field_definition
+                (identifier)
+                (identifier)
+            )
+        )
+    )
+    (struct_definition
+        (identifier)
+        (type_arguments
+            (identifier)
+            (generic_type
+                (identifier)
+                (type_arguments
+                    (identifier)
+                )
+            )
+        )
+        (field_definition_list
+            (field_definition
+                (identifier)
+                (identifier)
+            )
+            (field_definition
+                (identifier)
+                (identifier)
+            )
+        )
+    )
+)
+
+==================
+Fun generics
+==================
+
+fun test<T>(arg T) T {
+
+}
+
+fun main() {
+    test<u32>(2)
+}
+
+---
+
+(source_file
+      (function_definition
+        (identifier)
+        (type_arguments
+          (identifier))
+        (parameter_list
+          (parameter
+            (identifier)
+            (identifier)))
+        (identifier)
+        (block))
+      (function_definition
+        (identifier)
+        (parameter_list)
+        (block
+          (expression_statement
+            (function_call
+              (identifier)
+              (type_arguments
+                (primitive_type))
+              (argument_list
+                (int_literal)
+              )
+            )
+          )
+        )
+    )
+)
+
+
+==================
+Interface generics
+==================
+
+interface MyInterface<T> {
+    test() T
+}
+
+MyStruct<u8> implements MyInterface<bool>
+
+fun (s &MyStruct<u8>)MyInterface<bool>.test() {
+
+}
+
+---
+
+(source_file
+    (interface_definition
+        (identifier)
+        (type_arguments
+          (identifier))
+        (method_spec
+          (identifier)
+          (self_parameter_list)
+          (identifier)
+        )
+    )
+    (struct_impl_interface
+        (generic_type
+          (identifier)
+          (type_arguments
+            (primitive_type)))
+        (generic_type
+          (identifier)
+          (type_arguments
+            (primitive_type)
+          )
+        )
+    )
+    (method_definition
+        (receiver
+          (parameter
+            (identifier)
+            (reference_type
+              (generic_type
+                (identifier)
+                (type_arguments
+                  (primitive_type)
+                )
+              )
+            )
+          )
+        )
+        (generic_type
+          (identifier)
+          (type_arguments
+            (primitive_type)))
+        (identifier)
+        (parameter_list)
+        (block)
+    )
+)
