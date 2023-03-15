@@ -10,7 +10,8 @@ use crate::{
         VarDeclaration,
     },
     buildin::Buildins,
-    types::{intersection, types_to_string, Ptr, SumType},
+    sum_type::SumType,
+    types::{intersection, types_to_string, Ptr},
 };
 
 #[derive(Debug, Clone)]

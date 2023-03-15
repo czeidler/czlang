@@ -6,6 +6,7 @@ pub mod ast;
 mod buildin;
 mod rust_transpiler;
 pub mod semantics;
+mod sum_type;
 mod tree_sitter;
 mod types;
 

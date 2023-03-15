@@ -1,6 +1,7 @@
 use crate::{
     ast::{FunctionSignature, Parameter, VarDeclaration},
-    types::{types_to_string, SumType},
+    sum_type::SumType,
+    types::types_to_string,
 };
 
 pub fn format_var_declaration(var: &VarDeclaration, types: &SumType) -> String {

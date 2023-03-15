@@ -11,7 +11,8 @@ use crate::ast::{
 };
 use crate::buildin::Buildins;
 use crate::semantics::{FileSemanticAnalyzer, SelectorFieldBinding, TypeNarrowing};
-use crate::types::{Ptr, SumType};
+use crate::sum_type::SumType;
+use crate::types::Ptr;
 
 struct Writer<'a> {
     indentation: u16,

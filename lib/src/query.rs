@@ -8,7 +8,8 @@ use crate::{
         ExpressionSemantics, FileSemanticAnalyzer, FileSemantics, FunctionCallSemantics,
         SelectorFieldSemantics, TypeBinding,
     },
-    types::{Ptr, SumType},
+    sum_type::SumType,
+    types::Ptr,
 };
 
 #[derive(Debug, Clone)]

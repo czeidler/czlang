@@ -10,6 +10,7 @@ pub mod format;
 pub mod project;
 pub mod query;
 pub mod semantics;
+pub mod sum_type;
 
 #[cfg(test)]
 mod test_utils;
