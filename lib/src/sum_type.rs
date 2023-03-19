@@ -114,6 +114,12 @@ impl SumType {
                     name += "E";
                     continue;
                 }
+                Type::Either(data, error) => {
+                    let data = SumType::from_types(data);
+                    let error = SumType::from_types(error);
+                    name += &format!("Ei{}Or{}", data.sum_type_name(), error.sum_type_name());
+                    continue;
+                }
                 Type::Unresolved(_) => panic!("Internal error {}", t),
             };
             name += part;

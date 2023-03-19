@@ -49,6 +49,10 @@ impl fmt::Display for RefType {
                 }
                 Ok(())
             }
+            Type::Either(data, error) => {
+                write!(f, "{} ? {}", types_to_string(data), types_to_string(error))?;
+                Ok(())
+            }
             Type::Unresolved(types) => {
                 write!(f, "unresolved<")?;
                 write!(f, "{}", types_to_string(&types))?;

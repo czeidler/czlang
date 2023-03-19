@@ -418,6 +418,8 @@ pub enum Type {
     Array(Array),
     Slice(Slice),
     Unresolved(Vec<RefType>),
+    /// For example, for nullable or error types
+    Either(Vec<RefType>, Vec<RefType>),
 }
 
 #[derive(Debug, Clone, Eq, Hash)]
@@ -474,6 +476,7 @@ impl RefType {
         }
     }
 }
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Array {
     pub types: Ptr<Vec<RefType>>,
@@ -704,7 +707,7 @@ fn parse_fun<'a>(file: &Ptr<FileContext>, node: &Node<'a>) -> Option<Ptr<Functio
     let return_type = match node.child_by_field_name("result".as_bytes()) {
         Some(return_node) => Some(ReturnType {
             node: NodeData::from_node(&return_node),
-            types: parse_types(file, &return_node)?,
+            types: parse_types(file, &return_node).unwrap_or(vec![]),
         }),
         None => None,
     };
@@ -1253,13 +1256,22 @@ fn parse_types<'a>(context: &Ptr<FileContext>, node: &Node<'a>) -> Option<Vec<Re
                 r#type: parse_type(context, &type_node)?,
             }]
         }
-        _ => {
+        "error_type" => {
+            let type_node = child_by_field(&node, "type")?;
+            let error_node = child_by_field(&node, "error")?;
+            let data = parse_types(context, &type_node)?;
+            let error = parse_types(context, &error_node)?;
             vec![RefType {
-                node: NodeData::from_node(&node),
+                node: NodeData::from_node(&type_node),
                 is_reference: false,
-                r#type: parse_type(context, node)?,
+                r#type: Type::Either(data, error),
             }]
         }
+        _ => vec![RefType {
+            node: NodeData::from_node(&node),
+            is_reference: false,
+            r#type: parse_type(context, node)?,
+        }],
     };
 
     Some(types)
@@ -1271,7 +1283,7 @@ fn parse_array<'a>(context: &Ptr<FileContext>, node: &Node<'a>) -> Option<Array>
     let length = parse_usize(context, &length)?;
     let types = parse_types(context, &element)?;
     Some(Array {
-        types: Ptr::new(types.into_iter().collect()),
+        types: Ptr::new(types),
         length,
     })
 }
@@ -1280,7 +1292,7 @@ fn parse_slice<'a>(context: &Ptr<FileContext>, node: &Node<'a>) -> Option<Slice>
     let element = child_by_field(&node, "element")?;
     let types = parse_types(context, &element)?;
     Some(Slice {
-        types: Ptr::new(types.into_iter().collect()),
+        types: Ptr::new(types),
     })
 }
 

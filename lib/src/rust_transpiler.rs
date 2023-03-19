@@ -77,6 +77,7 @@ fn type_to_enum_variant(t: &Type) -> String {
         }
         Type::Array(_) => todo!(),
         Type::Slice(_) => todo!(),
+        Type::Either(_, _) => panic!("Validation should have failed"),
         Type::Unresolved(_) => panic!("Validation should have failed"),
     }
 }
@@ -112,6 +113,7 @@ impl RustTranspiler {
             Type::Array(array) => return self.transpile_array(&array, writer),
             Type::Slice(slice) => return self.transpile_slice(&slice, writer),
             Type::Null => "None",
+            Type::Either(_, _) => panic!(),
             Type::Unresolved(_) => panic!(),
         };
         writer.write(text);
@@ -139,6 +141,7 @@ impl RustTranspiler {
                     }
                     Type::Array(_) => writer.write("todoarray"),
                     Type::Slice(_) => writer.write("todoslice"),
+                    Type::Either(_, _) => panic!("Validation should have failed"),
                     Type::Unresolved(_) => panic!("Validation should have failed"),
                 };
                 writer.write(",");
