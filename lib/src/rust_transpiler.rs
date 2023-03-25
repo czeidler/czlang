@@ -631,7 +631,7 @@ impl RustTranspiler {
         let mut iter = call.arguments.iter().enumerate().peekable();
         while let Some((i, expr)) = iter.next() {
             let parameter = function.parameters.get(i).unwrap();
-            let parameter_type = analyzer.query_parameter_type(parameter);
+            let parameter_type = analyzer.query_parameter_type(function, parameter);
             self.transpile_expression_with_mapping(analyzer, expr, &parameter_type, block, writer);
             if iter.peek().is_some() {
                 writer.write(", ");
@@ -903,7 +903,7 @@ impl RustTranspiler {
             .find(|it| it.name == struct_field_init.name)
             .map(|it| it.clone())
             .unwrap();
-        let field_type = analyzer.query_field_type(&field);
+        let field_type = analyzer.query_field_type(struct_def, &field);
         self.transpile_expression_with_mapping(
             analyzer,
             &struct_field_init.value,

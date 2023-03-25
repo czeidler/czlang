@@ -2,7 +2,7 @@ use czlanglib::{
     ast::SourcePosition,
     project::ProjectFile,
     query::{find_completions, find_in_file, QueryResult},
-    semantics::{IdentifierBinding, SelectorFieldBinding, TypeBinding},
+    semantics::{IdentifierBinding, SelectorFieldBinding, TypeBinding, TypeQueryContext},
     types::types_to_string,
 };
 use lsp_types::{CompletionItem, CompletionItemKind};
@@ -30,7 +30,7 @@ pub fn dot_completion(
         return Some(vec![]);
     };
     match result {
-        QueryResult::Identifier(identifier_semantics) => {
+        QueryResult::Identifier(block, identifier_semantics) => {
             let Some(binding) = identifier_semantics.binding else {
                 return Some(vec![]);
             };
@@ -41,7 +41,9 @@ pub fn dot_completion(
                         return Some(vec![]);
                     }
                     let t = &var_type.types()[0];
-                    let type_semantics = file.file_analyzer.query_type(t);
+                    let type_semantics = file
+                        .file_analyzer
+                        .query_type(TypeQueryContext::Function(block.fun().signature.clone()), t);
                     let Some(bindings) = type_semantics.and_then(|s| s.binding) else {
                     return Some(vec![]);
                 };
@@ -60,6 +62,7 @@ pub fn dot_completion(
                                     .collect(),
                             )
                         }
+                        TypeBinding::StructTypeArgument(_) => return None,
                     }
                 }
                 IdentifierBinding::Parameter(_) => {}

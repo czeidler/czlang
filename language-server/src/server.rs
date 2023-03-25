@@ -341,7 +341,7 @@ impl Server {
                 QueryResult::Parameter(parameter) => {
                     format!("(parameter) {}", format_param(&parameter))
                 }
-                QueryResult::Identifier(expression_semantics) => {
+                QueryResult::Identifier(_, expression_semantics) => {
                     let Some(binding) = expression_semantics.binding.as_ref() else {
                         return None;
                     };
@@ -429,7 +429,7 @@ impl Server {
             let Some(result) = find_in_file(&mut file.file_analyzer, position) else { return None };
 
             let target = match result {
-                QueryResult::Identifier(identifier_semantics) => {
+                QueryResult::Identifier(_, identifier_semantics) => {
                     let Some(binding) = identifier_semantics.binding else {
                         return None;
                     };

@@ -6,8 +6,8 @@ use crate::{
         ExpressionType, Field, FileContext, FileTrait, Function, FunctionCall, FunctionSignature,
         FunctionTrait, IfAlternative, IfExpression, LangError, NodeData, Parameter, RefType,
         ReturnStatement, RootSymbol, SelectorExpression, SelectorField, SelectorFieldType, Slice,
-        Statement, Struct, StructFieldInitialization, StructInitialization, Type, UnaryOperator,
-        VarDeclaration,
+        Statement, Struct, StructFieldInitialization, StructInitialization, Type, TypeParam,
+        TypeParamType, UnaryOperator, VarDeclaration,
     },
     buildin::Buildins,
     sum_type::SumType,
@@ -18,6 +18,13 @@ use crate::{
 pub struct FileSemantics {
     pub functions: HashMap<String, Ptr<Function>>,
     pub structs: HashMap<String, Ptr<Struct>>,
+}
+
+/// Context in which a type is used, e.g. needed to resolve generic types
+#[derive(Debug, Clone)]
+pub enum TypeQueryContext {
+    Struct(Ptr<Struct>),
+    Function(FunctionSignature),
 }
 
 #[derive(Debug, Clone)]
@@ -122,6 +129,7 @@ pub struct TypeNarrowing {
 #[derive(Debug, Clone)]
 pub enum TypeBinding {
     Struct(Ptr<Struct>),
+    StructTypeArgument(TypeParam),
 }
 
 #[derive(Debug, Clone)]
@@ -366,6 +374,7 @@ impl FileSemanticAnalyzer {
 
     pub fn query_struct_initialization(
         &mut self,
+        context: TypeQueryContext,
         struct_init: &StructInitialization,
         identifier: &String,
     ) -> Option<TypeIdentifierSemantics> {
@@ -373,7 +382,7 @@ impl FileSemanticAnalyzer {
             return Some(s.clone());
         }
 
-        self.bind_type_identifier(&struct_init.node, identifier);
+        self.bind_type_identifier(context, &struct_init.node, identifier);
 
         self.type_identifiers
             .get(&struct_init.node.id)
@@ -381,7 +390,11 @@ impl FileSemanticAnalyzer {
     }
 
     /// Query type information for a specific type, e.g. for the resolved identifier
-    pub fn query_type(&mut self, r#type: &RefType) -> Option<TypeIdentifierSemantics> {
+    pub fn query_type(
+        &mut self,
+        context: TypeQueryContext,
+        r#type: &RefType,
+    ) -> Option<TypeIdentifierSemantics> {
         if let Some(s) = self.type_identifiers.get(&r#type.node.id) {
             return Some(s.clone());
         }
@@ -391,19 +404,27 @@ impl FileSemanticAnalyzer {
             _ => return None,
         };
 
-        self.bind_type_identifier(&r#type.node, type_identifier);
+        self.bind_type_identifier(context, &r#type.node, type_identifier);
 
         self.type_identifiers
             .get(&r#type.node.id)
             .map(|s| s.clone())
     }
 
-    pub fn query_parameter_type(&mut self, param: &Parameter) -> Option<SumType> {
+    pub fn query_parameter_type(
+        &mut self,
+        signature: &FunctionSignature,
+        param: &Parameter,
+    ) -> Option<SumType> {
         if let Some(s) = self.types.get(&param.node.id) {
             return Some(s.clone());
         }
 
-        Some(self.bind_types(param.node.id, &param.types))
+        Some(self.bind_types(
+            TypeQueryContext::Function(signature.clone()),
+            param.node.id,
+            &param.types,
+        ))
     }
 
     pub fn query_return_type(&mut self, signature: &FunctionSignature) -> Option<SumType> {
@@ -414,10 +435,18 @@ impl FileSemanticAnalyzer {
             return Some(s.clone());
         }
 
-        Some(self.bind_types(return_type.node.id, &return_type.types))
+        Some(self.bind_types(
+            TypeQueryContext::Function(signature.clone()),
+            return_type.node.id,
+            &return_type.types,
+        ))
     }
 
-    pub fn query_variable_type(&mut self, var: &VarDeclaration) -> Option<SumType> {
+    pub fn query_variable_type(
+        &mut self,
+        fun: &Ptr<Function>,
+        var: &VarDeclaration,
+    ) -> Option<SumType> {
         let Some(var_types) = &var.types else {
             return None;
         };
@@ -425,15 +454,23 @@ impl FileSemanticAnalyzer {
             return Some(s.clone());
         }
 
-        Some(self.bind_types(var.node.id, var_types))
+        Some(self.bind_types(
+            TypeQueryContext::Function(fun.signature.clone()),
+            var.node.id,
+            var_types,
+        ))
     }
 
-    pub fn query_field_type(&mut self, field: &Field) -> Option<SumType> {
+    pub fn query_field_type(&mut self, st: &Ptr<Struct>, field: &Field) -> Option<SumType> {
         if let Some(s) = self.types.get(&field.node.id) {
             return Some(s.clone());
         }
 
-        Some(self.bind_types(field.node.id, &field.types))
+        Some(self.bind_types(
+            TypeQueryContext::Struct(st.clone()),
+            field.node.id,
+            &field.types,
+        ))
     }
 
     /// node_id is the node id of the identifier expression
@@ -562,17 +599,22 @@ impl FileSemanticAnalyzer {
         // TODO: struct name clash with other definitions?
 
         for field in &struct_def.fields {
-            self.query_field_type(&field);
+            self.query_field_type(struct_def, &field);
         }
     }
 
-    fn bind_types(&mut self, node_id: usize, types: &Vec<RefType>) -> SumType {
+    fn bind_types(
+        &mut self,
+        context: TypeQueryContext,
+        node_id: usize,
+        types: &Vec<RefType>,
+    ) -> SumType {
         let mut result_types = vec![];
         for t in types {
             if result_types.iter().find(|v| *v == t).is_none() {
                 result_types.push(t.clone());
                 // query type to bind the type
-                self.query_type(t);
+                self.query_type(context.clone(), t);
             } else {
                 self.errors.push(LangError::type_error(
                     &t.node,
@@ -596,9 +638,33 @@ impl FileSemanticAnalyzer {
 
     fn bind_type_identifier(
         &mut self,
+        context: TypeQueryContext,
         node: &NodeData,
         identifier: &String,
     ) -> Option<TypeBinding> {
+        match context {
+            TypeQueryContext::Struct(struct_def) => {
+                if let Some(type_params) = struct_def.type_params.as_ref() {
+                    for arg in type_params {
+                        if match &arg.r#type {
+                            TypeParamType::Identifier(id) => id == identifier,
+                            TypeParamType::GenericTypeParam(id, _) => id == identifier,
+                        } {
+                            let binding = Some(TypeBinding::StructTypeArgument(arg.clone()));
+                            let existing = self.type_identifiers.insert(
+                                node.id,
+                                TypeIdentifierSemantics {
+                                    binding: binding.clone(),
+                                },
+                            );
+                            assert!(existing.is_none());
+                            return binding;
+                        }
+                    }
+                }
+            }
+            TypeQueryContext::Function(_) => {}
+        }
         let file = self.query_file();
         let Some(struct_def) = file.structs.get(identifier).map(|s| s.clone()) else {
             self.errors.push(LangError::type_error(
@@ -636,7 +702,7 @@ impl FileSemanticAnalyzer {
         // TODO: fun name clash with other definitions?
 
         for par_ref in &fun.signature.parameters {
-            self.query_parameter_type(&par_ref);
+            self.query_parameter_type(&fun.signature, &par_ref);
         }
         self.query_return_type(&fun.signature);
 
@@ -806,7 +872,7 @@ impl FileSemanticAnalyzer {
         var_declaration: Ptr<VarDeclaration>,
     ) {
         let mut var_types = self
-            .query_variable_type(&var_declaration)
+            .query_variable_type(&block.fun(), &var_declaration)
             .unwrap_or(SumType::empty());
 
         let expr = self
@@ -1237,7 +1303,7 @@ impl FileSemanticAnalyzer {
                         .into_types()
                         .unwrap_or(SumType::empty());
                     let parameter_type = self
-                        .query_parameter_type(parameter)
+                        .query_parameter_type(&block.fun().signature, parameter)
                         .unwrap_or(SumType::empty());
                     let Some(intersection) = intersection(&arg_types, &parameter_type) else {
                         self.errors.push(LangError::type_error(
@@ -1259,11 +1325,12 @@ impl FileSemanticAnalyzer {
                 ExpressionSemantics::resolved_types(self.query_return_type(&fun_signature))
             }
             ExpressionType::StructInitialization(struct_init) => {
-                let Some(binding) = self.bind_type_identifier(&struct_init.name_node, &struct_init.name) else {
+                let Some(binding) = self.bind_type_identifier(TypeQueryContext::Function(block.fun().signature.clone()), &struct_init.name_node, &struct_init.name) else {
                     return ExpressionSemantics::empty();
                 };
                 let struct_dec = match binding {
                     TypeBinding::Struct(struct_dec) => struct_dec,
+                    TypeBinding::StructTypeArgument(_) => return ExpressionSemantics::empty(),
                 };
                 let mut expected_fields =
                     struct_dec.fields.iter().fold(HashMap::new(), |mut set, f| {
@@ -1286,7 +1353,7 @@ impl FileSemanticAnalyzer {
                     self.bind_struct_field_initialization(field, &struct_field);
 
                     let struct_field_type = self
-                        .query_field_type(&struct_field)
+                        .query_field_type(&struct_dec, &struct_field)
                         .unwrap_or(SumType::empty());
                     let overlap = intersection(&field_type, &struct_field_type);
                     if overlap.is_none() {
@@ -1370,8 +1437,12 @@ impl FileSemanticAnalyzer {
         let root_types = self
             .validate_expression(flow, block, &select.root, is_assignment)
             .into_types()?;
-        let semantics =
-            self.bind_selector_field_to_struct(&select.root.node, &root_types.types(), None);
+        let semantics = self.bind_selector_field_to_struct(
+            TypeQueryContext::Function(block.fun().signature.clone()),
+            &select.root.node,
+            &root_types.types(),
+            None,
+        );
         let Some(root_struct) = semantics.binding.map(|b| match &b {
             SelectorFieldBinding::Struct(s) => s.clone(),
         }) else {
@@ -1429,6 +1500,7 @@ impl FileSemanticAnalyzer {
                     }
 
                     let semantics = self.bind_selector_field_to_struct(
+                        TypeQueryContext::Struct(current_struct.clone()),
                         &field.node,
                         &types,
                         Some(current_struct.clone()),
@@ -1461,6 +1533,7 @@ impl FileSemanticAnalyzer {
     /// 3) the parent struct, None for the root expression
     fn bind_selector_field_to_struct(
         &mut self,
+        context: TypeQueryContext,
         field_node: &NodeData,
         field_type: &Vec<RefType>,
         parent: Option<Ptr<Struct>>,
@@ -1480,11 +1553,11 @@ impl FileSemanticAnalyzer {
 
         let found_struct = if let Some(identifier) = single_identifier {
             let found_struct = self
-                .query_type(&identifier)
-                .map(|s| s.binding)
-                .flatten()
-                .map(|b| match b {
-                    TypeBinding::Struct(struct_def) => struct_def,
+                .query_type(context, &identifier)
+                .and_then(|s| s.binding)
+                .and_then(|b| match b {
+                    TypeBinding::Struct(struct_def) => Some(struct_def),
+                    TypeBinding::StructTypeArgument(_) => None,
                 });
             if found_struct.is_none() {
                 self.errors.push(LangError::type_error(

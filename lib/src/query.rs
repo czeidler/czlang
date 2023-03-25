@@ -6,7 +6,7 @@ use crate::{
     },
     semantics::{
         ExpressionSemantics, FileSemanticAnalyzer, FileSemantics, FunctionCallSemantics,
-        SelectorFieldSemantics, TypeBinding,
+        SelectorFieldSemantics, TypeBinding, TypeQueryContext,
     },
     sum_type::SumType,
     types::Ptr,
@@ -18,7 +18,7 @@ pub enum QueryResult {
     Function(Ptr<Function>),
     FunctionCall(FunctionCallSemantics),
     Parameter(Parameter),
-    Identifier(ExpressionSemantics),
+    Identifier(Ptr<Block>, ExpressionSemantics),
     StructIdentifier(Ptr<Struct>),
     VarDeclaration(Ptr<VarDeclaration>),
     StructDeclaration(Ptr<Struct>),
@@ -121,7 +121,7 @@ fn find_in_function(
 
 // TODO remove:
 struct FunctionBlock<'a> {
-    block: &'a Block,
+    block: &'a Ptr<Block>,
 }
 
 fn find_in_expression(
@@ -134,7 +134,10 @@ fn find_in_expression(
         ExpressionType::Identifier(_) => {
             let Some(identifier_semantics) = analyzer
                 .query_identifier(block.block, expression.node.id) else { return None };
-            Some(QueryResult::Identifier(identifier_semantics))
+            Some(QueryResult::Identifier(
+                block.block.clone(),
+                identifier_semantics,
+            ))
         }
         ExpressionType::BinaryExpression(binary) => {
             if binary.left.node.contains(position) {
@@ -160,12 +163,17 @@ fn find_in_expression(
         ExpressionType::StructInitialization(struct_init) => {
             if struct_init.name_node.contains(position) {
                 return analyzer
-                    .query_struct_initialization(&struct_init, &struct_init.name)
+                    .query_struct_initialization(
+                        TypeQueryContext::Function(block.block.fun().signature.clone()),
+                        &struct_init,
+                        &struct_init.name,
+                    )
                     .and_then(|r| r.binding)
                     .and_then(|binding| match binding {
                         TypeBinding::Struct(struct_dec) => {
                             Some(QueryResult::StructIdentifier(struct_dec.clone()))
                         }
+                        _ => None,
                     });
             }
             for field in &struct_init.fields {

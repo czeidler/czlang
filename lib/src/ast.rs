@@ -227,6 +227,7 @@ pub struct Struct {
 
     pub name: String,
     pub name_node: NodeData,
+    pub type_params: Option<Vec<TypeParam>>,
     pub fields: Vec<Field>,
 }
 
@@ -475,6 +476,18 @@ impl RefType {
             r#type,
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub enum TypeParamType {
+    Identifier(String),
+    GenericTypeParam(String, Vec<TypeParam>),
+}
+
+#[derive(Debug, Clone)]
+pub struct TypeParam {
+    pub node: NodeData,
+    pub r#type: TypeParamType,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -727,14 +740,52 @@ fn parse_fun<'a>(file: &Ptr<FileContext>, node: &Node<'a>) -> Option<Ptr<Functio
     Some(fun)
 }
 
+fn parse_type_param<'a>(context: &Ptr<FileContext>, node: &Node<'a>) -> Option<TypeParamType> {
+    let t = match node.kind() {
+        "identifier" => {
+            let type_text = node_text(&node, context)?;
+            TypeParamType::Identifier(type_text)
+        }
+        "generic_type_param" => {
+            let identifier_node = child_by_field(&node, "type")?;
+            let identifier = node_text(&identifier_node, context)?;
+            let type_arguments = child_by_field(&node, "type_arguments")?;
+            let parameters = parse_type_params(context, &type_arguments);
+            TypeParamType::GenericTypeParam(identifier, parameters)
+        }
+        _ => {
+            log::error!("Unsupported type param type: {}", node.kind());
+            return None;
+        }
+    };
+    Some(t)
+}
+
+fn parse_type_params<'a>(context: &Ptr<FileContext>, node: &Node<'a>) -> Vec<TypeParam> {
+    let mut output = vec![];
+    let mut cursor = node.walk();
+    for type_node in node.children_by_field_name("type", &mut cursor) {
+        if let Some(t) = parse_type_param(context, &type_node) {
+            output.push(TypeParam {
+                node: NodeData::from_node(&type_node),
+                r#type: t,
+            });
+        }
+    }
+    output
+}
+
 fn parse_struct<'a>(context: &Ptr<FileContext>, node: &Node<'a>) -> Option<Ptr<Struct>> {
     let name = child_by_field(&node, "name")?;
+    let type_params = child_by_field(&node, "type_params");
+    let type_params = type_params.map(|a| parse_type_params(context, &a));
     let fields = child_by_field(&node, "fields")?;
     let fields = parse_struct_fields(context, &fields, node);
     Some(Ptr::new(Struct {
         node: NodeData::from_node(&node),
         name: node_text(&name, context)?,
         name_node: NodeData::from_node(&name),
+        type_params,
         fields,
     }))
 }
