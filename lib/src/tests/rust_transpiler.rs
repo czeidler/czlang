@@ -327,4 +327,19 @@ fun main() {
         "#,
         )
     }
+
+    #[test]
+    fn generic_struct() {
+        transpile_and_validate_project(
+            "test_projects/transpile_generic_struct",
+            r#"
+struct Test<T, S> {
+    a T
+    b S
+}
+
+fun main() {}
+        "#,
+        )
+    }
 }

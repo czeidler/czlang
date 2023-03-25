@@ -7,7 +7,7 @@ use crate::ast::{
     ExpressionType, Field, FileContext, Function, FunctionCall, FunctionTrait, IfAlternative,
     IfExpression, Parameter, RefType, SelectorExpression, SelectorFieldType, Slice,
     SliceExpression, Statement, StringTemplatePart, Struct, StructFieldInitialization,
-    StructInitialization, Type, UnaryOperator, VarDeclaration,
+    StructInitialization, Type, TypeParam, TypeParamType, UnaryOperator, VarDeclaration,
 };
 use crate::buildin::Buildins;
 use crate::semantics::{FileSemanticAnalyzer, SelectorFieldBinding, TypeNarrowing};
@@ -873,10 +873,32 @@ impl RustTranspiler {
         }
     }
 
+    fn transpile_type_param(&self, param: &TypeParam) -> String {
+        match &param.r#type {
+            TypeParamType::Identifier(identifier) => identifier.clone(),
+            TypeParamType::GenericTypeParam(identifier, params) => {
+                let parts = params
+                    .iter()
+                    .map(|p| self.transpile_type_param(p))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("{}<{}>", identifier, parts)
+            }
+        }
+    }
+
     fn transpile_struct(&self, struct_def: &Struct, writer: &mut Writer) {
         writer.write(&format!("struct {}", struct_def.name));
-        if struct_def.has_reference() {
-            writer.write("<'a>");
+        let has_ref = struct_def.has_reference();
+        if has_ref || struct_def.type_params.is_some() {
+            let mut parts = vec![];
+            if has_ref {
+                parts.push("'a".to_string());
+            }
+            for param in struct_def.type_params.as_ref().unwrap() {
+                parts.push(self.transpile_type_param(param));
+            }
+            writer.write(&format!("<{}>", parts.join(", ")));
         }
         writer.write(" {");
         writer.new_line();
