@@ -15,7 +15,7 @@ struct Test2<T, T2<T3>> {
 (source_file
     (struct_definition
         (identifier)
-        (type_arguments
+        (type_params
             (identifier)
         )
         (field_definition_list
@@ -27,11 +27,11 @@ struct Test2<T, T2<T3>> {
     )
     (struct_definition
         (identifier)
-        (type_arguments
+        (type_params
             (identifier)
-            (generic_type
+            (generic_type_param
                 (identifier)
-                (type_arguments
+                (type_params
                     (identifier)
                 )
             )
@@ -66,7 +66,7 @@ fun main() {
 (source_file
       (function_definition
         (identifier)
-        (type_arguments
+        (type_params
           (identifier))
         (parameter_list
           (parameter
@@ -112,7 +112,7 @@ fun (s &MyStruct<u8>)MyInterface<bool>.test() {
 (source_file
     (interface_definition
         (identifier)
-        (type_arguments
+        (type_params
           (identifier))
         (method_spec
           (identifier)
