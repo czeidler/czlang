@@ -208,11 +208,11 @@ impl Iterator for FileSymbolIterator {
                         log::error!("Invalid function_definition: {:?}", child);
                     }
                 }
-                "struct_definition" => {
+                "struct_declaration" => {
                     if let Some(struct_def) = parse_struct(&self.file, &child) {
                         return Some(RootSymbol::Struct(struct_def));
                     } else {
-                        log::error!("Invalid struct_definition: {:?}", child);
+                        log::error!("Invalid struct_declaration: {:?}", child);
                     }
                 }
                 _ => {}

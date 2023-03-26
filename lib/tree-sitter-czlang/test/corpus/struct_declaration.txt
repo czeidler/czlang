@@ -12,9 +12,9 @@ struct TestStruct {
 ---
 
 (source_file
-  (struct_definition
+  (struct_declaration
     (identifier)
-    (field_definition_list
+    (field_declaration_list
       (field_definition
         (identifier)
         (primitive_type))

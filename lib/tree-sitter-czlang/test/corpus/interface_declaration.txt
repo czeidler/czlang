@@ -3,19 +3,19 @@ interface declaration
 ==================
 
 interface TestStruct {
-    method1(test &i32, value2 bool)
-    method2()
-    method3() bool
-    method3() OtherType
-    methodSelf1(self, value2 bool)
-    methodSelf2(&self)
-    methodSelf3(mut &self, value2 mut &i32)
+    fun method1(test &i32, value2 bool)
+    fun method2()
+    fun method3() bool
+    fun method3() OtherType
+    fun methodSelf1(self, value2 bool)
+    fun methodSelf2(&self)
+    fun methodSelf3(mut &self, value2 mut &i32)
 }
 
 ---
 
 (source_file
-  (interface_definition
+  (interface_declaration
     (identifier)
     (method_spec
         (identifier)

@@ -943,6 +943,22 @@
     }
   },
   {
+    "type": "field_declaration_list",
+    "named": true,
+    "fields": {
+      "field": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "field_definition",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "field_definition",
     "named": true,
     "fields": {
@@ -994,22 +1010,6 @@
           },
           {
             "type": "sum_type",
-            "named": true
-          }
-        ]
-      }
-    }
-  },
-  {
-    "type": "field_definition_list",
-    "named": true,
-    "fields": {
-      "field": {
-        "multiple": true,
-        "required": false,
-        "types": [
-          {
-            "type": "field_definition",
             "named": true
           }
         ]
@@ -1321,7 +1321,7 @@
     }
   },
   {
-    "type": "interface_definition",
+    "type": "interface_declaration",
     "named": true,
     "fields": {
       "name": {
@@ -2578,7 +2578,7 @@
           "named": true
         },
         {
-          "type": "interface_definition",
+          "type": "interface_declaration",
           "named": true
         },
         {
@@ -2586,7 +2586,7 @@
           "named": true
         },
         {
-          "type": "struct_definition",
+          "type": "struct_declaration",
           "named": true
         },
         {
@@ -2597,7 +2597,7 @@
     }
   },
   {
-    "type": "struct_definition",
+    "type": "struct_declaration",
     "named": true,
     "fields": {
       "fields": {
@@ -2605,7 +2605,7 @@
         "required": true,
         "types": [
           {
-            "type": "field_definition_list",
+            "type": "field_declaration_list",
             "named": true
           }
         ]

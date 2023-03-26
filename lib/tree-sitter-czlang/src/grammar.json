@@ -25,11 +25,11 @@
             },
             {
               "type": "SYMBOL",
-              "name": "struct_definition"
+              "name": "struct_declaration"
             },
             {
               "type": "SYMBOL",
-              "name": "interface_definition"
+              "name": "interface_declaration"
             },
             {
               "type": "SYMBOL",
@@ -1817,7 +1817,7 @@
         }
       ]
     },
-    "struct_definition": {
+    "struct_declaration": {
       "type": "SEQ",
       "members": [
         {
@@ -1853,12 +1853,12 @@
           "name": "fields",
           "content": {
             "type": "SYMBOL",
-            "name": "field_definition_list"
+            "name": "field_declaration_list"
           }
         }
       ]
     },
-    "field_definition_list": {
+    "field_declaration_list": {
       "type": "SEQ",
       "members": [
         {
@@ -1945,7 +1945,7 @@
         }
       ]
     },
-    "interface_definition": {
+    "interface_declaration": {
       "type": "SEQ",
       "members": [
         {
@@ -2060,6 +2060,10 @@
     "method_spec": {
       "type": "SEQ",
       "members": [
+        {
+          "type": "STRING",
+          "value": "fun"
+        },
         {
           "type": "FIELD",
           "name": "name",

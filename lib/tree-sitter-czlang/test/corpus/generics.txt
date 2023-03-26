@@ -13,19 +13,19 @@ struct Test2<T, T2<T3>> {
 
 ---
 (source_file
-    (struct_definition
+    (struct_declaration
         (identifier)
         (type_params
             (identifier)
         )
-        (field_definition_list
+        (field_declaration_list
             (field_definition
                 (identifier)
                 (identifier)
             )
         )
     )
-    (struct_definition
+    (struct_declaration
         (identifier)
         (type_params
             (identifier)
@@ -36,7 +36,7 @@ struct Test2<T, T2<T3>> {
                 )
             )
         )
-        (field_definition_list
+        (field_declaration_list
             (field_definition
                 (identifier)
                 (identifier)
@@ -98,7 +98,7 @@ Interface generics
 ==================
 
 interface MyInterface<T> {
-    test() T
+  fun test() T
 }
 
 MyStruct<u8> implements MyInterface<bool>
@@ -110,7 +110,7 @@ fun (s &MyStruct<u8>)MyInterface<bool>.test() {
 ---
 
 (source_file
-    (interface_definition
+    (interface_declaration
         (identifier)
         (type_params
           (identifier))
