@@ -427,6 +427,7 @@ pub enum Type {
 pub struct RefType {
     pub node: NodeData,
     pub is_reference: bool,
+    pub is_mut: bool,
     pub r#type: Type,
 }
 
@@ -456,7 +457,9 @@ impl Ord for RefType {
 
 impl PartialEq for RefType {
     fn eq(&self, other: &RefType) -> bool {
-        self.is_reference == other.is_reference && self.r#type == other.r#type
+        self.is_reference == other.is_reference
+            && self.r#type == other.r#type
+            && self.is_mut == other.is_mut
     }
 }
 
@@ -465,6 +468,7 @@ impl RefType {
         RefType {
             node,
             is_reference: false,
+            is_mut: false,
             r#type,
         }
     }
@@ -473,6 +477,7 @@ impl RefType {
         RefType {
             node,
             is_reference: true,
+            is_mut: false,
             r#type,
         }
     }
@@ -1304,6 +1309,7 @@ fn parse_types<'a>(context: &Ptr<FileContext>, node: &Node<'a>) -> Option<Vec<Re
             vec![RefType {
                 node: NodeData::from_node(&type_node),
                 is_reference: true,
+                is_mut: false,
                 r#type: parse_type(context, &type_node)?,
             }]
         }
@@ -1315,12 +1321,14 @@ fn parse_types<'a>(context: &Ptr<FileContext>, node: &Node<'a>) -> Option<Vec<Re
             vec![RefType {
                 node: NodeData::from_node(&type_node),
                 is_reference: false,
+                is_mut: false,
                 r#type: Type::Either(data, error),
             }]
         }
         _ => vec![RefType {
             node: NodeData::from_node(&node),
             is_reference: false,
+            is_mut: false,
             r#type: parse_type(context, node)?,
         }],
     };

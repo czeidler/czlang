@@ -16,6 +16,9 @@ impl fmt::Display for RefType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.is_reference {
             write!(f, "&")?;
+            if self.is_mut {
+                write!(f, "mut")?;
+            }
         }
         match &self.r#type {
             Type::Null => write!(f, "null"),
@@ -84,6 +87,7 @@ fn overlap(left_types: &Vec<RefType>, right_types: &Vec<RefType>) -> Vec<RefType
                         output.push(RefType {
                             node: left.node.clone(),
                             is_reference: left.is_reference,
+                            is_mut: false,
                             r#type: Type::Array(Array {
                                 types: Ptr::new(inter.clone()),
                                 length: l.length,
@@ -99,6 +103,7 @@ fn overlap(left_types: &Vec<RefType>, right_types: &Vec<RefType>) -> Vec<RefType
                     output.push(RefType {
                         node: left.node.clone(),
                         is_reference: left.is_reference,
+                        is_mut: false,
                         r#type: Type::Slice(Slice {
                             types: Ptr::new(inter.clone()),
                         }),
@@ -114,6 +119,7 @@ fn overlap(left_types: &Vec<RefType>, right_types: &Vec<RefType>) -> Vec<RefType
                         output.push(RefType {
                             node: left.node.clone(),
                             is_reference: left.is_reference,
+                            is_mut: false,
                             r#type: Type::Unresolved(over),
                         });
                     }
@@ -128,6 +134,7 @@ fn overlap(left_types: &Vec<RefType>, right_types: &Vec<RefType>) -> Vec<RefType
                         output.push(RefType {
                             node: left.node.clone(),
                             is_reference: left.is_reference,
+                            is_mut: false,
                             r#type: Type::Unresolved(over),
                         });
                     }
@@ -142,6 +149,7 @@ fn overlap(left_types: &Vec<RefType>, right_types: &Vec<RefType>) -> Vec<RefType
                         output.push(RefType {
                             node: left.node.clone(),
                             is_reference: left.is_reference,
+                            is_mut: false,
                             r#type: Type::Unresolved(over),
                         });
                     }
@@ -198,6 +206,7 @@ pub fn intersection(left_types: &SumType, right_types: &SumType) -> Option<SumTy
                             return Some(RefType {
                                 node: left.node.clone(),
                                 is_reference: left.is_reference,
+                                is_mut: false,
                                 r#type: Type::Array(Array {
                                     types: Ptr::new(inter.types().clone()),
                                     length: l.length,
@@ -216,6 +225,7 @@ pub fn intersection(left_types: &SumType, right_types: &SumType) -> Option<SumTy
                         return Some(RefType {
                             node: left.node.clone(),
                             is_reference: left.is_reference,
+                            is_mut: false,
                             r#type: Type::Slice(Slice {
                                 types: Ptr::new(inter.types().clone()),
                             }),
@@ -231,6 +241,7 @@ pub fn intersection(left_types: &SumType, right_types: &SumType) -> Option<SumTy
                             Some(RefType {
                                 node: left.node.clone(),
                                 is_reference: left.is_reference,
+                                is_mut: false,
                                 r#type: Type::Unresolved(over),
                             })
                         }
@@ -245,6 +256,7 @@ pub fn intersection(left_types: &SumType, right_types: &SumType) -> Option<SumTy
                             Some(RefType {
                                 node: left.node.clone(),
                                 is_reference: left.is_reference,
+                                is_mut: false,
                                 r#type: Type::Unresolved(over),
                             })
                         }
@@ -259,6 +271,7 @@ pub fn intersection(left_types: &SumType, right_types: &SumType) -> Option<SumTy
                             Some(RefType {
                                 node: left.node.clone(),
                                 is_reference: left.is_reference,
+                                is_mut: false,
                                 r#type: Type::Unresolved(over),
                             })
                         }

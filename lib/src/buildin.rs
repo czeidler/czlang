@@ -34,6 +34,7 @@ impl Buildins {
                     types: [RefType {
                         node: dummy_node(4),
                         is_reference: false,
+                        is_mut: false,
                         r#type: Type::String,
                     }]
                     .into_iter()
