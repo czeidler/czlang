@@ -969,6 +969,25 @@ impl RustTranspiler {
             self.transpile_struct(struct_def, writer);
             writer.new_line();
             writer.new_line();
+
+            if let Some(semantics) = &analyzer.query_struct(struct_def) {
+                for (_, implementations) in &semantics.implementations {
+                    writer.write(&format!("impl {} {{", struct_def.name));
+                    writer.new_line();
+                    writer.indented(|writer| {
+                        for (i, method) in implementations.methods.iter().enumerate() {
+                            self.transpile_function(analyzer, method, writer);
+                            writer.new_line();
+                            if i < implementations.methods.len() - 1 {
+                                writer.new_line();
+                            }
+                        }
+                    });
+                    writer.write("}");
+                    writer.new_line();
+                    writer.new_line();
+                }
+            }
         }
 
         for (_, function) in &file.functions {

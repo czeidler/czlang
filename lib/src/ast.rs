@@ -215,6 +215,13 @@ impl Iterator for FileSymbolIterator {
                         log::error!("Invalid struct_declaration: {:?}", child);
                     }
                 }
+                "method_definition" => {
+                    if let Some(method) = parse_method(&self.file, &child) {
+                        return Some(RootSymbol::Function(method));
+                    } else {
+                        log::error!("Invalid method_definition: {:?}", child);
+                    }
+                }
                 _ => {}
             };
         }
@@ -262,12 +269,16 @@ pub struct ReturnType {
 pub struct FunctionSignature {
     pub node: NodeData,
 
+    /// If a method, the named receiver struct, e.g. (m &MyStruct)
+    pub receiver: Option<Parameter>,
+
     pub name: String,
     pub name_node: NodeData,
     pub parameters: Vec<Parameter>,
     pub return_type: Option<ReturnType>,
 }
 
+/// Either a function or a method
 #[derive(Debug, Clone)]
 pub struct Function {
     pub file: Ptr<FileContext>,
@@ -719,6 +730,36 @@ impl FileContext {
     }
 }
 
+fn parse_method<'a>(file: &Ptr<FileContext>, node: &Node<'a>) -> Option<Ptr<Function>> {
+    let name = child_by_field(&node, "name")?;
+    let receiver = child_by_field(&node, "receiver")?;
+    let receiver_parameter = child_by_field(&receiver, "parameter")?;
+    let receiver = parse_parameter(file, receiver_parameter)?;
+    let parameter_list = child_by_field(&node, "parameters")?;
+    let return_type = match node.child_by_field_name("result".as_bytes()) {
+        Some(return_node) => Some(ReturnType {
+            node: NodeData::from_node(&return_node),
+            types: parse_types(file, &return_node).unwrap_or(vec![]),
+        }),
+        None => None,
+    };
+    let body_node: Node = child_by_field(&node, "body")?;
+
+    let method = Ptr::new(Function {
+        file: file.clone(),
+        signature: FunctionSignature {
+            node: NodeData::from_node(&node),
+            receiver: Some(receiver),
+            name: node_text(&name, file)?,
+            name_node: NodeData::from_node(&name),
+            parameters: parse_parameters(file, parameter_list)?,
+            return_type,
+        },
+        body_node: NodeData::from_node(&body_node),
+    });
+    Some(method)
+}
+
 fn parse_fun<'a>(file: &Ptr<FileContext>, node: &Node<'a>) -> Option<Ptr<Function>> {
     let name = child_by_field(&node, "name")?;
     let parameter_list = child_by_field(&node, "parameters")?;
@@ -735,6 +776,7 @@ fn parse_fun<'a>(file: &Ptr<FileContext>, node: &Node<'a>) -> Option<Ptr<Functio
         file: file.clone(),
         signature: FunctionSignature {
             node: NodeData::from_node(&node),
+            receiver: None,
             name: node_text(&name, file)?,
             name_node: NodeData::from_node(&name),
             parameters: parse_parameters(file, parameter_list)?,

@@ -342,4 +342,26 @@ fun main() {}
         "#,
         )
     }
+
+    #[test]
+    fn struct_methods() {
+        transpile_and_validate_project(
+            "test_projects/struct_methods",
+            r#"
+struct Test {
+    a bool
+}
+
+fun (m &Test)test1() {
+
+}
+
+fun (m &Test)test2() {
+
+}
+
+fun main() {}
+        "#,
+        )
+    }
 }

@@ -16,7 +16,10 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub struct FileSemantics {
+    /// Top level functions
     pub functions: HashMap<String, Ptr<Function>>,
+    /// Struct methods declarations
+    pub methods: Vec<Ptr<Function>>,
     pub structs: HashMap<String, Ptr<Struct>>,
 }
 
@@ -25,6 +28,8 @@ pub struct FileSemantics {
 pub enum TypeQueryContext {
     Struct(Ptr<Struct>),
     Function(FunctionSignature),
+    /// Context of the receiver of a struct method definition, e.g. (self &MyStruct)method()
+    StructMethodReceiver,
 }
 
 #[derive(Debug, Clone)]
@@ -124,6 +129,28 @@ pub struct TypeNarrowing {
     pub reduction: bool,
     /// Narrowed types
     pub types: SumType,
+}
+
+fn fun_receiver_key(fun: &Function) -> String {
+    let receiver_types = fun.signature.receiver.as_ref().map(|r| {
+        r.types
+            .iter()
+            .map(|t| format!("{}", t))
+            .collect::<Vec<_>>()
+            .join(",")
+    });
+    return receiver_types.unwrap_or("".to_string());
+}
+
+#[derive(Debug, Clone)]
+pub struct StructImplementation {
+    pub methods: Vec<Ptr<Function>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct StructSemantics {
+    /// method definitions for a struct grouped by struct type arguments
+    pub implementations: HashMap<String, StructImplementation>,
 }
 
 #[derive(Debug, Clone)]
@@ -248,7 +275,9 @@ pub struct FileSemanticAnalyzer {
     pub errors: Vec<LangError>,
 
     file_semantics: Option<Ptr<FileSemantics>>,
-    structs: HashSet<usize>,
+    /// struct declarations
+    structs: HashMap<usize, StructSemantics>,
+
     /// Just keep track of analyzed/checked functions
     fun_symbols: HashSet<usize>,
     /// Bindings for an type identifier, e.g. a struct name
@@ -262,6 +291,7 @@ pub struct FileSemanticAnalyzer {
     variable_declarations: HashMap<usize, VarDeclarationSemantics>,
     function_calls: HashMap<usize, FunctionCallSemantics>,
     blocks: HashMap<usize, BlockSemantics>,
+
     /// Binding for a struct field initialization to the matching Field in of the target struct
     struct_field_inits: HashMap<usize, Field>,
 }
@@ -274,7 +304,7 @@ impl FileSemanticAnalyzer {
             sum_types: HashMap::new(),
             errors: Vec::new(),
 
-            structs: HashSet::new(),
+            structs: HashMap::new(),
             fun_symbols: HashSet::new(),
             type_identifiers: HashMap::new(),
             types: HashMap::new(),
@@ -299,18 +329,21 @@ impl FileSemanticAnalyzer {
         for (_, fun) in &file_semantics.functions {
             self.query_fun(fun);
         }
+
+        for method in &file_semantics.methods {
+            self.query_fun(method);
+        }
     }
 
     /// Query/validate a single struct
-    pub fn query_struct(&mut self, struct_def: &Ptr<Struct>) {
-        if self.structs.contains(&struct_def.node.id) {
-            return;
+    pub fn query_struct(&mut self, struct_def: &Ptr<Struct>) -> Option<StructSemantics> {
+        if let Some(st) = self.structs.get(&struct_def.node.id) {
+            return Some(st.clone());
         }
 
         self.validate_struct_def(&struct_def);
 
-        let new_entry = self.structs.insert(struct_def.node.id);
-        assert!(new_entry);
+        self.structs.get(&struct_def.node.id).map(|s| s.clone())
     }
 
     /// Query/validate a single function
@@ -569,15 +602,20 @@ impl FileSemanticAnalyzer {
     fn validate_file(&mut self) -> FileSemantics {
         let mut functions = HashMap::new();
         let mut structs = HashMap::new();
+        let mut methods = Vec::new();
         for child in self.file.children() {
             match child {
                 RootSymbol::Function(fun) => {
-                    let existed = functions.insert(fun.signature.name.clone(), fun.clone());
-                    if existed.is_some() {
-                        self.errors.push(LangError::type_error(
-                            &fun.signature.name_node,
-                            format!("Duplicated function definition: {:?}", fun.signature.name),
-                        ))
+                    if fun.signature.receiver.is_none() {
+                        let existed = functions.insert(fun.signature.name.clone(), fun.clone());
+                        if existed.is_some() {
+                            self.errors.push(LangError::type_error(
+                                &fun.signature.name_node,
+                                format!("Duplicated function definition: {:?}", fun.signature.name),
+                            ))
+                        }
+                    } else {
+                        methods.push(fun);
                     }
                 }
                 RootSymbol::Struct(struct_def) => {
@@ -592,11 +630,23 @@ impl FileSemanticAnalyzer {
             }
         }
 
-        FileSemantics { functions, structs }
+        FileSemantics {
+            functions,
+            structs,
+            methods,
+        }
     }
 
     fn validate_struct_def(&mut self, struct_def: &Ptr<Struct>) {
-        // TODO: struct name clash with other definitions?
+        // TODO: struct name clash with other declarations?
+
+        let new_entry = self.structs.insert(
+            struct_def.node.id,
+            StructSemantics {
+                implementations: HashMap::new(),
+            },
+        );
+        assert!(new_entry.is_none());
 
         for field in &struct_def.fields {
             self.query_field_type(struct_def, &field);
@@ -664,6 +714,7 @@ impl FileSemanticAnalyzer {
                 }
             }
             TypeQueryContext::Function(_) => {}
+            TypeQueryContext::StructMethodReceiver => {}
         }
         let file = self.query_file();
         let Some(struct_def) = file.structs.get(identifier).map(|s| s.clone()) else {
@@ -673,6 +724,9 @@ impl FileSemanticAnalyzer {
             ));
             return None;
         };
+        // Just make struct is in the system
+        self.query_struct(&struct_def);
+
         let binding = Some(TypeBinding::Struct(struct_def));
         let existing = self.type_identifiers.insert(
             node.id,
@@ -698,6 +752,58 @@ impl FileSemanticAnalyzer {
         assert!(existing.is_none());
     }
 
+    fn validate_struct_receiver(&mut self, param: &Parameter) -> Option<Ptr<Struct>> {
+        if param.types.len() != 1 {
+            self.errors.push(LangError::type_error(
+                &param.node,
+                "Receiver type must point to a struct".to_string(),
+            ));
+            return None;
+        }
+        let t = param.types.get(0).unwrap();
+
+        let Some(binding) = self.query_type(TypeQueryContext::StructMethodReceiver, t).and_then(|b| b.binding) else {
+            self.errors.push(LangError::type_error(
+                &param.node,
+                format!("Invalid receiver type: {:?}", t.r#type),
+            ));
+            return None;
+        };
+        let st = match binding {
+            TypeBinding::Struct(st) => st,
+            TypeBinding::StructTypeArgument(_) => {
+                self.errors.push(LangError::type_error(
+                    &param.node,
+                    "Receiver type must point to a struct".to_string(),
+                ));
+                return None;
+            }
+        };
+        return Some(st);
+    }
+
+    fn bind_method_to_struct(&mut self, fun: &Ptr<Function>, st: Ptr<Struct>) {
+        // struct most have in validated before hand, i.e. it must exist:
+        let entry = self.structs.get_mut(&st.node.id).unwrap();
+        let implementation = entry
+            .implementations
+            .entry(fun_receiver_key(&fun))
+            .or_insert(StructImplementation { methods: vec![] });
+        if implementation
+            .methods
+            .iter()
+            .find(|m| m.signature.name == fun.signature.name)
+            .is_some()
+        {
+            self.errors.push(LangError::type_error(
+                &fun.signature.name_node,
+                format!("Duplicated method: {}", fun.signature.name),
+            ));
+            return;
+        }
+        implementation.methods.push(fun.clone());
+    }
+
     fn validate_fun(&mut self, fun: &Ptr<Function>) {
         // TODO: fun name clash with other definitions?
 
@@ -705,6 +811,17 @@ impl FileSemanticAnalyzer {
             self.query_parameter_type(&fun.signature, &par_ref);
         }
         self.query_return_type(&fun.signature);
+
+        if let Some(param) = &fun.signature.receiver {
+            if param.types.len() != 1 {
+                self.errors.push(LangError::type_error(
+                    &param.node,
+                    "Receiver type must point to a struct".to_string(),
+                ));
+            } else if let Some(st) = self.validate_struct_receiver(&param) {
+                self.bind_method_to_struct(fun, st);
+            }
+        }
 
         let mut flow_container = CurrentFlowContainer {
             flow: FlowContainer::start_flow(),

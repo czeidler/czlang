@@ -45,6 +45,7 @@ impl Buildins {
                     origin: None,
                 }],
                 return_type: None,
+                receiver: None,
             },
         );
         Buildins { functions }
