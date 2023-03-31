@@ -134,14 +134,12 @@ fun (s &MyStruct<u8>)MyInterface<bool>.test() {
     )
     (method_definition
         (receiver
-          (parameter
-            (identifier)
-            (reference_type
-              (generic_type
-                (identifier)
-                (type_arguments
-                  (primitive_type)
-                )
+          (identifier)
+          (reference_type
+            (generic_type
+              (identifier)
+              (type_arguments
+                (primitive_type)
               )
             )
           )

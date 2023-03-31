@@ -11,11 +11,9 @@ fun (s &MyStruct)member() {
 (source_file
     (method_definition
         (receiver
-          (parameter
+          (identifier)
+          (reference_type
             (identifier)
-            (reference_type
-              (identifier)
-            )
           )
         )
         (identifier)
@@ -42,10 +40,9 @@ fun (s &MyStruct)MyInterface.test() {
     (identifier))
     (method_definition
         (receiver
-            (parameter
             (identifier)
             (reference_type
-                (identifier))))
+                (identifier)))
         (identifier)
         (identifier)
         (parameter_list)

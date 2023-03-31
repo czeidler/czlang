@@ -298,10 +298,18 @@
         },
         {
           "type": "FIELD",
-          "name": "parameter",
+          "name": "name",
           "content": {
             "type": "SYMBOL",
-            "name": "parameter"
+            "name": "identifier"
+          }
+        },
+        {
+          "type": "FIELD",
+          "name": "type",
+          "content": {
+            "type": "SYMBOL",
+            "name": "_type"
           }
         },
         {
