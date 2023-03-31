@@ -66,6 +66,11 @@ pub struct FunctionCallSemantics {
 }
 
 #[derive(Debug, Clone)]
+pub struct MethodCallSemantics {
+    pub binding: Option<Ptr<Function>>,
+}
+
+#[derive(Debug, Clone)]
 pub struct ExpressionSemantics {
     /// Either the direct type from the expression or the more refined type if the expression type was unresolved.
     /// For example, an int literal expression for an argument of a function call can have multiple possible types:
@@ -150,7 +155,7 @@ pub struct StructImplementation {
 #[derive(Debug, Clone)]
 pub struct StructSemantics {
     /// method definitions for a struct grouped by struct type arguments
-    pub implementations: HashMap<String, StructImplementation>,
+    pub specializations: HashMap<String, StructImplementation>,
 }
 
 #[derive(Debug, Clone)]
@@ -167,11 +172,13 @@ pub struct TypeIdentifierSemantics {
 #[derive(Debug, Clone)]
 pub enum SelectorFieldBinding {
     Struct(Ptr<Struct>),
+    Method(Ptr<Function>),
 }
 
 #[derive(Debug, Clone)]
 pub struct SelectorFieldSemantics {
     pub r#type: SumType,
+    /// Parent struct of the field, e.g. `parent.field`
     pub parent: Option<Ptr<Struct>>,
     /// Field is nullable
     pub nullable: bool,
@@ -290,6 +297,7 @@ pub struct FileSemanticAnalyzer {
     selector_fields: HashMap<usize, SelectorFieldSemantics>,
     variable_declarations: HashMap<usize, VarDeclarationSemantics>,
     function_calls: HashMap<usize, FunctionCallSemantics>,
+    method_calls: HashMap<usize, MethodCallSemantics>,
     blocks: HashMap<usize, BlockSemantics>,
 
     /// Binding for a struct field initialization to the matching Field in of the target struct
@@ -313,6 +321,7 @@ impl FileSemanticAnalyzer {
             selector_fields: HashMap::new(),
             variable_declarations: HashMap::new(),
             function_calls: HashMap::new(),
+            method_calls: HashMap::new(),
             blocks: HashMap::new(),
             struct_field_inits: HashMap::new(),
         }
@@ -521,18 +530,36 @@ impl FileSemanticAnalyzer {
         self.expressions.get(&node_id).map(|s| s.clone())
     }
 
-    pub fn query_function_call(
-        &mut self,
-        block: &Block,
-        call: &FunctionCall,
-    ) -> Option<FunctionCallSemantics> {
+    pub fn query_function_call(&mut self, call: &FunctionCall) -> Option<FunctionCallSemantics> {
         if let Some(s) = self.function_calls.get(&call.node.id) {
             return Some(s.clone());
         }
 
-        self.query_fun(&block.fun());
+        let binding = self.lookup_function_declaration(call);
+        let existing = self
+            .function_calls
+            .insert(call.node.id, FunctionCallSemantics { binding });
+        assert!(existing.is_none());
 
         self.function_calls.get(&call.node.id).map(|s| s.clone())
+    }
+
+    pub fn query_method_call(
+        &mut self,
+        receiver: &Ptr<Struct>,
+        call: &FunctionCall,
+    ) -> Option<MethodCallSemantics> {
+        if let Some(s) = self.method_calls.get(&call.node.id) {
+            return Some(s.clone());
+        }
+
+        let binding = self.lookup_struct_method(receiver, call);
+        let existing = self
+            .method_calls
+            .insert(call.node.id, MethodCallSemantics { binding });
+        assert!(existing.is_none());
+
+        self.method_calls.get(&call.node.id).map(|s| s.clone())
     }
 
     /// Query the root selector expression
@@ -643,7 +670,7 @@ impl FileSemanticAnalyzer {
         let new_entry = self.structs.insert(
             struct_def.node.id,
             StructSemantics {
-                implementations: HashMap::new(),
+                specializations: HashMap::new(),
             },
         );
         assert!(new_entry.is_none());
@@ -786,7 +813,7 @@ impl FileSemanticAnalyzer {
         // struct most have in validated before hand, i.e. it must exist:
         let entry = self.structs.get_mut(&st.node.id).unwrap();
         let implementation = entry
-            .implementations
+            .specializations
             .entry(fun_receiver_key(&fun))
             .or_insert(StructImplementation { methods: vec![] });
         if implementation
@@ -1211,21 +1238,10 @@ impl FileSemanticAnalyzer {
         }
     }
 
-    pub fn lookup_function_declaration(
-        &mut self,
-        _block: &Block,
-        call: &FunctionCall,
-    ) -> Option<FunctionCallBinding> {
+    fn lookup_function_declaration(&mut self, call: &FunctionCall) -> Option<FunctionCallBinding> {
         let file = self.query_file();
         if let Some(declaration) = file.functions.get(&call.name) {
             let binding = FunctionCallBinding::Function(declaration.clone());
-            let existing = self.function_calls.insert(
-                call.node.id,
-                FunctionCallSemantics {
-                    binding: Some(binding.clone()),
-                },
-            );
-            assert!(existing.is_none());
             return Some(binding);
         }
 
@@ -1233,18 +1249,42 @@ impl FileSemanticAnalyzer {
         match buildins.functions.get(&call.name) {
             Some(fun_declaration) => {
                 let binding = FunctionCallBinding::Buildin(fun_declaration.clone());
-                let existing = self.function_calls.insert(
-                    call.node.id,
-                    FunctionCallSemantics {
-                        binding: Some(binding.clone()),
-                    },
-                );
-                assert!(existing.is_none());
                 Some(binding)
             }
 
             None => None,
         }
+    }
+
+    fn lookup_struct_method(
+        &mut self,
+        receiver: &Ptr<Struct>,
+        call: &FunctionCall,
+    ) -> Option<Ptr<Function>> {
+        let Some(methods) = self.file_semantics.as_ref().map(|s|s.methods.clone()) else {
+            return None;
+        };
+        for method in &methods {
+            let Some(method_receiver) = &method.signature.receiver else {
+                // should not happen!
+                continue;
+            };
+            let Some(receiver_type) = self.query_type(TypeQueryContext::StructMethodReceiver, &method_receiver.types[0]) else {
+                continue;
+            };
+            let Some(binding) = receiver_type.binding else {
+                continue;
+            };
+            match binding {
+                TypeBinding::Struct(current) => {
+                    if current.name == receiver.name && method.signature.name == call.name {
+                        return Some(method.clone());
+                    }
+                }
+                TypeBinding::StructTypeArgument(_) => continue,
+            }
+        }
+        return None;
     }
 
     /// Returns the resolved type of the expression.
@@ -1389,16 +1429,17 @@ impl FileSemanticAnalyzer {
                 ))))
             }
             ExpressionType::FunctionCall(fun_call) => {
-                let fun_declaration = match self.lookup_function_declaration(block, &fun_call) {
-                    Some(fun) => fun,
-                    None => {
-                        self.errors.push(LangError::type_error(
-                            &expression.node,
-                            format!("No fun with name {} found", fun_call.name),
-                        ));
-                        return ExpressionSemantics::empty();
-                    }
-                };
+                let fun_declaration =
+                    match self.query_function_call(&fun_call).and_then(|s| s.binding) {
+                        Some(fun) => fun,
+                        None => {
+                            self.errors.push(LangError::type_error(
+                                &expression.node,
+                                format!("No fun with name {} found", fun_call.name),
+                            ));
+                            return ExpressionSemantics::empty();
+                        }
+                    };
                 let fun_signature = fun_declaration.as_function_signature();
 
                 if fun_signature.parameters.len() != fun_call.arguments.len() {
@@ -1562,6 +1603,7 @@ impl FileSemanticAnalyzer {
         );
         let Some(root_struct) = semantics.binding.map(|b| match &b {
             SelectorFieldBinding::Struct(s) => s.clone(),
+            SelectorFieldBinding::Method(_) => {todo!()},
         }) else {
             self.errors.push(LangError::type_error(
                 &select.root.node,
@@ -1624,6 +1666,7 @@ impl FileSemanticAnalyzer {
                     );
                     if let Some(found_struct) = semantics.binding.map(|b| match &b {
                         SelectorFieldBinding::Struct(s) => s.clone(),
+                        SelectorFieldBinding::Method(_) => todo!(),
                     }) {
                         current_struct = found_struct;
                         current_struct_nullable = semantics.nullable;
@@ -1638,7 +1681,37 @@ impl FileSemanticAnalyzer {
                         return None;
                     }
                 }
-                SelectorFieldType::Call => todo!(),
+                SelectorFieldType::Call(call) => {
+                    // TODO: support generic struct instances
+                    let Some(method) = self.query_method_call(&current_struct, call).and_then(|s|s.binding) else {
+                        self.errors.push(LangError::type_error(
+                            &field.node,
+                            format!("Not a struct method: {}", call.name),
+                        ));
+                        return None;
+                    };
+
+                    let semantics = SelectorFieldSemantics {
+                        r#type: SumType::empty(),
+                        nullable: false,
+                        binding: Some(SelectorFieldBinding::Method(method.clone())),
+                        parent: Some(current_struct.clone()),
+                    };
+                    let existing = self
+                        .selector_fields
+                        .insert(field.node.id, semantics.clone());
+                    assert!(existing.is_none());
+
+                    // TODO continue if return type is a struct
+                    return Some(SumType::from_types(
+                        &method
+                            .signature
+                            .return_type
+                            .as_ref()
+                            .map(|r| r.types.clone())
+                            .unwrap_or(vec![]),
+                    ));
+                }
             }
         }
         return None;

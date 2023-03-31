@@ -461,7 +461,7 @@ impl Server {
                                 return None;
                             }
                         }
-                        SelectorFieldType::Call => return None, // TODO
+                        SelectorFieldType::Call(_) => return None, // TODO
                     }
                 }
                 QueryResult::StructFieldInitialization(field) => field.name_node.span,

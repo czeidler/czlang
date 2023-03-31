@@ -410,7 +410,6 @@ pub struct Parameter {
     pub node: NodeData,
     pub name: String,
     pub is_mutable: bool,
-    pub is_reference: bool,
     pub types: Vec<RefType>,
 
     pub origin: Option<SourceSpan>,
@@ -589,8 +588,7 @@ pub struct StructInitialization {
 #[derive(Debug, Clone)]
 pub enum SelectorFieldType {
     Identifier(String),
-    // TODO:
-    Call,
+    Call(FunctionCall),
 }
 
 #[derive(Debug, Clone)]
@@ -732,9 +730,9 @@ impl FileContext {
 
 fn parse_method<'a>(file: &Ptr<FileContext>, node: &Node<'a>) -> Option<Ptr<Function>> {
     let name = child_by_field(&node, "name")?;
-    let receiver = child_by_field(&node, "receiver")?;
-    let receiver_parameter = child_by_field(&receiver, "parameter")?;
-    let receiver = parse_parameter(file, receiver_parameter)?;
+    let receiver_node = child_by_field(&node, "receiver")?;
+    // parse the receiver as a parameter
+    let receiver = parse_parameter(file, receiver_node)?;
     let parameter_list = child_by_field(&node, "parameters")?;
     let return_type = match node.child_by_field_name("result".as_bytes()) {
         Some(return_node) => Some(ReturnType {
@@ -960,13 +958,17 @@ fn parse_struct_initialization(
     })
 }
 
-fn parse_selector_field(context: &Ptr<FileContext>, node: &Node) -> Option<SelectorField> {
+fn parse_selector_field(
+    context: &Ptr<FileContext>,
+    node: &Node,
+    block: &Ptr<Block>,
+) -> Option<SelectorField> {
     let chaining = child(node, "chaining", 0)?;
     let chaining_text = node_text(&chaining, context)?;
     let field = child(node, "field", 1)?;
     let field = match field.kind() {
         "identifier" => SelectorFieldType::Identifier(node_text(&field, context)?),
-        "function_call" => SelectorFieldType::Call,
+        "function_call" => SelectorFieldType::Call(parse_function_call(context, &field, block)?),
         _ => return None,
     };
     Some(SelectorField {
@@ -986,7 +988,7 @@ fn parse_selector_expression(
     let mut fields: Vec<SelectorField> = Vec::new();
     let mut cursor = node.walk();
     for selector_field in node.children_by_field_name("selector_field", &mut cursor) {
-        let Some(field) = parse_selector_field(context, &selector_field) else {
+        let Some(field) = parse_selector_field(context, &selector_field, block) else {
             continue;
         };
         fields.push(field);
@@ -1277,9 +1279,8 @@ fn parse_parameters<'a>(context: &Ptr<FileContext>, node: Node<'a>) -> Option<Ve
 
 fn parse_parameter<'a>(context: &Ptr<FileContext>, node: Node<'a>) -> Option<Parameter> {
     let is_mutable = node.child_by_field_name("mutable".as_bytes()).is_some();
-    let is_reference = node.child_by_field_name("reference".as_bytes()).is_some();
-    let name = child(&node, "parameter name", 0)?;
-    let _type = child(&node, "parameter type", 1)?;
+    let name = node.child_by_field_name("name".as_bytes())?;
+    let _type = node.child_by_field_name("type".as_bytes())?;
 
     Some(Parameter {
         node: NodeData {
@@ -1289,7 +1290,6 @@ fn parse_parameter<'a>(context: &Ptr<FileContext>, node: Node<'a>) -> Option<Par
         },
         name: node_text(&name, context)?,
         is_mutable,
-        is_reference,
         types: parse_types(context, &_type)?,
 
         origin: Some(SourceSpan::from_node(&node)),

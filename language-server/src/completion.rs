@@ -72,6 +72,7 @@ pub fn dot_completion(
             if let Some(binding) = field_semantics.binding {
                 match binding {
                     SelectorFieldBinding::Struct(struct_dec) => {
+                        // TODO add methods
                         return Some(
                             struct_dec
                                 .fields
@@ -83,8 +84,9 @@ pub fn dot_completion(
                                     )
                                 })
                                 .collect(),
-                        )
+                        );
                     }
+                    SelectorFieldBinding::Method(_) => {}
                 }
             }
         }

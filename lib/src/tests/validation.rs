@@ -201,4 +201,21 @@ fun main() { test() }
         "#,
         );
     }
+
+    #[test]
+    fn error_return() {
+        validate_project(
+            "test_projects/error_return",
+            r#"
+            fun test_call() bool ? i32 {
+                return ?43
+            }
+
+            fun main() {
+                test_call()
+            }
+        "#,
+        )
+        .unwrap();
+    }
 }

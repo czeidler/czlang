@@ -154,12 +154,10 @@ fn find_in_expression(
             }
             None
         }
-        ExpressionType::FunctionCall(call) => {
-            match analyzer.query_function_call(block.block, &call) {
-                Some(function_call) => Some(QueryResult::FunctionCall(function_call.clone())),
-                None => None,
-            }
-        }
+        ExpressionType::FunctionCall(call) => match analyzer.query_function_call(&call) {
+            Some(function_call) => Some(QueryResult::FunctionCall(function_call.clone())),
+            None => None,
+        },
         ExpressionType::StructInitialization(struct_init) => {
             if struct_init.name_node.contains(position) {
                 return analyzer

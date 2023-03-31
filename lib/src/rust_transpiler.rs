@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 
 use crate::ast::{
     print_err, Array, ArrayExpression, BinaryOperator, Block, BlockTrait, Expression,
-    ExpressionType, Field, FileContext, Function, FunctionCall, FunctionTrait, IfAlternative,
-    IfExpression, Parameter, RefType, SelectorExpression, SelectorFieldType, Slice,
+    ExpressionType, Field, FileContext, Function, FunctionCall, FunctionSignature, FunctionTrait,
+    IfAlternative, IfExpression, Parameter, RefType, SelectorExpression, SelectorFieldType, Slice,
     SliceExpression, Statement, StringTemplatePart, Struct, StructFieldInitialization,
     StructInitialization, Type, TypeParam, TypeParamType, UnaryOperator, VarDeclaration,
 };
@@ -171,8 +171,26 @@ impl RustTranspiler {
         self.transpile_types(&parameter.types, writer);
     }
 
-    fn transpile_parameters(&self, parameters: &Vec<Parameter>, writer: &mut Writer) {
+    fn transpile_parameters(
+        &self,
+        receiver: &Option<Parameter>,
+        parameters: &Vec<Parameter>,
+        writer: &mut Writer,
+    ) {
         writer.write("(");
+        if let Some(receiver) = &receiver {
+            let t = &receiver.types[0];
+            if t.is_reference {
+                writer.write("&");
+            }
+            if t.is_mut {
+                writer.write("mut ");
+            }
+            writer.write("self");
+            if parameters.len() > 0 {
+                writer.write(", ");
+            }
+        }
         let mut iter = parameters.iter().peekable();
         while let Some(parameter) = iter.next() {
             self.transpile_parameter(parameter, writer);
@@ -316,7 +334,15 @@ impl RustTranspiler {
                         writer.write(".");
                         writer.write(identifier);
                     }
-                    SelectorFieldType::Call => todo!(),
+                    SelectorFieldType::Call(call) => {
+                        writer.write(".");
+                        let receiver = analyzer
+                            .query_selector_field(block, field)
+                            .unwrap()
+                            .parent
+                            .unwrap();
+                        self.transpile_method_call(analyzer, &receiver, call, block, writer);
+                    }
                 }
             }
             return;
@@ -342,6 +368,7 @@ impl RustTranspiler {
             .unwrap()
         {
             SelectorFieldBinding::Struct(struct_dec) => struct_dec,
+            SelectorFieldBinding::Method(_) => todo!(),
         };
         for field in &selector.fields {
             if !encountered_first_optional {
@@ -391,9 +418,10 @@ impl RustTranspiler {
                                 .unwrap()
                             {
                                 SelectorFieldBinding::Struct(struct_dec) => struct_dec,
+                                SelectorFieldBinding::Method(_) => todo!(),
                             };
                         }
-                        SelectorFieldType::Call => todo!(),
+                        SelectorFieldType::Call(_) => todo!(),
                     }
                 }
             } else {
@@ -403,7 +431,7 @@ impl RustTranspiler {
                         writer.new_line();
                         writer.write(&format!(".map(|s| s.{})", identifier));
                     }
-                    SelectorFieldType::Call => todo!(),
+                    SelectorFieldType::Call(_) => todo!(),
                 };
             }
         }
@@ -607,6 +635,23 @@ impl RustTranspiler {
         }
     }
 
+    fn transpile_method_call(
+        &self,
+        analyzer: &mut FileSemanticAnalyzer,
+        receiver: &Ptr<Struct>,
+        call: &FunctionCall,
+        block: &Block,
+        writer: &mut Writer,
+    ) {
+        let method = analyzer
+            .query_method_call(receiver, call)
+            .unwrap()
+            .binding
+            .unwrap();
+
+        self.transpile_call(analyzer, call, block, &method.signature, writer);
+    }
+
     fn transpile_function_call(
         &self,
         analyzer: &mut FileSemanticAnalyzer,
@@ -618,20 +663,27 @@ impl RustTranspiler {
             return;
         }
 
+        let fun_call_binding = analyzer.query_function_call(call).unwrap().binding.unwrap();
+        let function = fun_call_binding.as_function_signature();
+
+        self.transpile_call(analyzer, call, block, function, writer);
+    }
+
+    fn transpile_call(
+        &self,
+        analyzer: &mut FileSemanticAnalyzer,
+        call: &FunctionCall,
+        block: &Block,
+        function_signature: &FunctionSignature,
+        writer: &mut Writer,
+    ) {
         writer.write(&call.name);
         writer.write("(");
 
-        let fun_call_binding = analyzer
-            .query_function_call(&block, call)
-            .unwrap()
-            .binding
-            .unwrap();
-        let function = fun_call_binding.as_function_signature();
-
         let mut iter = call.arguments.iter().enumerate().peekable();
         while let Some((i, expr)) = iter.next() {
-            let parameter = function.parameters.get(i).unwrap();
-            let parameter_type = analyzer.query_parameter_type(function, parameter);
+            let parameter = function_signature.parameters.get(i).unwrap();
+            let parameter_type = analyzer.query_parameter_type(function_signature, parameter);
             self.transpile_expression_with_mapping(analyzer, expr, &parameter_type, block, writer);
             if iter.peek().is_some() {
                 writer.write(", ");
@@ -842,7 +894,8 @@ impl RustTranspiler {
         writer: &mut Writer,
     ) {
         writer.write(&format!("fn {}", fun.signature.name));
-        self.transpile_parameters(&fun.signature.parameters, writer);
+
+        self.transpile_parameters(&fun.signature.receiver, &fun.signature.parameters, writer);
         if let Some(return_type) = &fun.signature.return_type {
             writer.write(" -> ");
             self.transpile_types(&return_type.types, writer);
@@ -971,7 +1024,7 @@ impl RustTranspiler {
             writer.new_line();
 
             if let Some(semantics) = &analyzer.query_struct(struct_def) {
-                for (_, implementations) in &semantics.implementations {
+                for (_, implementations) in &semantics.specializations {
                     writer.write(&format!("impl {} {{", struct_def.name));
                     writer.new_line();
                     writer.indented(|writer| {

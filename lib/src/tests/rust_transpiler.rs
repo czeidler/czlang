@@ -360,7 +360,13 @@ fun (m &Test)test2() {
 
 }
 
-fun main() {}
+fun main() {
+    var st = Test {
+        a = true
+    }
+    st.test1()
+    st.test2()
+}
         "#,
         )
     }

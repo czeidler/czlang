@@ -12,7 +12,7 @@ pub fn format_param(param: &Parameter) -> String {
     format!(
         "{} {}{}",
         param.name,
-        if param.is_reference { "&" } else { "" },
+        if param.is_mutable { "mut " } else { "" },
         types_to_string(&param.types)
     )
 }
