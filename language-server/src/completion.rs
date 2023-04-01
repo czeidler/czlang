@@ -1,9 +1,10 @@
 use czlanglib::{
-    ast::SourcePosition,
+    ast::{SourcePosition, Struct},
+    format::format_fun_signature,
     project::ProjectFile,
     query::{find_completions, find_in_file, QueryResult},
     semantics::{IdentifierBinding, SelectorFieldBinding, TypeBinding, TypeQueryContext},
-    types::types_to_string,
+    types::{types_to_string, Ptr},
 };
 use lsp_types::{CompletionItem, CompletionItemKind};
 
@@ -49,18 +50,7 @@ pub fn dot_completion(
                 };
                     match bindings {
                         TypeBinding::Struct(struct_dec) => {
-                            return Some(
-                                struct_dec
-                                    .fields
-                                    .iter()
-                                    .map(|f| {
-                                        CompletionItem::new_simple(
-                                            f.name.clone(),
-                                            types_to_string(&f.types),
-                                        )
-                                    })
-                                    .collect(),
-                            )
+                            return Some(struct_doc_completions(file, &struct_dec))
                         }
                         TypeBinding::StructTypeArgument(_) => return None,
                     }
@@ -72,19 +62,7 @@ pub fn dot_completion(
             if let Some(binding) = field_semantics.binding {
                 match binding {
                     SelectorFieldBinding::Struct(struct_dec) => {
-                        // TODO add methods
-                        return Some(
-                            struct_dec
-                                .fields
-                                .iter()
-                                .map(|f| {
-                                    CompletionItem::new_simple(
-                                        f.name.clone(),
-                                        types_to_string(&f.types),
-                                    )
-                                })
-                                .collect(),
-                        );
+                        return Some(struct_doc_completions(file, &struct_dec))
                     }
                     SelectorFieldBinding::Method(_) => {}
                 }
@@ -93,6 +71,40 @@ pub fn dot_completion(
         _ => {}
     }
     Some(vec![])
+}
+
+fn struct_doc_completions(file: &mut ProjectFile, struct_dec: &Ptr<Struct>) -> Vec<CompletionItem> {
+    let mut output = file
+        .file_analyzer
+        .query_struct(&struct_dec)
+        .as_ref()
+        .and_then(|s| {
+            s.specializations.get("").map(|s| {
+                s.methods
+                    .iter()
+                    .map(|f| {
+                        let mut item = CompletionItem::new_simple(
+                            f.signature.name.clone(),
+                            format_fun_signature(&f.signature),
+                        );
+                        item.kind = Some(CompletionItemKind::METHOD);
+                        item
+                    })
+                    .collect::<Vec<_>>()
+            })
+        })
+        .unwrap_or(vec![]);
+    let mut structs = struct_dec
+        .fields
+        .iter()
+        .map(|f| {
+            let mut item = CompletionItem::new_simple(f.name.clone(), types_to_string(&f.types));
+            item.kind = Some(CompletionItemKind::FIELD);
+            item
+        })
+        .collect();
+    output.append(&mut structs);
+    output
 }
 
 // Returns a completion list for all available symbols at the the current position

@@ -136,17 +136,6 @@ pub struct TypeNarrowing {
     pub types: SumType,
 }
 
-fn fun_receiver_key(fun: &Function) -> String {
-    let receiver_types = fun.signature.receiver.as_ref().map(|r| {
-        r.types
-            .iter()
-            .map(|t| format!("{}", t))
-            .collect::<Vec<_>>()
-            .join(",")
-    });
-    return receiver_types.unwrap_or("".to_string());
-}
-
 #[derive(Debug, Clone)]
 pub struct StructImplementation {
     pub methods: Vec<Ptr<Function>>,
@@ -283,7 +272,7 @@ pub struct FileSemanticAnalyzer {
 
     file_semantics: Option<Ptr<FileSemantics>>,
     /// struct declarations
-    structs: HashMap<usize, StructSemantics>,
+    pub structs: HashMap<usize, StructSemantics>,
 
     /// Just keep track of analyzed/checked functions
     fun_symbols: HashSet<usize>,
@@ -814,7 +803,7 @@ impl FileSemanticAnalyzer {
         let entry = self.structs.get_mut(&st.node.id).unwrap();
         let implementation = entry
             .specializations
-            .entry(fun_receiver_key(&fun))
+            .entry("".to_string())
             .or_insert(StructImplementation { methods: vec![] });
         if implementation
             .methods
