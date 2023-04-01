@@ -28,5 +28,12 @@ pub fn format_fun_signature(signature: &FunctionSignature) -> String {
         Some(types) => format!(" {}", types_to_string(&types.types)),
         None => "".to_string(),
     };
-    format!("fun {}({}){}", signature.name, params, return_type)
+    let receiver = match &signature.receiver {
+        Some(receiver) => format!("({})", format_param(receiver)),
+        None => "".to_string(),
+    };
+    format!(
+        "fun {}{}({}){}",
+        receiver, signature.name, params, return_type
+    )
 }
