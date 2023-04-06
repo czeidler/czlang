@@ -125,12 +125,12 @@ struct TestStruct {
 }
 
 fun main() {
-    var struct1 TestStruct | null = TestStruct {
+    var struct1 TestStruct ? null = TestStruct {
         field1 = 1,
         field2 = -2
     }
 
-    var field2 u32 | null = struct1?.field1
+    var field2 u32 ? null = struct1?.field1
 }
         "#,
         )
@@ -151,14 +151,14 @@ struct TestStruct2 {
 }
 
 fun main() {
-    var struct2 TestStruct2 | null = TestStruct2 {
+    var struct2 TestStruct2 ? null = TestStruct2 {
         field1 = TestStruct {
             field1 = 1,
             field2 = -2,
         }
     }
 
-    var field2 i32 | null = struct2?.field1?.field2
+    var field2 i32 ? null = struct2?.field1?.field2
 }
         "#,
         )
@@ -175,7 +175,7 @@ struct TestStruct {
 }
 
 struct TestStruct2 {
-    field1 TestStruct | null
+    field1 TestStruct ? null
 }
 
 fun main() {
@@ -186,7 +186,7 @@ fun main() {
         }
     }
 
-    var field2 i32 | null = struct2.field1?.field2
+    var field2 i32 ? null = struct2.field1?.field2
 }
         "#,
         )

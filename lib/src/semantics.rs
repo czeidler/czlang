@@ -166,11 +166,11 @@ pub enum SelectorFieldBinding {
 
 #[derive(Debug, Clone)]
 pub struct SelectorFieldSemantics {
+    /// The type of the field, e.g. the field type or the return type of a method call.
+    /// This type contains potential accumulated errors types from previous selector fields.
     pub r#type: SumType,
     /// Parent struct of the field, e.g. `parent.field`
     pub parent: Option<Ptr<Struct>>,
-    /// Field is nullable
-    pub nullable: bool,
     pub binding: Option<SelectorFieldBinding>,
 }
 
@@ -1589,6 +1589,7 @@ impl FileSemanticAnalyzer {
             &select.root.node,
             &root_types.types(),
             None,
+            None,
         );
         let Some(root_struct) = semantics.binding.map(|b| match &b {
             SelectorFieldBinding::Struct(s) => s.clone(),
@@ -1604,34 +1605,38 @@ impl FileSemanticAnalyzer {
             return None
         };
         let mut current_struct: Ptr<Struct> = root_struct;
-        let mut current_struct_nullable = semantics.nullable;
-        let mut nullable_chain = semantics.nullable;
+        let mut current_struct_type = semantics.r#type;
         for (i, field) in select.fields.iter().enumerate() {
-            if field.optional_chaining {
-                nullable_chain = true;
-            }
-            if current_struct_nullable && !field.optional_chaining {
+            let current_struct_error = if current_struct_type.len() == 1 {
+                match &current_struct_type.types().get(0).unwrap().r#type {
+                    Type::Either(_, err) => Some(SumType::from_types(err)),
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            if current_struct_error.is_some() && !field.optional_chaining {
                 self.errors.push(LangError::type_error(
                     &field.node,
                     format!(
-                        "{} is potentially null; use optional chaining '?.'",
+                        "{} is error/nullable; use optional chaining '?.'",
                         current_struct.name
                     ),
                 ));
                 return None;
             }
-            if !current_struct_nullable && field.optional_chaining {
+            if current_struct_error.is_none() && field.optional_chaining {
                 self.errors.push(LangError::type_error(
                     &field.node,
                     format!(
-                        "Optional chaining operator '?.' not allowed on none nullable struct {}",
+                        "Optional chaining operator '?.' not allowed on none error/nullable struct {}",
                         current_struct.name
                     ),
                 ));
                 return None;
             }
 
-            match &field.field {
+            let field_types = match &field.field {
                 SelectorFieldType::Identifier(field_identifier) => {
                     let Some(found_field) = current_struct.fields.iter().find(|f|&f.name == field_identifier) else {
                             self.errors.push(LangError::type_error(
@@ -1641,34 +1646,7 @@ impl FileSemanticAnalyzer {
                             return None;
                         };
 
-                    let mut types = found_field.types.clone();
-                    if nullable_chain && !types.iter().any(|t| matches!(t.r#type, Type::Null)) {
-                        types.push(RefType::value(field.node.clone(), Type::Null));
-                        types.sort();
-                    }
-
-                    let semantics = self.bind_selector_field_to_struct(
-                        TypeQueryContext::Struct(current_struct.clone()),
-                        &field.node,
-                        &types,
-                        Some(current_struct.clone()),
-                    );
-                    if let Some(found_struct) = semantics.binding.map(|b| match &b {
-                        SelectorFieldBinding::Struct(s) => s.clone(),
-                        SelectorFieldBinding::Method(_) => todo!(),
-                    }) {
-                        current_struct = found_struct;
-                        current_struct_nullable = semantics.nullable;
-                    } else if i == select.fields.len() - 1 {
-                        return Some(SumType::from_types(&types));
-                    } else {
-                        // all but the last field must be structs
-                        self.errors.push(LangError::type_error(
-                            &field.node,
-                            format!("{} is not a struct", field_identifier),
-                        ));
-                        return None;
-                    }
+                    found_field.types.clone()
                 }
                 SelectorFieldType::Call(call) => {
                     // TODO: support generic struct instances
@@ -1679,28 +1657,45 @@ impl FileSemanticAnalyzer {
                         ));
                         return None;
                     };
-
-                    let semantics = SelectorFieldSemantics {
-                        r#type: SumType::empty(),
-                        nullable: false,
-                        binding: Some(SelectorFieldBinding::Method(method.clone())),
-                        parent: Some(current_struct.clone()),
-                    };
-                    let existing = self
-                        .selector_fields
-                        .insert(field.node.id, semantics.clone());
-                    assert!(existing.is_none());
-
-                    // TODO continue if return type is a struct
-                    return Some(SumType::from_types(
-                        &method
-                            .signature
-                            .return_type
-                            .as_ref()
-                            .map(|r| r.types.clone())
-                            .unwrap_or(vec![]),
-                    ));
+                    method
+                        .signature
+                        .return_type
+                        .as_ref()
+                        .map(|r| r.types.clone())
+                        .unwrap_or(vec![])
                 }
+            };
+            let semantics = self.bind_selector_field_to_struct(
+                TypeQueryContext::Struct(current_struct.clone()),
+                &field.node,
+                &field_types,
+                Some(current_struct.clone()),
+                current_struct_error.clone(),
+            );
+            if let Some(found_struct) = semantics.binding.map(|b| match &b {
+                SelectorFieldBinding::Struct(s) => s.clone(),
+                SelectorFieldBinding::Method(_) => todo!(),
+            }) {
+                current_struct = found_struct;
+                current_struct_type = semantics.r#type;
+            } else if i == select.fields.len() - 1 {
+                if let Some(err) = current_struct_error {
+                    return Some(SumType::from_type(RefType {
+                        node: field.node.clone(),
+                        is_reference: false,
+                        is_mut: false,
+                        r#type: Type::Either(field_types, err.types().clone()),
+                    }));
+                } else {
+                    return Some(SumType::from_types(&field_types));
+                }
+            } else {
+                // all but the last field must be structs
+                self.errors.push(LangError::type_error(
+                    &field.node,
+                    format!("Field doesn't point to a struct"),
+                ));
+                return None;
             }
         }
         return None;
@@ -1710,25 +1705,62 @@ impl FileSemanticAnalyzer {
     /// 1) the field_node either from the root expression or from the fields
     /// 2) the field type either the root expression type or the type of the fields
     /// 3) the parent struct, None for the root expression
+    /// 4) the current error, if any
     fn bind_selector_field_to_struct(
         &mut self,
         context: TypeQueryContext,
         field_node: &NodeData,
         field_type: &Vec<RefType>,
         parent: Option<Ptr<Struct>>,
+        parent_error: Option<SumType>,
     ) -> SelectorFieldSemantics {
-        let nullable = field_type.iter().any(|t| matches!(t.r#type, Type::Null));
-        let single_identifier = if field_type.len() == 1 || field_type.len() == 2 && nullable {
-            field_type
-                .iter()
-                .filter_map(|t| match &t.r#type {
-                    Type::Identifier(_) => Some(t.clone()),
-                    _ => None,
-                })
-                .next()
+        let single_type = if field_type.len() == 1 {
+            let first = field_type.get(0).unwrap();
+            Some(first.clone())
         } else {
             None
         };
+        let either_type = single_type.as_ref().and_then(|t| match &t.r#type {
+            Type::Either(value, err) => {
+                Some((SumType::from_types(value), SumType::from_types(err)))
+            }
+            _ => None,
+        });
+        let field_type = SumType::from_types(field_type);
+        let (value, value_error) = match (parent_error, either_type) {
+            (None, None) => (field_type, None),
+            (None, Some(either_type)) => (either_type.0, Some(either_type.1)),
+            (Some(parent_error), None) => (field_type, Some(parent_error)),
+            (Some(parent_error), Some(either_type)) => {
+                let mut error = parent_error.clone();
+                error.union(either_type.1);
+                (field_type, Some(error))
+            }
+        };
+        let full_type = match value_error {
+            Some(value_error) => SumType::from_type(RefType {
+                node: field_node.clone(),
+                is_reference: false,
+                is_mut: false,
+                r#type: Type::Either(value.types().clone(), value_error.types().clone()),
+            }),
+            None => value,
+        };
+        let single_identifier = single_type.and_then(|t| match t.r#type {
+            Type::Identifier(_) => Some(t.clone()),
+            Type::Either(value, _) => {
+                if value.len() != 1 {
+                    None
+                } else {
+                    let first = value.get(0).unwrap();
+                    match first.r#type {
+                        Type::Identifier(_) => Some(first.clone()),
+                        _ => None,
+                    }
+                }
+            }
+            _ => None,
+        });
 
         let found_struct = if let Some(identifier) = single_identifier {
             let found_struct = self
@@ -1750,8 +1782,7 @@ impl FileSemanticAnalyzer {
         };
 
         let semantics = SelectorFieldSemantics {
-            r#type: SumType::from_types(&field_type),
-            nullable,
+            r#type: full_type,
             binding: found_struct.map(|s| (SelectorFieldBinding::Struct(s))),
             parent,
         };

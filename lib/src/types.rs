@@ -231,6 +231,48 @@ pub fn intersection(left_types: &SumType, right_types: &SumType) -> Option<SumTy
                             }),
                         });
                     }
+                    (Type::Either(left_value, left_err), Type::Either(right_value, right_err)) =>{
+                        let Some(value_intersection) = intersection(&SumType::from_types(left_value),
+                        &SumType::from_types(right_value)) else {
+                            return None;
+                        };
+                        let Some(err_intersection) = intersection(&SumType::from_types(left_err),
+                        &SumType::from_types(right_err)) else {
+                            return None;
+                        };
+                        return Some(RefType {
+                            node: left.node.clone(),
+                            is_reference: left.is_reference,
+                            is_mut: left.is_mut,
+                            r#type: Type::Either(value_intersection.types().clone(), err_intersection.types().clone()),
+                        })
+                    }
+                    (Type::Either(left_value, left_err), _) =>{
+                        let Some(value_intersection) = intersection(&SumType::from_types(left_value),
+                        &SumType::from_type(right.clone())) else {
+                            return None;
+                        };
+
+                        return Some(RefType {
+                            node: left.node.clone(),
+                            is_reference: left.is_reference,
+                            is_mut: left.is_mut,
+                            r#type: Type::Either(value_intersection.types().clone(), left_err.clone()),
+                        })
+                    }
+                    (_, Type::Either(right_value, right_err)) =>{
+                        let Some(value_intersection) = intersection(&SumType::from_type(left.clone()), &SumType::from_types(right_value),
+                        ) else {
+                            return None;
+                        };
+
+                        return Some(RefType {
+                            node: left.node.clone(),
+                            is_reference: left.is_reference,
+                            is_mut: left.is_mut,
+                            r#type: Type::Either(value_intersection.types().clone(), right_err.clone()),
+                        })
+                    }
                     (Type::Unresolved(l), Type::Unresolved(r)) => {
                         let mut over = overlap(l, r);
                         if over.len() == 0 {
@@ -289,6 +331,9 @@ pub fn intersection(left_types: &SumType, right_types: &SumType) -> Option<SumTy
             return None;
         };
         output.push(found);
+    }
+    if output.len() == 0 {
+        return None;
     }
     Some(SumType::new(output))
 }

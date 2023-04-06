@@ -15,7 +15,7 @@ struct TestStruct {
 }
 
 struct TestStruct2 {
-    field1 TestStruct | null
+    field1 TestStruct ? null
 }
 
 fun main() {

@@ -10,7 +10,7 @@ use crate::ast::{
     StructInitialization, Type, TypeParam, TypeParamType, UnaryOperator, VarDeclaration,
 };
 use crate::buildin::Buildins;
-use crate::semantics::{FileSemanticAnalyzer, SelectorFieldBinding, TypeNarrowing};
+use crate::semantics::{FileSemanticAnalyzer, TypeNarrowing};
 use crate::sum_type::SumType;
 use crate::types::Ptr;
 
@@ -112,8 +112,15 @@ impl RustTranspiler {
             Type::Identifier(identifier) => identifier.as_str(),
             Type::Array(array) => return self.transpile_array(&array, writer),
             Type::Slice(slice) => return self.transpile_slice(&slice, writer),
-            Type::Null => "None",
-            Type::Either(_, _) => panic!(),
+            Type::Null => "()",
+            Type::Either(value, err) => {
+                writer.write("Result<");
+                self.transpile_types(value, writer);
+                writer.write(", ");
+                self.transpile_types(err, writer);
+                writer.write(">");
+                return;
+            }
             Type::Unresolved(_) => panic!(),
         };
         writer.write(text);
@@ -320,7 +327,7 @@ impl RustTranspiler {
     fn transpile_selector_expr(
         &self,
         analyzer: &mut FileSemanticAnalyzer,
-        expression: &Expression,
+        _expression: &Expression,
         selector: &SelectorExpression,
         block: &Block,
         writer: &mut Writer,
@@ -348,116 +355,21 @@ impl RustTranspiler {
             return;
         }
 
-        let mut selector_start = String::new();
-        self.transpile_expression(
-            analyzer,
-            &selector.root,
-            block,
-            &mut Writer::new(&mut selector_start),
-        );
+        self.transpile_expression(analyzer, &selector.root, block, writer);
 
-        let mut encountered_first_optional = false;
-        let mut current_types = analyzer
-            .query_expression(block, &selector.root)
-            .and_then(|s| s.resolved_types)
-            .unwrap();
-        let mut current_struct = match analyzer
-            .query_selector(&block, selector)
-            .unwrap()
-            .binding
-            .unwrap()
-        {
-            SelectorFieldBinding::Struct(struct_dec) => struct_dec,
-            SelectorFieldBinding::Method(_) => todo!(),
-        };
         for field in &selector.fields {
-            if !encountered_first_optional {
-                if field.optional_chaining {
-                    encountered_first_optional = true;
-                    writer.write(&format!("match {} {{", selector_start));
-                    writer.new_line();
-                    writer.indented(|writer| {
-                        let SelectorFieldType::Identifier(identifier) = &field.field else {
-                                panic!("Field not an identifier; shouldn't have passed validation");
-                            };
-                        let sum_type = current_types.sum_type_name();
-                        let struct_identifier = current_types
-                            .iter()
-                            .filter_map(|t| match &t.r#type {
-                                Type::Identifier(identifier) => Some(identifier),
-                                _ => None,
-                            })
-                            .next()
-                            .unwrap();
-                        writer.write(&format!("{}::Null => None,", sum_type));
-                        writer.new_line();
-                        writer.write(&format!(
-                            "{}::{}(s) => Some(s.{}),",
-                            sum_type, struct_identifier, identifier
-                        ));
-                        writer.new_line();
-                    });
-                    writer.write("}");
-                } else {
-                    match &field.field {
-                        SelectorFieldType::Identifier(identifier) => {
-                            selector_start.push_str(".");
-                            selector_start.push_str(identifier);
-                            current_types = SumType::from_types(
-                                &current_struct
-                                    .fields
-                                    .iter()
-                                    .find(|f| &f.name == identifier)
-                                    .unwrap()
-                                    .types,
-                            );
-                            current_struct = match analyzer
-                                .query_selector_field(&block, &field)
-                                .unwrap()
-                                .binding
-                                .unwrap()
-                            {
-                                SelectorFieldBinding::Struct(struct_dec) => struct_dec,
-                                SelectorFieldBinding::Method(_) => todo!(),
-                            };
-                        }
-                        SelectorFieldType::Call(_) => todo!(),
-                    }
-                }
-            } else {
-                // map optional
-                match &field.field {
-                    SelectorFieldType::Identifier(identifier) => {
-                        writer.new_line();
-                        writer.write(&format!(".map(|s| s.{})", identifier));
-                    }
-                    SelectorFieldType::Call(_) => todo!(),
-                };
+            writer.write(".");
+            if field.optional_chaining {
+                writer.write("map(|it| it.");
+            }
+            match &field.field {
+                SelectorFieldType::Identifier(identifier) => writer.write(identifier),
+                SelectorFieldType::Call(_) => todo!(),
+            };
+            if field.optional_chaining {
+                writer.write(")");
             }
         }
-        let resolved_types = analyzer
-            .query_expression(block, &expression)
-            .and_then(|s| s.resolved_types.clone())
-            .unwrap();
-        let target_sum_type = resolved_types.sum_type_name();
-        let target_type = resolved_types
-            .iter()
-            .filter_map(|t| match &t.r#type {
-                Type::Null => None,
-                Type::U32 => Some("U32"),
-                Type::I32 => Some("I32"),
-                Type::Identifier(identifier) => Some(identifier),
-                _ => panic!(),
-            })
-            .next()
-            .unwrap();
-        writer.new_line();
-        writer.write(&format!(
-            ".map(|s| {}::{}(s))",
-            target_sum_type, target_type
-        ));
-        writer.new_line();
-        writer.write(&format!(".unwrap_or({}::Null)", target_sum_type));
     }
 
     fn transpile_array_expr(
@@ -547,7 +459,7 @@ impl RustTranspiler {
         writer: &mut Writer,
     ) {
         let Some(target) = target else {
-            self.transpile_expression(analyzer,&expression, block, writer);
+            self.transpile_expression(analyzer, &expression, block, writer);
             return;
         };
         if matches!(expression.r#type, ExpressionType::Null) {
@@ -564,8 +476,16 @@ impl RustTranspiler {
 
         if target.len() == 1 {
             if resolved_type.len() == 1 {
+                let wrap_in_ok = matches!(target.types()[0].r#type, Type::Either(_, _))
+                    && !matches!(resolved_type.types()[0].r#type, Type::Either(_, _));
+                if wrap_in_ok {
+                    writer.write("Ok(");
+                }
                 // the target is a simple type, i.e. we can directly assign the expression
                 self.transpile_expression(analyzer, &expression, block, writer);
+                if wrap_in_ok {
+                    writer.write(")");
+                }
             } else {
                 writer.write("match ");
                 self.transpile_expression(analyzer, &expression, block, writer);
