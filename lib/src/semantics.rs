@@ -1751,7 +1751,7 @@ impl FileSemanticAnalyzer {
             (Some(parent_error), Some(either_type)) => {
                 let mut error = parent_error.clone();
                 error.union(either_type.1);
-                (field_type, Some(error))
+                (either_type.0, Some(error))
             }
         };
         let full_type = match value_error {
