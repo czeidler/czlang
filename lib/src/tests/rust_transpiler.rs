@@ -193,6 +193,32 @@ fun main() {
     }
 
     #[test]
+    fn structs_optional_chaining_err() {
+        transpile_and_validate_project(
+            "test_projects/transpile_structs_optional_chaining_err",
+            r#"
+struct TestStruct {
+    field1 u32 ? string
+}
+
+struct TestStruct2 {
+    field1 TestStruct ? bool
+}
+
+fun main() {
+    var struct2 = TestStruct2 {
+        field1 = TestStruct {
+            field1 = 1,
+        }
+    }
+
+    var field2 u32 ? string | bool = struct2.field1?.field1
+}
+        "#,
+        )
+    }
+
+    #[test]
     fn fun_blocks() {
         transpile_and_validate_project(
             "test_projects/transpile_fun_blocks",

@@ -166,6 +166,7 @@ pub enum SelectorFieldBinding {
 
 #[derive(Debug, Clone)]
 pub struct SelectorFieldSemantics {
+    pub field_types: SumType,
     /// The type of the field, e.g. the field type or the return type of a method call.
     /// This type contains potential accumulated errors types from previous selector fields.
     pub r#type: SumType,
@@ -1581,6 +1582,7 @@ impl FileSemanticAnalyzer {
         select: &SelectorExpression,
         is_assignment: bool,
     ) -> Option<SumType> {
+        // validate root expression
         let root_types = self
             .validate_expression(flow, block, &select.root, is_assignment)
             .into_types()?;
@@ -1665,6 +1667,7 @@ impl FileSemanticAnalyzer {
                         .unwrap_or(vec![])
                 }
             };
+
             let semantics = self.bind_selector_field_to_struct(
                 TypeQueryContext::Struct(current_struct.clone()),
                 &field.node,
@@ -1679,7 +1682,21 @@ impl FileSemanticAnalyzer {
                 current_struct = found_struct;
                 current_struct_type = semantics.r#type;
             } else if i == select.fields.len() - 1 {
-                if let Some(err) = current_struct_error {
+                // last selector field
+                let current_error = if semantics.r#type.len() == 1 {
+                    match &semantics.r#type.types().get(0).unwrap().r#type {
+                        Type::Either(_, err) => Some(SumType::from_types(err)),
+                        _ => None,
+                    }
+                } else {
+                    None
+                };
+                if let Some(err) = current_error {
+                    // Add sum type
+                    if err.len() > 1 {
+                        self.sum_types.insert(err.sum_type_name(), err.clone());
+                    }
+
                     return Some(SumType::from_type(RefType {
                         node: field.node.clone(),
                         is_reference: false,
@@ -1710,12 +1727,12 @@ impl FileSemanticAnalyzer {
         &mut self,
         context: TypeQueryContext,
         field_node: &NodeData,
-        field_type: &Vec<RefType>,
+        field_types: &Vec<RefType>,
         parent: Option<Ptr<Struct>>,
         parent_error: Option<SumType>,
     ) -> SelectorFieldSemantics {
-        let single_type = if field_type.len() == 1 {
-            let first = field_type.get(0).unwrap();
+        let single_type = if field_types.len() == 1 {
+            let first = field_types.get(0).unwrap();
             Some(first.clone())
         } else {
             None
@@ -1726,7 +1743,7 @@ impl FileSemanticAnalyzer {
             }
             _ => None,
         });
-        let field_type = SumType::from_types(field_type);
+        let field_type = SumType::from_types(field_types);
         let (value, value_error) = match (parent_error, either_type) {
             (None, None) => (field_type, None),
             (None, Some(either_type)) => (either_type.0, Some(either_type.1)),
@@ -1782,6 +1799,7 @@ impl FileSemanticAnalyzer {
         };
 
         let semantics = SelectorFieldSemantics {
+            field_types: SumType::from_types(field_types),
             r#type: full_type,
             binding: found_struct.map(|s| (SelectorFieldBinding::Struct(s))),
             parent,

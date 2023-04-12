@@ -327,46 +327,74 @@ impl RustTranspiler {
     fn transpile_selector_expr(
         &self,
         analyzer: &mut FileSemanticAnalyzer,
-        _expression: &Expression,
+        expression: &Expression,
         selector: &SelectorExpression,
         block: &Block,
         writer: &mut Writer,
     ) {
-        let has_optional_chaining = selector.fields.iter().any(|f| f.optional_chaining);
-        if !has_optional_chaining {
-            self.transpile_expression(analyzer, &selector.root, block, writer);
-            for field in &selector.fields {
-                match &field.field {
-                    SelectorFieldType::Identifier(identifier) => {
-                        writer.write(".");
-                        writer.write(identifier);
-                    }
-                    SelectorFieldType::Call(call) => {
-                        writer.write(".");
-                        let receiver = analyzer
-                            .query_selector_field(block, field)
-                            .unwrap()
-                            .parent
-                            .unwrap();
-                        self.transpile_method_call(analyzer, &receiver, call, block, writer);
-                    }
+        let semantics = analyzer.query_expression(block, expression).unwrap();
+        let expr_err_sum_type = semantics.types().and_then(|types| {
+            if types.len() != 1 {
+                return None;
+            }
+            match &types.types().get(0).unwrap().r#type {
+                Type::Either(_, err) => Some(SumType::from_types(err)),
+                _ => None,
+            }
+        });
+
+        let mut has_optional_chaining = false;
+        self.transpile_expression(analyzer, &selector.root, block, writer);
+        for field in &selector.fields {
+            let semantics = analyzer.query_selector_field(block, field).unwrap();
+            let field_err = if semantics.field_types.len() != 1 {
+                None
+            } else {
+                match &semantics.field_types.types().get(0).unwrap().r#type {
+                    Type::Either(_, err) => Some(SumType::from_types(err)),
+                    _ => None,
+                }
+            };
+
+            has_optional_chaining = has_optional_chaining || field.optional_chaining;
+            writer.write(".");
+            if has_optional_chaining {
+                if field_err.is_some() {
+                    writer.write("and_then(|it| it.");
+                } else {
+                    writer.write("map(|it| it.");
                 }
             }
-            return;
-        }
-
-        self.transpile_expression(analyzer, &selector.root, block, writer);
-
-        for field in &selector.fields {
-            writer.write(".");
-            if field.optional_chaining {
-                writer.write("map(|it| it.");
-            }
             match &field.field {
-                SelectorFieldType::Identifier(identifier) => writer.write(identifier),
-                SelectorFieldType::Call(_) => todo!(),
+                SelectorFieldType::Identifier(identifier) => {
+                    writer.write(identifier);
+                }
+                SelectorFieldType::Call(call) => {
+                    let receiver = analyzer
+                        .query_selector_field(block, field)
+                        .unwrap()
+                        .parent
+                        .unwrap();
+                    self.transpile_method_call(analyzer, &receiver, call, block, writer);
+                }
             };
-            if field.optional_chaining {
+
+            if let (Some(field_err), Some(expr_target_err)) =
+                (field_err, expr_err_sum_type.as_ref())
+            {
+                if &field_err != expr_target_err {
+                    writer.write(".map_err(|err| ");
+                    self.transpile_type_mapping(
+                        "err",
+                        expr_target_err,
+                        &field_err,
+                        &field_err,
+                        writer,
+                    );
+                    writer.write(")");
+                }
+            }
+            if has_optional_chaining {
                 writer.write(")");
             }
         }
@@ -450,30 +478,20 @@ impl RustTranspiler {
         return false;
     }
 
-    fn transpile_expression_with_mapping(
+    /// # Arguments:
+    /// * `expression` the already transpiled expression
+    /// * `target` is the target type to where expression type should be mapped
+    /// * `resolved_type` the resolved expression type
+    /// * `narrowed_type` the narrowed expression type, e.g. if expression type has been narrowed down from the
+    /// `resolved_type`
+    fn transpile_type_mapping(
         &self,
-        analyzer: &mut FileSemanticAnalyzer,
-        expression: &Expression,
-        target: &Option<SumType>,
-        block: &Block,
+        expression: &str,
+        target: &SumType,
+        resolved_type: &SumType,
+        narrowed_type: &SumType,
         writer: &mut Writer,
     ) {
-        let Some(target) = target else {
-            self.transpile_expression(analyzer, &expression, block, writer);
-            return;
-        };
-        if matches!(expression.r#type, ExpressionType::Null) {
-            writer.write(&target.sum_type_name());
-            writer.write("::");
-            self.transpile_expression(analyzer, &expression, block, writer);
-            return;
-        }
-
-        let (resolved_type, narrowed_type) = analyzer
-            .query_expression(block, &expression)
-            .map(|s| (s.resolved_types.clone().unwrap(), s.types().unwrap()))
-            .unwrap();
-
         if target.len() == 1 {
             if resolved_type.len() == 1 {
                 let wrap_in_ok = matches!(target.types()[0].r#type, Type::Either(_, _))
@@ -482,13 +500,13 @@ impl RustTranspiler {
                     writer.write("Ok(");
                 }
                 // the target is a simple type, i.e. we can directly assign the expression
-                self.transpile_expression(analyzer, &expression, block, writer);
+                writer.write(expression);
                 if wrap_in_ok {
                     writer.write(")");
                 }
             } else {
                 writer.write("match ");
-                self.transpile_expression(analyzer, &expression, block, writer);
+                writer.write(expression);
                 writer.write(" {");
                 writer.new_line();
                 writer.indented(|writer| {
@@ -514,7 +532,7 @@ impl RustTranspiler {
             let resolved_name = resolved_type.sum_type_name();
             let target_name = target.sum_type_name();
             if target_name == resolved_name {
-                self.transpile_expression(analyzer, &expression, block, writer);
+                writer.write(expression);
                 return;
             }
             if resolved_type.len() == 1 {
@@ -523,11 +541,11 @@ impl RustTranspiler {
                 let variant = type_to_enum_variant(&resolved_type.types()[0].r#type);
                 writer.write(&variant);
                 writer.write("(");
-                self.transpile_expression(analyzer, &expression, block, writer);
+                writer.write(expression);
                 writer.write(")");
             } else {
                 writer.write("match ");
-                self.transpile_expression(analyzer, &expression, block, writer);
+                writer.write(expression);
                 writer.write(" {");
                 writer.new_line();
                 writer.indented(|writer| {
@@ -553,6 +571,42 @@ impl RustTranspiler {
                 writer.write("}");
             }
         }
+    }
+
+    fn transpile_expression_with_mapping(
+        &self,
+        analyzer: &mut FileSemanticAnalyzer,
+        expression: &Expression,
+        target: &Option<SumType>,
+        block: &Block,
+        writer: &mut Writer,
+    ) {
+        let Some(target) = target else {
+            self.transpile_expression(analyzer, &expression, block, writer);
+            return;
+        };
+        if matches!(expression.r#type, ExpressionType::Null) {
+            writer.write(&target.sum_type_name());
+            writer.write("::");
+            self.transpile_expression(analyzer, &expression, block, writer);
+            return;
+        }
+
+        let (resolved_type, narrowed_type) = analyzer
+            .query_expression(block, &expression)
+            .map(|s| (s.resolved_types.clone().unwrap(), s.types().unwrap()))
+            .unwrap();
+
+        let mut transpiled_expression = "".to_string();
+        let mut str_writer = Writer::new(&mut transpiled_expression);
+        self.transpile_expression(analyzer, &expression, block, &mut str_writer);
+        self.transpile_type_mapping(
+            &transpiled_expression,
+            target,
+            &resolved_type,
+            &narrowed_type,
+            writer,
+        );
     }
 
     fn transpile_method_call(

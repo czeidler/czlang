@@ -4,7 +4,7 @@ use crate::{
 };
 use std::{slice::Iter, vec::IntoIter};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SumType {
     types: Vec<RefType>,
 }
