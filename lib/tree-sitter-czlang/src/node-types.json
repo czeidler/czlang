@@ -862,6 +862,26 @@
     "type": "expression_statement",
     "named": true,
     "fields": {
+      "catch": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "catch_block",
+            "named": true
+          }
+        ]
+      },
+      "error_return": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "error_op",
+            "named": true
+          }
+        ]
+      },
       "expression": {
         "multiple": false,
         "required": true,
@@ -1030,16 +1050,6 @@
           }
         ]
       },
-      "catch": {
-        "multiple": false,
-        "required": false,
-        "types": [
-          {
-            "type": "catch_block",
-            "named": true
-          }
-        ]
-      },
       "function": {
         "multiple": false,
         "required": true,
@@ -1060,16 +1070,6 @@
           }
         ]
       }
-    },
-    "children": {
-      "multiple": false,
-      "required": false,
-      "types": [
-        {
-          "type": "error_op",
-          "named": true
-        }
-      ]
     }
   },
   {

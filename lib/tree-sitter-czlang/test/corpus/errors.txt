@@ -51,11 +51,11 @@ fun x() i32 {
           (argument_list
             (identifier)
             (identifier))
-          (catch_block
-            (error_op)
-            (identifier)
-            (block)
-          )
+        )
+        (catch_block
+          (error_op)
+          (identifier)
+          (block)
         )
       )
     )
@@ -152,7 +152,9 @@ fun x() i32 ? bool {
         (function_call
           (identifier)
           (argument_list)
-          (error_op)))
+        )
+        (error_op)
+      )
       (return_statement
         (error_expression
           (error_op)
