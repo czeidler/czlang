@@ -377,8 +377,15 @@ impl<'a> Iterator for StatementIterator<'a> {
                         Some(expression_node) => expression_node,
                         None => continue,
                     };
-                    parse_expression(&self.file, &expression_node, &self.block)
-                        .map(|statement| Statement::Expression(statement))
+                    let Some(expression) = parse_expression(&self.file, &expression_node, &self.block) else {
+                        continue;
+                    };
+
+                    let err_return = child_by_field(&statement_node, "error_return").is_some();
+                    Some(Statement::Expression(ExpressionStatement {
+                        expression,
+                        err_return,
+                    }))
                 }
                 "var_declaration" => parse_var_declaration(&self.file, statement_node, &self.block)
                     .map(|statement| Statement::VarDeclaration(Ptr::new(statement))),
@@ -535,8 +542,15 @@ pub struct ReturnStatement {
 }
 
 #[derive(Debug, Clone)]
+pub struct ExpressionStatement {
+    pub expression: Expression,
+    /// Expression ends with a "?"
+    pub err_return: bool,
+}
+
+#[derive(Debug, Clone)]
 pub enum Statement {
-    Expression(Expression),
+    Expression(ExpressionStatement),
     VarDeclaration(Ptr<VarDeclaration>),
     Return(ReturnStatement),
 }
@@ -544,7 +558,7 @@ pub enum Statement {
 impl Statement {
     pub fn node(&self) -> &NodeData {
         match self {
-            Statement::Expression(expr) => &expr.node,
+            Statement::Expression(expr) => &expr.expression.node,
             Statement::VarDeclaration(var) => &var.node,
             Statement::Return(ret) => &ret.node,
         }

@@ -89,9 +89,9 @@ fn find_in_block(
                     }
                 }
             }
-            Statement::Expression(expr) => {
-                if expr.node.contains(position) {
-                    return find_in_expression(analyzer, &block, &expr, position);
+            Statement::Expression(statement) => {
+                if statement.expression.node.contains(position) {
+                    return find_in_expression(analyzer, &block, &statement.expression, position);
                 }
             }
         }
@@ -287,7 +287,7 @@ fn find_completions_in_block(
         }
         match statement {
             Statement::VarDeclaration(var) => vars.push(var),
-            Statement::Expression(expr) => match expr.r#type {
+            Statement::Expression(statement) => match statement.expression.r#type {
                 ExpressionType::If(if_expression) => {
                     let mut if_vars = find_completions_in_if(&if_expression, position);
                     vars.append(&mut if_vars);

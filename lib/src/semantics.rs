@@ -883,7 +883,9 @@ impl FileSemanticAnalyzer {
         if is_assignment {
             if let Some(last_statement) = &last_statement {
                 match last_statement {
-                    Statement::Expression(expression) => self.bind_block_return(block, expression),
+                    Statement::Expression(statement) => {
+                        self.bind_block_return(block, &statement.expression)
+                    }
                     _ => {}
                 }
             } else {
@@ -981,8 +983,38 @@ impl FileSemanticAnalyzer {
         is_assignment: bool,
     ) -> Option<ExpressionSemantics> {
         match statement {
-            Statement::Expression(expression) => {
-                return Some(self.validate_expression(flow, block, expression, is_assignment));
+            Statement::Expression(statement) => {
+                let semantics =
+                    self.validate_expression(flow, block, &statement.expression, is_assignment);
+                if statement.err_return {
+                    let Some(expr_types) = semantics.types() else {
+                        self.errors.push(LangError::type_error(
+                            &statement.expression.node,
+                            format!(
+                                "Invalid expression type in error return"
+                            ),
+                        ));
+                        return None;
+                    };
+                    let return_types = block
+                        .fun()
+                        .signature
+                        .return_type
+                        .as_ref()
+                        .map(|t| SumType::from_types(&t.types))
+                        .unwrap_or(SumType::empty());
+                    match intersection(&expr_types, &return_types) {
+                        Some(_) => {}
+                        None => {
+                            self.errors.push(LangError::type_error(
+                                &statement.expression.node,
+                                format!("No overlap between expression error ({}) and function return type ({})",  types_to_string(expr_types.types()), types_to_string(return_types.types())),
+                            ));
+                            return None;
+                        }
+                    }
+                }
+                return Some(semantics);
             }
             Statement::VarDeclaration(var_declaration) => {
                 self.validate_var_declaration(flow, block, var_declaration.clone());

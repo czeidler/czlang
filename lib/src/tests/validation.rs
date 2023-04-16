@@ -218,4 +218,49 @@ fun main() { test() }
         )
         .unwrap();
     }
+
+    #[test]
+    fn error_return_operator() {
+        validate_project(
+            "test_projects/error_return_operator",
+            r#"
+            fun test_call() bool ? i32 {
+                var test bool ? i32 = true
+                test?
+                return false
+            }
+
+            fun test_call2() bool ? i32 | string {
+                var test bool ? string  = true
+                test?
+                return false
+            }
+
+            fun main() {
+                test_call()
+            }
+        "#,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn error_return_operator_failure() {
+        validate_project(
+            "test_projects/error_return_operator_failure",
+            r#"
+
+            fun test_call() bool ? i32 | string {
+                var test bool ? i8  = true
+                test?
+                return false
+            }
+
+            fun main() {
+                test_call()
+            }
+        "#,
+        )
+        .unwrap_err();
+    }
 }

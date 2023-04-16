@@ -824,9 +824,12 @@ impl RustTranspiler {
         let mut iterator = block.statements().peekable().into_iter();
         while let Some(statement) = iterator.next() {
             match statement {
-                Statement::Expression(expr) => {
+                Statement::Expression(statement) => {
                     if iterator.peek().is_some() {
-                        self.transpile_expression(analyzer, &expr, block, writer);
+                        self.transpile_expression(analyzer, &statement.expression, block, writer);
+                        if statement.err_return {
+                            writer.write("?");
+                        }
                         writer.write(";");
                         writer.new_line();
                         continue;
@@ -834,7 +837,10 @@ impl RustTranspiler {
                     let Some(block_return) = analyzer
                         .query_block(block)
                         .and_then(|s| s.block_return) else {
-                        self.transpile_expression(analyzer, &expr, block, writer);
+                        self.transpile_expression(analyzer, &statement.expression, block, writer);
+                        if statement.err_return {
+                            writer.write("?");
+                        }
                         writer.write(";");
                         writer.new_line();
                         return;
