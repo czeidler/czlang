@@ -700,6 +700,14 @@ impl FileSemanticAnalyzer {
             self.sum_types
                 .insert(result_types.sum_type_name(), result_types.clone());
         }
+        // Add sum type if type is an Either type
+        if let Some(err) = result_types.err() {
+            if err.len() > 1 {
+                let err = SumType::from_types(&err);
+                self.sum_types.insert(err.sum_type_name(), err);
+            }
+        }
+
         result_types
     }
 

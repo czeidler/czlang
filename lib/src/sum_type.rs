@@ -82,6 +82,17 @@ impl SumType {
         types_to_string(&self.types)
     }
 
+    /// If the SumType is an Either, this method returns the error part.
+    pub fn err(&self) -> Option<Vec<RefType>> {
+        if self.len() != 1 {
+            return None;
+        }
+        match &self.types[0].r#type {
+            Type::Either(_, err) => Some(err.clone()),
+            _ => None,
+        }
+    }
+
     pub fn sum_type_name(&self) -> String {
         let mut name = "".to_string();
         for t in &self.types {

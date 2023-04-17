@@ -396,4 +396,28 @@ fun main() {
         "#,
         )
     }
+
+    #[test]
+    fn error_return_operator_trans() {
+        transpile_and_validate_project(
+            "test_projects/error_return_operator_trans",
+            r#"
+            fun test_call() bool ? i32 {
+                var test bool ? i32 = true
+                test?
+                return false
+            }
+
+            fun test_call2() bool ? i32 | string {
+                var test bool ? string  = true
+                test?
+                return false
+            }
+
+            fun main() {
+                test_call()
+            }
+        "#,
+        )
+    }
 }

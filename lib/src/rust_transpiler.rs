@@ -828,6 +828,45 @@ impl RustTranspiler {
                     if iterator.peek().is_some() {
                         self.transpile_expression(analyzer, &statement.expression, block, writer);
                         if statement.err_return {
+                            let expression_type = analyzer
+                                .query_expression(block, &statement.expression)
+                                .unwrap()
+                                .types()
+                                .unwrap()
+                                .types()[0]
+                                .clone();
+                            let expression_err = match expression_type.r#type {
+                                Type::Either(_, err) => err,
+                                _ => {
+                                    panic!("Should be an either type")
+                                }
+                            };
+                            let return_type = block
+                                .fun()
+                                .signature
+                                .return_type
+                                .as_ref()
+                                .unwrap()
+                                .types
+                                .clone();
+                            let return_err = match &return_type[0].r#type {
+                                Type::Either(_, err) => err.clone(),
+                                _ => {
+                                    panic!("Should be an either type")
+                                }
+                            };
+                            if expression_err != return_err {
+                                let expression_err = SumType::from_types(&expression_err);
+                                writer.write(".map_err(|err| ");
+                                self.transpile_type_mapping(
+                                    "err",
+                                    &SumType::from_types(&return_err),
+                                    &expression_err,
+                                    &expression_err,
+                                    writer,
+                                );
+                                writer.write(")");
+                            }
                             writer.write("?");
                         }
                         writer.write(";");
