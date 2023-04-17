@@ -333,28 +333,13 @@ impl RustTranspiler {
         writer: &mut Writer,
     ) {
         let semantics = analyzer.query_expression(block, expression).unwrap();
-        let expr_err_sum_type = semantics.types().and_then(|types| {
-            if types.len() != 1 {
-                return None;
-            }
-            match &types.types().get(0).unwrap().r#type {
-                Type::Either(_, err) => Some(SumType::from_types(err)),
-                _ => None,
-            }
-        });
+        let expr_err_sum_type = semantics.types().and_then(|types| types.err());
 
         let mut has_optional_chaining = false;
         self.transpile_expression(analyzer, &selector.root, block, writer);
         for field in &selector.fields {
             let semantics = analyzer.query_selector_field(block, field).unwrap();
-            let field_err = if semantics.field_types.len() != 1 {
-                None
-            } else {
-                match &semantics.field_types.types().get(0).unwrap().r#type {
-                    Type::Either(_, err) => Some(SumType::from_types(err)),
-                    _ => None,
-                }
-            };
+            let field_err = semantics.field_types.err();
 
             has_optional_chaining = has_optional_chaining || field.optional_chaining;
             writer.write(".");

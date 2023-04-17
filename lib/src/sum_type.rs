@@ -83,12 +83,12 @@ impl SumType {
     }
 
     /// If the SumType is an Either, this method returns the error part.
-    pub fn err(&self) -> Option<Vec<RefType>> {
+    pub fn err(&self) -> Option<SumType> {
         if self.len() != 1 {
             return None;
         }
         match &self.types[0].r#type {
-            Type::Either(_, err) => Some(err.clone()),
+            Type::Either(_, err) => Some(SumType::from_types(err)),
             _ => None,
         }
     }

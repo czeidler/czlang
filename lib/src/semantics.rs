@@ -703,7 +703,6 @@ impl FileSemanticAnalyzer {
         // Add sum type if type is an Either type
         if let Some(err) = result_types.err() {
             if err.len() > 1 {
-                let err = SumType::from_types(&err);
                 self.sum_types.insert(err.sum_type_name(), err);
             }
         }
@@ -1649,14 +1648,7 @@ impl FileSemanticAnalyzer {
         let mut current_struct: Ptr<Struct> = root_struct;
         let mut current_struct_type = semantics.r#type;
         for (i, field) in select.fields.iter().enumerate() {
-            let current_struct_error = if current_struct_type.len() == 1 {
-                match &current_struct_type.types().get(0).unwrap().r#type {
-                    Type::Either(_, err) => Some(SumType::from_types(err)),
-                    _ => None,
-                }
-            } else {
-                None
-            };
+            let current_struct_error = current_struct_type.err();
             if current_struct_error.is_some() && !field.optional_chaining {
                 self.errors.push(LangError::type_error(
                     &field.node,
@@ -1723,14 +1715,7 @@ impl FileSemanticAnalyzer {
                 current_struct_type = semantics.r#type;
             } else if i == select.fields.len() - 1 {
                 // last selector field
-                let current_error = if semantics.r#type.len() == 1 {
-                    match &semantics.r#type.types().get(0).unwrap().r#type {
-                        Type::Either(_, err) => Some(SumType::from_types(err)),
-                        _ => None,
-                    }
-                } else {
-                    None
-                };
+                let current_error = semantics.r#type.err();
                 if let Some(err) = current_error {
                     // Add sum type
                     if err.len() > 1 {
