@@ -1179,14 +1179,14 @@ fn parse_string(
     let mut position = 0;
     let mut template = StringTemplate::new();
     let mut cursor = node.walk();
-    for embetted_expr in node.children_by_field_name("embetted_expr", &mut cursor) {
-        let expression_node = child_by_field(&embetted_expr, "expression")?;
+    for embedded_expr in node.children_by_field_name("embedded_expr", &mut cursor) {
+        let expression_node = child_by_field(&embedded_expr, "expression")?;
         let expression = parse_expression(context, &expression_node, block)?;
         template.push(StringTemplatePart::String(
-            string.as_str()[position..embetted_expr.start_position().column - start_column - 1]
+            string.as_str()[position..embedded_expr.start_position().column - start_column - 1]
                 .to_string(),
         ));
-        position = embetted_expr.end_position().column - start_column - 1;
+        position = embedded_expr.end_position().column - start_column - 1;
         template.push(StringTemplatePart::Expression(expression));
     }
     if position == 0 {
