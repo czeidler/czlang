@@ -137,6 +137,32 @@ impl SumType {
         }
         name
     }
+
+    pub fn is_number(&self) -> bool {
+        if self.types.len() != 1 {
+            false
+        } else {
+            is_number(&self.types[0])
+        }
+    }
+}
+
+fn is_number(types: &RefType) -> bool {
+    match &types.r#type {
+        Type::Null => false,
+        Type::Str => false,
+        Type::String => false,
+        Type::Bool => false,
+        Type::U8 => true,
+        Type::I8 => true,
+        Type::U32 => true,
+        Type::I32 => true,
+        Type::Identifier(_) => false,
+        Type::Array(_) => false,
+        Type::Slice(_) => false,
+        Type::Unresolved(unresolved) => unresolved.iter().all(|t| is_number(t)),
+        Type::Either(_, _) => false,
+    }
 }
 
 impl IntoIterator for SumType {

@@ -1483,6 +1483,27 @@ impl FileSemanticAnalyzer {
                     ));
                     return ExpressionSemantics::empty();
                 };
+                let number_required = match binary.operator {
+                    BinaryOperator::Add => true,
+                    BinaryOperator::Substract => true,
+                    BinaryOperator::Multiply => true,
+                    BinaryOperator::Divide => true,
+                    BinaryOperator::Equal => true,
+                    BinaryOperator::NotEqual => true,
+                    BinaryOperator::Smaller => true,
+                    BinaryOperator::SmallerEqual => true,
+                    BinaryOperator::Bigger => true,
+                    BinaryOperator::BiggerEqual => true,
+                    BinaryOperator::And => false,
+                    BinaryOperator::Or => false,
+                };
+                if number_required && !left.is_number() {
+                    self.errors.push(LangError::type_error(
+                        &expression.node,
+                        "Operator requires a number".to_string(),
+                    ));
+                    return ExpressionSemantics::empty();
+                }
                 ExpressionSemantics::resolved_types(Some(overlap))
             }
             ExpressionType::ParenthesizedExpression(_) => todo!(),
