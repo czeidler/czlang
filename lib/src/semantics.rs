@@ -4,15 +4,30 @@ use crate::{
     ast::{
         Array, BinaryExpression, BinaryOperator, Block, BlockParent, BlockTrait, Expression,
         ExpressionType, Field, FileContext, FileTrait, Function, FunctionCall, FunctionSignature,
-        FunctionTrait, IfAlternative, IfExpression, LangError, NodeData, Parameter, RefType,
-        ReturnStatement, RootSymbol, SelectorExpression, SelectorField, SelectorFieldType, Slice,
-        Statement, Struct, StructFieldInitialization, StructInitialization, Type, TypeParam,
+        FunctionTrait, IfAlternative, IfExpression, LangError, NodeData, Parameter, PipeExpression,
+        RefType, ReturnStatement, RootSymbol, SelectorExpression, SelectorField, SelectorFieldType,
+        Slice, Statement, Struct, StructFieldInitialization, StructInitialization, Type, TypeParam,
         TypeParamType, UnaryOperator, VarDeclaration,
     },
     buildin::Buildins,
     sum_type::SumType,
     types::{intersection, types_to_string, Ptr},
 };
+
+pub struct ExpContext {
+    // For example, used to get the parent Function or to lookup local identifiers
+    pub block: Ptr<Block>,
+    pub pipe_arg: Option<SumType>,
+}
+
+impl ExpContext {
+    pub fn new(block: &Ptr<Block>, pipe_arg: Option<SumType>) -> Self {
+        ExpContext {
+            block: block.clone(),
+            pipe_arg,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct FileSemantics {
@@ -43,6 +58,7 @@ pub struct BlockSemantics {
 pub enum IdentifierBinding {
     VarDeclaration(Ptr<VarDeclaration>),
     Parameter(Parameter),
+    PipeArg(SumType),
 }
 
 #[derive(Debug, Clone)]
@@ -176,6 +192,11 @@ pub struct SelectorFieldSemantics {
 }
 
 #[derive(Debug, Clone)]
+pub struct PipeSemantics {
+    pub pipe_argument: Option<SumType>,
+}
+
+#[derive(Debug, Clone)]
 pub struct FlowContainer {
     pub parent: Option<Ptr<FlowContainer>>,
     /// Var path to the SumType in the current container
@@ -283,6 +304,7 @@ pub struct FileSemanticAnalyzer {
     types: HashMap<usize, SumType>,
     if_expressions: HashMap<usize, IfExpressionSemantics>,
     expressions: HashMap<usize, ExpressionSemantics>,
+    pipe_expressions: HashMap<usize, PipeSemantics>,
     /// Various details about the selector field, e.g. if nullable or which the parent struct is
     selector_fields: HashMap<usize, SelectorFieldSemantics>,
     variable_declarations: HashMap<usize, VarDeclarationSemantics>,
@@ -308,6 +330,7 @@ impl FileSemanticAnalyzer {
             types: HashMap::new(),
             if_expressions: HashMap::new(),
             expressions: HashMap::new(),
+            pipe_expressions: HashMap::new(),
             selector_fields: HashMap::new(),
             variable_declarations: HashMap::new(),
             function_calls: HashMap::new(),
@@ -616,6 +639,20 @@ impl FileSemanticAnalyzer {
         }
     }
 
+    pub fn query_pipe_expression(
+        &mut self,
+        block: &Block,
+        node: &NodeData,
+    ) -> Option<PipeSemantics> {
+        if let Some(f) = self.pipe_expressions.get(&node.id) {
+            return Some(f.clone());
+        }
+
+        self.query_fun(&block.fun());
+
+        self.pipe_expressions.get(&node.id).map(|s| s.clone())
+    }
+
     fn validate_file(&mut self) -> FileSemantics {
         let mut functions = HashMap::new();
         let mut structs = HashMap::new();
@@ -917,7 +954,8 @@ impl FileSemanticAnalyzer {
         let fun = block.fun();
         let (ret_types, expression) = if let Some(expression) = &ret.expression {
             let was_already_returned = flow.flow.returned.is_some();
-            let ret_semantics = self.validate_expression(flow, block, expression, false);
+            let ret_semantics =
+                self.validate_expression(flow, &ExpContext::new(block, None), expression, false);
             if flow.flow.returned.is_some() && !was_already_returned {
                 self.errors.push(LangError::type_error(
                     &expression.node,
@@ -991,8 +1029,12 @@ impl FileSemanticAnalyzer {
     ) -> Option<ExpressionSemantics> {
         match statement {
             Statement::Expression(statement) => {
-                let semantics =
-                    self.validate_expression(flow, block, &statement.expression, is_assignment);
+                let semantics = self.validate_expression(
+                    flow,
+                    &ExpContext::new(block, None),
+                    &statement.expression,
+                    is_assignment,
+                );
                 if statement.err_return {
                     let Some(expr_types) = semantics.types() else {
                         self.errors.push(LangError::type_error(
@@ -1049,7 +1091,12 @@ impl FileSemanticAnalyzer {
             .unwrap_or(SumType::empty());
 
         let expr = self
-            .validate_expression(flow, block, &var_declaration.value, true)
+            .validate_expression(
+                flow,
+                &ExpContext::new(block, None),
+                &var_declaration.value,
+                true,
+            )
             .into_types()
             .unwrap_or(SumType::new(vec![]));
         if var_types.types().is_empty() {
@@ -1130,6 +1177,7 @@ impl FileSemanticAnalyzer {
                         self.back_propagate_types(block, &var_declaration.value, types);
                     }
                     IdentifierBinding::Parameter(_) => {}
+                    IdentifierBinding::PipeArg(_) => {}
                 }
             }
             ExpressionType::UnaryExpression(expr) => match expr.operand.r#type {
@@ -1183,6 +1231,7 @@ impl FileSemanticAnalyzer {
 
                 self.back_propagate_types_in_if_expr_blocks(if_expression, types);
             }
+            ExpressionType::Pipe(_) => {}
         }
     }
 
@@ -1231,14 +1280,21 @@ impl FileSemanticAnalyzer {
 
     fn lookup_identifier(
         &mut self,
-        block: &Block,
+        context: &ExpContext,
         identifier: &String,
     ) -> Option<IdentifierBinding> {
+        if identifier == "$" {
+            if let Some(pipe_arg) = &context.pipe_arg {
+                return Some(IdentifierBinding::PipeArg(pipe_arg.clone()));
+            } else {
+                return None;
+            }
+        }
         let mut current: Option<Ptr<Block>> = None;
         loop {
             let b = match &current {
                 Some(current) => &current,
-                None => block,
+                None => &context.block,
             };
             let var = self
                 .blocks
@@ -1324,7 +1380,7 @@ impl FileSemanticAnalyzer {
     fn validate_expression(
         &mut self,
         flow: &mut CurrentFlowContainer,
-        block: &Ptr<Block>,
+        context: &ExpContext,
         expression: &Expression,
         is_assignment: bool,
     ) -> ExpressionSemantics {
@@ -1334,7 +1390,7 @@ impl FileSemanticAnalyzer {
             )),
 
             ExpressionType::Identifier(identifier) => {
-                let binding = match self.lookup_identifier(block, identifier) {
+                let binding = match self.lookup_identifier(context, identifier) {
                     Some(identifier) => identifier,
                     None => {
                         self.errors.push(LangError::type_error(
@@ -1348,6 +1404,7 @@ impl FileSemanticAnalyzer {
                 let resolved_types = match &binding {
                     IdentifierBinding::VarDeclaration(var) => Some(self.query_var_types(&var)),
                     IdentifierBinding::Parameter(param) => Some(SumType::from_types(&param.types)),
+                    IdentifierBinding::PipeArg(arg) => Some(arg.clone()),
                 };
                 ExpressionSemantics {
                     resolved_types,
@@ -1390,11 +1447,11 @@ impl FileSemanticAnalyzer {
                         }
                     },
                     UnaryOperator::Not => self
-                        .validate_expression(flow, block, &unary.operand, is_assignment)
+                        .validate_expression(flow, context, &unary.operand, is_assignment)
                         .into_types(),
                     UnaryOperator::Reference => {
                         let types = self
-                            .validate_expression(flow, block, &unary.operand, is_assignment)
+                            .validate_expression(flow, context, &unary.operand, is_assignment)
                             .into_types();
 
                         types.map(|s| {
@@ -1407,14 +1464,13 @@ impl FileSemanticAnalyzer {
                     UnaryOperator::TypeOf => None,
                 })
             }
-            // var u32 i, i + 3
             ExpressionType::BinaryExpression(binary) => {
                 let left = self
-                    .validate_expression(flow, block, &binary.left, is_assignment)
+                    .validate_expression(flow, context, &binary.left, is_assignment)
                     .into_types()
                     .unwrap_or(SumType::new(vec![]));
                 let right = self
-                    .validate_expression(flow, block, &binary.right, is_assignment)
+                    .validate_expression(flow, context, &binary.right, is_assignment)
                     .into_types()
                     .unwrap_or(SumType::new(vec![]));
                 let Some(overlap) = intersection(&left, &right) else {
@@ -1436,7 +1492,7 @@ impl FileSemanticAnalyzer {
                     Type::Array(Array {
                         types: Ptr::new(self.validate_expression_list(
                             flow,
-                            block,
+                            context,
                             &array.expressions,
                             is_assignment,
                         )),
@@ -1450,7 +1506,7 @@ impl FileSemanticAnalyzer {
                     Type::Slice(Slice {
                         types: Ptr::new(self.validate_expression_list(
                             flow,
-                            block,
+                            context,
                             &vec![slice.operand.as_ref().clone()],
                             is_assignment,
                         )),
@@ -1486,11 +1542,11 @@ impl FileSemanticAnalyzer {
                 for (i, parameter) in fun_signature.parameters.iter().enumerate() {
                     let arg = fun_call.arguments.get(i).unwrap();
                     let arg_types = self
-                        .validate_expression(flow, block, arg, is_assignment)
+                        .validate_expression(flow, context, arg, is_assignment)
                         .into_types()
                         .unwrap_or(SumType::empty());
                     let parameter_type = self
-                        .query_parameter_type(&block.fun().signature, parameter)
+                        .query_parameter_type(&context.block.fun().signature, parameter)
                         .unwrap_or(SumType::empty());
                     let Some(intersection) = intersection(&arg_types, &parameter_type) else {
                         self.errors.push(LangError::type_error(
@@ -1512,7 +1568,7 @@ impl FileSemanticAnalyzer {
                 ExpressionSemantics::resolved_types(self.query_return_type(&fun_signature))
             }
             ExpressionType::StructInitialization(struct_init) => {
-                let Some(binding) = self.bind_type_identifier(TypeQueryContext::Function(block.fun().signature.clone()), &struct_init.name_node, &struct_init.name) else {
+                let Some(binding) = self.bind_type_identifier(TypeQueryContext::Function(context.block.fun().signature.clone()), &struct_init.name_node, &struct_init.name) else {
                     return ExpressionSemantics::empty();
                 };
                 let struct_dec = match binding {
@@ -1525,7 +1581,7 @@ impl FileSemanticAnalyzer {
                         set
                     });
                 for field in &struct_init.fields {
-                    let Some(field_type) = self.validate_expression( flow, block, &field.value, is_assignment).into_types() else {
+                    let Some(field_type) = self.validate_expression( flow, context, &field.value, is_assignment).into_types() else {
                         continue;
                     };
 
@@ -1568,20 +1624,81 @@ impl FileSemanticAnalyzer {
                 ))))
             }
             ExpressionType::SelectorExpression(select) => ExpressionSemantics::resolved_types(
-                self.validate_selector_expression(flow, block, select, is_assignment),
+                self.validate_selector_expression(flow, context, select, is_assignment),
             ),
             ExpressionType::Block(block) => match self.validate_block(flow, block, is_assignment) {
                 Some(s) => s,
                 None => return ExpressionSemantics::empty(),
             },
             ExpressionType::If(if_expression) => ExpressionSemantics::resolved_types(
-                self.validate_if_expression(flow, block, if_expression, is_assignment),
+                self.validate_if_expression(flow, context, if_expression, is_assignment),
             ),
+            ExpressionType::Pipe(pipe) => ExpressionSemantics::resolved_types(self.validate_pipe(
+                flow,
+                context,
+                is_assignment,
+                expression,
+                pipe,
+            )),
         };
 
         self.bind_expression_type(expression, expression_semantics.clone());
 
         expression_semantics
+    }
+
+    fn bind_pipe(&mut self, node: &NodeData, pipe_arg: &Option<SumType>) {
+        let existing = self.pipe_expressions.insert(
+            node.id,
+            PipeSemantics {
+                pipe_argument: pipe_arg.clone(),
+            },
+        );
+        assert!(existing.is_none());
+    }
+
+    fn validate_pipe(
+        &mut self,
+        flow: &mut CurrentFlowContainer,
+        context: &ExpContext,
+        is_assignment: bool,
+        expression: &Expression,
+        pipe: &PipeExpression,
+    ) -> Option<SumType> {
+        self.bind_pipe(&expression.node, &context.pipe_arg);
+
+        let left = self.validate_expression(flow, context, &pipe.left, false);
+        let Some(left_types) = left.types() else {
+            self.errors.push(LangError::type_error(
+                &pipe.left.node,
+                    "Left side of the pipe must produce a type".to_string(),
+            ));
+            return None;
+        };
+        let left_types = if pipe.is_err_pipe {
+            if let Some(left_err) = left_types.err() {
+                left_err
+            } else {
+                self.errors.push(LangError::type_error(
+                    &pipe.left.node,
+                    "Left side doesn't produces an error type".to_string(),
+                ));
+                return None;
+            }
+        } else {
+            left_types
+        };
+        let right = self.validate_expression(
+            flow,
+            &ExpContext {
+                block: context.block.clone(),
+                pipe_arg: Some(left_types),
+            },
+            &pipe.right,
+            is_assignment,
+        );
+
+        right.types()
     }
 
     fn bind_expression_type(&mut self, expression: &Expression, semantics: ExpressionSemantics) {
@@ -1592,14 +1709,14 @@ impl FileSemanticAnalyzer {
     fn validate_expression_list(
         &mut self,
         flow: &mut CurrentFlowContainer,
-        block: &Ptr<Block>,
+        context: &ExpContext,
         expressions: &Vec<Expression>,
         is_assignment: bool,
     ) -> Vec<RefType> {
         let mut output = Vec::new();
         for expression in expressions {
             if let Some(types) = self
-                .validate_expression(flow, block, &expression, is_assignment)
+                .validate_expression(flow, context, &expression, is_assignment)
                 .into_types()
             {
                 for t in types {
@@ -1617,16 +1734,16 @@ impl FileSemanticAnalyzer {
     fn validate_selector_expression(
         &mut self,
         flow: &mut CurrentFlowContainer,
-        block: &Ptr<Block>,
+        context: &ExpContext,
         select: &SelectorExpression,
         is_assignment: bool,
     ) -> Option<SumType> {
         // validate root expression
         let root_types = self
-            .validate_expression(flow, block, &select.root, is_assignment)
+            .validate_expression(flow, context, &select.root, is_assignment)
             .into_types()?;
         let semantics = self.bind_selector_field_to_struct(
-            TypeQueryContext::Function(block.fun().signature.clone()),
+            TypeQueryContext::Function(context.block.fun().signature.clone()),
             &select.root.node,
             &root_types.types(),
             None,
@@ -1854,7 +1971,7 @@ impl FileSemanticAnalyzer {
     fn validate_if_expression(
         &mut self,
         flow: &mut CurrentFlowContainer,
-        block: &Ptr<Block>,
+        context: &ExpContext,
         if_expression: &Ptr<IfExpression>,
         is_assignment: bool,
     ) -> Option<SumType> {
@@ -1862,13 +1979,13 @@ impl FileSemanticAnalyzer {
 
         let narrowing =
             if let ExpressionType::BinaryExpression(binary) = &if_expression.condition.r#type {
-                self.validate_typeof_expression(flow, block, &binary, is_assignment)
+                self.validate_typeof_expression(flow, context, &binary, is_assignment)
                     .map(|narrowing| {
                         self.bind_if_type_narrowing(if_expression, narrowing.clone());
                         narrowing
                     })
             } else {
-                self.validate_expression(flow, block, &if_expression.condition, is_assignment)
+                self.validate_expression(flow, context, &if_expression.condition, is_assignment)
                     .into_types()?;
                 None
             };
@@ -1907,7 +2024,7 @@ impl FileSemanticAnalyzer {
                 .validate_block(flow, else_block, is_assignment)
                 .and_then(|s| s.into_types()),
             IfAlternative::If(nested_if) => {
-                self.validate_if_expression(flow, block, nested_if, is_assignment)
+                self.validate_if_expression(flow, context, nested_if, is_assignment)
             }
         };
 
@@ -1945,7 +2062,7 @@ impl FileSemanticAnalyzer {
     fn validate_typeof_expression(
         &mut self,
         flow: &mut CurrentFlowContainer,
-        block: &Ptr<Block>,
+        context: &ExpContext,
         expression: &BinaryExpression,
         is_assignment: bool,
     ) -> Option<TypeNarrowing> {
@@ -1963,8 +2080,8 @@ impl FileSemanticAnalyzer {
                 _ => return None,
             };
             let (mut left, right) = match (
-                self.validate_typeof_expression(flow, block, left, is_assignment),
-                self.validate_typeof_expression(flow, block, right, is_assignment),
+                self.validate_typeof_expression(flow, context, left, is_assignment),
+                self.validate_typeof_expression(flow, context, right, is_assignment),
             ) {
                 (None, None) => return None,
                 (Some(left), Some(right)) => (left, right),
@@ -2031,7 +2148,7 @@ impl FileSemanticAnalyzer {
         };
 
         let original_types = self
-            .validate_expression(flow, block, &unary.operand, is_assignment)
+            .validate_expression(flow, context, &unary.operand, is_assignment)
             .into_types()
             .unwrap_or(SumType::new(vec![]));
         for t in original_types.types() {

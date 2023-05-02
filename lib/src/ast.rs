@@ -619,6 +619,13 @@ pub struct SelectorExpression {
 }
 
 #[derive(Debug, Clone)]
+pub struct PipeExpression {
+    pub left: Box<Expression>,
+    pub right: Box<Expression>,
+    pub is_err_pipe: bool,
+}
+
+#[derive(Debug, Clone)]
 pub struct Expression {
     pub node: NodeData,
     pub r#type: ExpressionType,
@@ -641,6 +648,7 @@ pub enum ExpressionType {
     SelectorExpression(SelectorExpression),
     Block(Ptr<Block>),
     If(Ptr<IfExpression>),
+    Pipe(PipeExpression),
 }
 
 #[derive(Debug, Clone)]
@@ -1052,6 +1060,12 @@ fn parse_expression(
             BlockParent::Block(block.clone()),
         )),
         "if_expression" => ExpressionType::If(parse_if(context, &node, block)?),
+        "pipe_expression" => {
+            ExpressionType::Pipe(parse_pipe_expression(context, node, block, false)?)
+        }
+        "err_pipe_expression" => {
+            ExpressionType::Pipe(parse_pipe_expression(context, node, block, true)?)
+        }
         _ => {
             log::error!("Unknown expression kind: {}", node.kind());
             return None;
@@ -1060,6 +1074,21 @@ fn parse_expression(
     Some(Expression {
         node: NodeData::from_node(&node),
         r#type: expression_type,
+    })
+}
+
+fn parse_pipe_expression(
+    context: &Ptr<FileContext>,
+    node: &Node,
+    block: &Ptr<Block>,
+    is_err_pipe: bool,
+) -> Option<PipeExpression> {
+    let left = child_by_field(&node, "left")?;
+    let right = child_by_field(&node, "right")?;
+    Some(PipeExpression {
+        left: Box::new(parse_expression(context, &left, block)?),
+        right: Box::new(parse_expression(context, &right, block)?),
+        is_err_pipe,
     })
 }
 
