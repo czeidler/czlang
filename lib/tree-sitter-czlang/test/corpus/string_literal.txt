@@ -16,9 +16,9 @@ fun x() {
         (var_declaration
             (identifier)
             (interpreted_string_literal
-              (embetted_expr
+              (embedded_expr
                 (identifier))
-              (embetted_expr
+              (embedded_expr
                 (identifier)))
         )
     )

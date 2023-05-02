@@ -420,4 +420,20 @@ fun main() {
         "#,
         )
     }
+
+    #[test]
+    fn pipe_operator() {
+        transpile_and_validate_project(
+            "test_projects/pipe_operator",
+            r#"
+            fun test() u8 {
+                return 8
+            }
+
+            fun main() {
+                var result = test() |> $ + 2 |> $ + 3
+            }
+        "#,
+        )
+    }
 }
