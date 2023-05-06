@@ -28,41 +28,6 @@ fun x() i32 | bool ? &u32 | string {
 )
 
 ==================
-Function call with error catch
-==================
-
-fun x() i32 {
-  callFunction(argument1, argument2) ? (err) {
-
-  }
-}
-
----
-
-(source_file
-  (function_definition
-    (identifier)
-    (parameter_list)
-    (primitive_type)
-    (block
-      (expression_statement
-        (function_call
-          (identifier)
-          (argument_list
-            (identifier)
-            (identifier))
-        )
-        (catch_block
-          (error_op)
-          (identifier)
-          (block)
-        )
-      )
-    )
-  )
-)
-
-==================
 Return error statement
 ==================
 

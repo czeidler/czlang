@@ -1063,25 +1063,12 @@
           "type": "CHOICE",
           "members": [
             {
-              "type": "CHOICE",
-              "members": [
-                {
-                  "type": "FIELD",
-                  "name": "error_return",
-                  "content": {
-                    "type": "SYMBOL",
-                    "name": "error_op"
-                  }
-                },
-                {
-                  "type": "FIELD",
-                  "name": "catch",
-                  "content": {
-                    "type": "SYMBOL",
-                    "name": "catch_block"
-                  }
-                }
-              ]
+              "type": "FIELD",
+              "name": "error_return",
+              "content": {
+                "type": "SYMBOL",
+                "name": "error_op"
+              }
             },
             {
               "type": "BLANK"
@@ -1096,22 +1083,6 @@
         {
           "type": "STRING",
           "value": "return"
-        },
-        {
-          "type": "FIELD",
-          "name": "error_return",
-          "content": {
-            "type": "CHOICE",
-            "members": [
-              {
-                "type": "SYMBOL",
-                "name": "error_op"
-              },
-              {
-                "type": "BLANK"
-              }
-            ]
-          }
         },
         {
           "type": "FIELD",
@@ -1151,39 +1122,6 @@
           }
         ]
       }
-    },
-    "catch_block": {
-      "type": "SEQ",
-      "members": [
-        {
-          "type": "SYMBOL",
-          "name": "error_op"
-        },
-        {
-          "type": "STRING",
-          "value": "("
-        },
-        {
-          "type": "FIELD",
-          "name": "error",
-          "content": {
-            "type": "SYMBOL",
-            "name": "identifier"
-          }
-        },
-        {
-          "type": "STRING",
-          "value": ")"
-        },
-        {
-          "type": "FIELD",
-          "name": "block",
-          "content": {
-            "type": "SYMBOL",
-            "name": "block"
-          }
-        }
-      ]
     },
     "function_call": {
       "type": "PREC",
