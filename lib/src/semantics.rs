@@ -1011,7 +1011,12 @@ impl FileSemanticAnalyzer {
                     .unwrap_or(fun.signature.node.clone()),
                 format!(
                     "Incompatible return type: fun == {:?}, expr == {:?}",
-                    fun.signature.return_type, ret_types,
+                    fun.signature
+                        .return_type
+                        .as_ref()
+                        .map(|types| types_to_string(&types.types))
+                        .unwrap_or("void".to_string()),
+                    types_to_string(ret_types.types()),
                 ),
             ));
             return ExpressionSemantics::empty();
@@ -1149,7 +1154,7 @@ impl FileSemanticAnalyzer {
             .is_none()
     }
 
-    /// If the expression narrowed down the types of a variable, back propagated this up to previous usage.
+    /// If a variable type narrowed down the type of an expression, back propagated this up to previous usage.
     fn back_propagate_types(&mut self, block: &Block, expression: &Expression, types: &SumType) {
         match &expression.r#type {
             ExpressionType::Identifier(_) => {
@@ -1230,6 +1235,9 @@ impl FileSemanticAnalyzer {
                 entry.resolved_types = Some(resolved_types);
 
                 self.back_propagate_types_in_if_expr_blocks(if_expression, types);
+            }
+            ExpressionType::ErrorExpression(_) => {
+                self.narrow_expression_type(block, &expression, types);
             }
             ExpressionType::Pipe(_) => {}
         }
@@ -1661,6 +1669,19 @@ impl FileSemanticAnalyzer {
                 expression,
                 pipe,
             )),
+            ExpressionType::ErrorExpression(error) => {
+                let err_types = self.validate_expression(flow, context, &error, is_assignment);
+                ExpressionSemantics::resolved_types(Some(SumType::from_type(RefType::value(
+                    expression.node.clone(),
+                    Type::Either(
+                        vec![],
+                        err_types
+                            .types()
+                            .map(|s| s.types().clone())
+                            .unwrap_or(vec![]),
+                    ),
+                ))))
+            }
         };
 
         self.bind_expression_type(expression, expression_semantics.clone());

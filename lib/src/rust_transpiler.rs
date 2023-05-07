@@ -321,7 +321,31 @@ impl RustTranspiler {
                     .and_then(|s| s.resolved_types);
                 self.transpile_if_expression(analyzer, if_expression, block, &target, writer)
             }
+            ExpressionType::ErrorExpression(error) => {
+                self.transpile_err_expr(analyzer, expression, error, block, writer)
+            }
         };
+    }
+
+    fn transpile_err_expr(
+        &self,
+        analyzer: &mut FileSemanticAnalyzer,
+        expression: &Expression,
+        error: &Expression,
+        block: &Block,
+        writer: &mut Writer,
+    ) {
+        let err_type = analyzer
+            .query_expression(block, expression)
+            .and_then(|s| s.resolved_types)
+            .unwrap()
+            .err()
+            .unwrap();
+        writer.write("Result::<(), ");
+        self.transpile_types(err_type.types(), writer);
+        writer.write(">::Err(");
+        self.transpile_expression(analyzer, error, block, writer);
+        writer.write(")");
     }
 
     fn transpile_selector_expr(

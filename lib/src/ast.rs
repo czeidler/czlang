@@ -648,6 +648,7 @@ pub enum ExpressionType {
     SelectorExpression(SelectorExpression),
     Block(Ptr<Block>),
     If(Ptr<IfExpression>),
+    ErrorExpression(Box<Expression>),
     Pipe(PipeExpression),
 }
 
@@ -1060,6 +1061,14 @@ fn parse_expression(
             BlockParent::Block(block.clone()),
         )),
         "if_expression" => ExpressionType::If(parse_if(context, &node, block)?),
+        "error_expression" => {
+            let error_expr = child_by_field(&node, "error")?;
+            ExpressionType::ErrorExpression(Box::new(parse_expression(
+                context,
+                &error_expr,
+                block,
+            )?))
+        }
         "pipe_expression" => {
             ExpressionType::Pipe(parse_pipe_expression(context, node, block, false)?)
         }
