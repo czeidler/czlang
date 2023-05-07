@@ -232,19 +232,20 @@ pub fn intersection(left_types: &SumType, right_types: &SumType) -> Option<SumTy
                         });
                     }
                     (Type::Either(left_value, left_err), Type::Either(right_value, right_err)) =>{
-                        let Some(value_intersection) = intersection(&SumType::from_types(left_value),
-                        &SumType::from_types(right_value)) else {
-                            return None;
-                        };
-                        let Some(err_intersection) = intersection(&SumType::from_types(left_err),
-                        &SumType::from_types(right_err)) else {
-                            return None;
+                        let value_intersection = intersection(&SumType::from_types(left_value),
+                        &SumType::from_types(right_value));
+                        let err_intersection = intersection(&SumType::from_types(left_err),
+                        &SumType::from_types(right_err));
+                        match (&value_intersection, &err_intersection) {
+                            (None, None) => return None,
+                            _ => {}
                         };
                         return Some(RefType {
                             node: left.node.clone(),
                             is_reference: left.is_reference,
                             is_mut: left.is_mut,
-                            r#type: Type::Either(value_intersection.types().clone(), err_intersection.types().clone()),
+                            r#type: Type::Either(value_intersection.map(|v|v.types().clone()).unwrap_or(vec![]),
+                            err_intersection.map(|e|e.types().clone()).unwrap_or(vec![])),
                         })
                     }
                     (Type::Either(left_value, left_err), _) =>{
@@ -345,7 +346,7 @@ mod tests {
     use crate::{
         ast::{Array, NodeData, RefType, SourcePosition, SourceSpan, Type},
         sum_type::SumType,
-        types::{intersection, Ptr},
+        types::{intersection, types_to_string, Ptr},
     };
 
     fn is_equal(left_types: &Vec<RefType>, right_types: &Vec<RefType>) -> bool {
@@ -580,5 +581,35 @@ mod tests {
             inter.types(),
             &vec![RefType::value(node(5), Type::I32)]
         ));
+    }
+
+    #[test]
+    fn test_intersection_6() {
+        // fun test() i32 ? bool { return ? bool }
+        let left = vec![RefType::value(
+            node(5),
+            Type::Either(vec![], vec![RefType::value(node(0), Type::Bool)]),
+        )];
+        let right = vec![RefType::value(
+            node(5),
+            Type::Either(
+                vec![RefType::value(node(0), Type::I32)],
+                vec![RefType::value(node(0), Type::Bool)],
+            ),
+        )];
+        let inter =
+            intersection(&SumType::from_types(&left), &SumType::from_types(&right)).unwrap();
+        assert!(
+            is_equal(
+                inter.types(),
+                &vec![RefType::value(
+                    node(5),
+                    Type::Either(vec![], vec![RefType::value(node(0), Type::Bool)],),
+                )]
+            ),
+            "Intersection: {:?}, Expected: {:?}",
+            types_to_string(inter.types()),
+            types_to_string(&right)
+        );
     }
 }
