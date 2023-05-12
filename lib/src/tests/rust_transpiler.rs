@@ -426,12 +426,32 @@ fun main() {
         transpile_and_validate_project(
             "test_projects/pipe_operator",
             r#"
-            fun test() u8 {
+            fun test() i32 {
                 return 8
             }
 
             fun main() {
-                var result = test() |> $ + 2 |> $ + 3
+                var result i32 = test() |> $ + 2 |> $ + 3
+            }
+        "#,
+        )
+    }
+
+    #[test]
+    fn pipe_operator2() {
+        transpile_and_validate_project(
+            "test_projects/pipe_operator2",
+            r#"
+            fun test() i32 ? bool {
+                return 8
+            }
+
+            fun test2(arg i32) bool ? i32 {
+                return ? arg
+            }
+
+            fun main() {
+                var result i32 | bool ? i32 | bool = test() |> test2($)
             }
         "#,
         )

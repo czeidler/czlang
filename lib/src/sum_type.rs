@@ -82,6 +82,18 @@ impl SumType {
         types_to_string(&self.types)
     }
 
+    pub fn as_either(&self) -> Option<(SumType, SumType)> {
+        if self.len() != 1 {
+            return None;
+        }
+        match &self.types[0].r#type {
+            Type::Either(value, err) => {
+                Some((SumType::from_types(value), SumType::from_types(err)))
+            }
+            _ => None,
+        }
+    }
+
     /// If the SumType is an Either, this method returns the error part.
     pub fn err(&self) -> Option<SumType> {
         if self.len() != 1 {

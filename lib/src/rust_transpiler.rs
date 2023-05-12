@@ -5,9 +5,10 @@ use std::path::{Path, PathBuf};
 use crate::ast::{
     print_err, Array, ArrayExpression, BinaryOperator, Block, BlockTrait, Expression,
     ExpressionType, Field, FileContext, Function, FunctionCall, FunctionSignature, FunctionTrait,
-    IfAlternative, IfExpression, Parameter, RefType, SelectorExpression, SelectorFieldType, Slice,
-    SliceExpression, Statement, StringTemplatePart, Struct, StructFieldInitialization,
-    StructInitialization, Type, TypeParam, TypeParamType, UnaryOperator, VarDeclaration,
+    IfAlternative, IfExpression, Parameter, PipeExpression, RefType, SelectorExpression,
+    SelectorFieldType, Slice, SliceExpression, Statement, StringTemplatePart, Struct,
+    StructFieldInitialization, StructInitialization, Type, TypeParam, TypeParamType, UnaryOperator,
+    VarDeclaration,
 };
 use crate::buildin::Buildins;
 use crate::semantics::{FileSemanticAnalyzer, TypeNarrowing};
@@ -15,17 +16,17 @@ use crate::sum_type::SumType;
 use crate::types::Ptr;
 
 struct Writer<'a> {
-    indentation: u16,
+    pub indentation: u16,
     /// just about to start a new line?
     starting_new_line: bool,
     buffer: &'a mut String,
 }
 
 impl<'a> Writer<'a> {
-    fn new(buffer: &'a mut String) -> Self {
+    fn new(buffer: &'a mut String, indentation: u16) -> Self {
         Writer {
-            indentation: 0,
-            starting_new_line: true,
+            indentation,
+            starting_new_line: false,
             buffer,
         }
     }
@@ -223,7 +224,7 @@ impl RustTranspiler {
                     match part {
                         StringTemplatePart::Expression(expression) => {
                             let mut buffer = "".to_string();
-                            let mut fmt_writer = Writer::new(&mut buffer);
+                            let mut fmt_writer = Writer::new(&mut buffer, writer.indentation);
                             self.transpile_expression(analyzer, expression, block, &mut fmt_writer);
 
                             fmt_params.push(buffer);
@@ -245,7 +246,11 @@ impl RustTranspiler {
                 }
             }
             ExpressionType::Identifier(identifier) => {
-                writer.write(&identifier);
+                if identifier == "$" {
+                    writer.write("___pipe_arg");
+                } else {
+                    writer.write(&identifier);
+                }
             }
             ExpressionType::IntLiteral(number) => {
                 writer.write(&format!("{}", number));
@@ -321,6 +326,7 @@ impl RustTranspiler {
                     .and_then(|s| s.resolved_types);
                 self.transpile_if_expression(analyzer, if_expression, block, &target, writer)
             }
+            ExpressionType::Pipe(pipe) => self.transpile_pipe_expr(analyzer, pipe, block, writer),
             ExpressionType::ErrorExpression(error) => {
                 self.transpile_err_expr(analyzer, expression, error, block, writer)
             }
@@ -346,6 +352,48 @@ impl RustTranspiler {
         writer.write(">::Err(");
         self.transpile_expression(analyzer, error, block, writer);
         writer.write(")");
+    }
+
+    fn transpile_pipe_expr(
+        &self,
+        analyzer: &mut FileSemanticAnalyzer,
+        pipe: &PipeExpression,
+        block: &Block,
+        writer: &mut Writer,
+    ) {
+        let left_semantics = analyzer.query_expression(block, &pipe.left).unwrap();
+        let left_types = left_semantics.types().unwrap();
+
+        writer.write("match ");
+        if left_types.err().is_none() {
+            writer.write("Result::<");
+            self.transpile_types(left_types.types(), writer);
+            writer.write(", ()>::Ok(");
+        }
+
+        self.transpile_expression(analyzer, &pipe.left, block, writer);
+        if left_types.err().is_none() {
+            writer.write(")");
+        }
+        writer.write(" {");
+        writer.new_line();
+        writer.indented(|writer| {
+            if !pipe.is_err_pipe {
+                writer.write("Ok(___pipe_arg) => ");
+                self.transpile_expression(analyzer, &pipe.right, block, writer);
+                writer.write(",");
+                writer.new_line();
+                writer.write("Err(_) => panic!(\"Impossible\"),");
+            } else {
+                writer.write("Err(___pipe_arg) => ");
+                self.transpile_expression(analyzer, &pipe.right, block, writer);
+                writer.write(",");
+                writer.new_line();
+                writer.write("Ok(value) => value,");
+            }
+            writer.new_line();
+        });
+        writer.write("}");
     }
 
     fn transpile_selector_expr(
@@ -487,6 +535,47 @@ impl RustTranspiler {
         return false;
     }
 
+    fn transpile_either_mapping(
+        &self,
+        expression: &str,
+        target: &SumType,
+        either: (SumType, SumType),
+        writer: &mut Writer,
+    ) {
+        match target.as_either() {
+            Some((value, err)) => {
+                writer.write("match ");
+                writer.write(expression);
+                writer.write(" {");
+                writer.new_line();
+                writer.indented(|writer| {
+                    if either.0.len() == 0 {
+                        writer.write("Ok(_) => panic!(\"Impossible\"),");
+                    } else {
+                        writer.write("Ok(___value) => Ok(");
+                        self.transpile_type_mapping(
+                            "___value", &value, &either.0, &either.0, writer,
+                        );
+                        writer.write("),");
+                    }
+                    writer.new_line();
+                    if either.1.len() == 0 {
+                        writer.write("Err(_) => panic!(\"Impossible\"),");
+                    } else {
+                        writer.write("Err(___error) => Err(");
+                        self.transpile_type_mapping("___error", &err, &either.1, &either.1, writer);
+                        writer.write("),");
+                    }
+                    writer.new_line();
+                });
+                writer.write("}");
+            }
+            None => {
+                panic!()
+            }
+        }
+    }
+
     /// # Arguments:
     /// * `expression` the already transpiled expression
     /// * `target` is the target type to where expression type should be mapped
@@ -503,15 +592,17 @@ impl RustTranspiler {
     ) {
         if target.len() == 1 {
             if resolved_type.len() == 1 {
-                let wrap_in_ok = matches!(target.types()[0].r#type, Type::Either(_, _))
-                    && !matches!(resolved_type.types()[0].r#type, Type::Either(_, _));
-                if wrap_in_ok {
-                    writer.write("Ok(");
-                }
-                // the target is a simple type, i.e. we can directly assign the expression
-                writer.write(expression);
-                if wrap_in_ok {
-                    writer.write(")");
+                if let Some((value, err)) = resolved_type.as_either() {
+                    self.transpile_either_mapping(expression, target, (value, err), writer);
+                } else {
+                    if let Some(_) = target.as_either() {
+                        writer.write("Ok(");
+                        writer.write(expression);
+                        writer.write(")");
+                    } else {
+                        // the target is a simple type, i.e. we can directly assign the expression
+                        writer.write(expression);
+                    }
                 }
             } else {
                 writer.write("match ");
@@ -607,7 +698,7 @@ impl RustTranspiler {
             .unwrap();
 
         let mut transpiled_expression = "".to_string();
-        let mut str_writer = Writer::new(&mut transpiled_expression);
+        let mut str_writer = Writer::new(&mut transpiled_expression, writer.indentation);
         self.transpile_expression(analyzer, &expression, block, &mut str_writer);
         self.transpile_type_mapping(
             &transpiled_expression,
@@ -1083,7 +1174,7 @@ pub fn transpile(analyzer: &mut FileSemanticAnalyzer, outfile: &PathBuf) -> Resu
     let mut outfile = std::fs::File::create(outfile)?;
 
     let mut buffer = "".to_string();
-    let mut writer = Writer::new(&mut buffer);
+    let mut writer = Writer::new(&mut buffer, 0);
     let transpiler = RustTranspiler {
         buildins: Buildins::new(),
     };

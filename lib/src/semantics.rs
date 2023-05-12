@@ -1728,7 +1728,11 @@ impl FileSemanticAnalyzer {
                 return None;
             }
         } else {
-            left_types
+            if let Some((value, _)) = left_types.as_either() {
+                value
+            } else {
+                left_types
+            }
         };
         let right = self.validate_expression(
             flow,
