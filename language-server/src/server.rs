@@ -369,6 +369,9 @@ impl Server {
                                 format!("(parameter) {}", format_param(&param))
                             }
                         }
+                        IdentifierBinding::PipeArg(arg) => {
+                            format!("(pipe arg) {}", types_to_string(arg.types()))
+                        }
                     }
                 }
                 QueryResult::VarDeclaration(var) => {
@@ -436,6 +439,7 @@ impl Server {
                     match binding {
                         IdentifierBinding::VarDeclaration(var) => var.name_node.span.clone(),
                         IdentifierBinding::Parameter(param) => param.node.span,
+                        IdentifierBinding::PipeArg(_) => return None,
                     }
                 }
                 QueryResult::StructIdentifier(struct_dec) => struct_dec.name_node.span.clone(),
