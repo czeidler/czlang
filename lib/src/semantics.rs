@@ -1710,15 +1710,22 @@ impl FileSemanticAnalyzer {
         self.bind_pipe(&expression.node, &context.pipe_arg);
 
         let left = self.validate_expression(flow, context, &pipe.left, false);
-        let Some(left_types) = left.types() else {
+        let Some(left_exp_types) = left.types() else {
             self.errors.push(LangError::type_error(
                 &pipe.left.node,
                     "Left side of the pipe must produce a type".to_string(),
             ));
             return None;
         };
+        if flow.flow.returned.is_some() {
+            self.errors.push(LangError::type_error(
+                &pipe.left.node,
+                "Invalid return from left side of the pipe".to_string(),
+            ));
+            return None;
+        }
         let left_types = if pipe.is_err_pipe {
-            if let Some(left_err) = left_types.err() {
+            if let Some(left_err) = left_exp_types.err() {
                 left_err
             } else {
                 self.errors.push(LangError::type_error(
@@ -1728,10 +1735,10 @@ impl FileSemanticAnalyzer {
                 return None;
             }
         } else {
-            if let Some((value, _)) = left_types.as_either() {
+            if let Some((value, _)) = left_exp_types.as_either() {
                 value
             } else {
-                left_types
+                left_exp_types.clone()
             }
         };
         let right = self.validate_expression(
@@ -1744,6 +1751,15 @@ impl FileSemanticAnalyzer {
             is_assignment,
         );
 
+        if flow.flow.returned.is_some() {
+            if let Some((value, err)) = left_exp_types.as_either() {
+                if pipe.is_err_pipe {
+                    return Some(value);
+                } else {
+                    return Some(err);
+                }
+            }
+        }
         right.types()
     }
 

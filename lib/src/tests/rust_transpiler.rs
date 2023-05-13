@@ -456,4 +456,21 @@ fun main() {
         "#,
         )
     }
+
+    #[test]
+    fn pipe_operator_error_handling() {
+        transpile_and_validate_project(
+            "test_projects/pipe_operator_error_handling",
+            r#"
+            fun test() i32 ? null {
+                return 8
+            }
+
+
+            fun main() {
+                var result i32 = test() |?> { return }
+            }
+        "#,
+        )
+    }
 }
