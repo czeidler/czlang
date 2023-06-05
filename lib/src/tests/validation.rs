@@ -208,7 +208,7 @@ fun main() { test() }
             "test_projects/error_return",
             r#"
             fun test_call() bool ? i32 {
-                return ?43
+                return _ ? 43
             }
 
             fun main() {

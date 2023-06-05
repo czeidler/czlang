@@ -157,6 +157,14 @@ impl SumType {
             is_number(&self.types[0])
         }
     }
+
+    pub fn is_bool(&self) -> bool {
+        if self.types.len() != 1 {
+            false
+        } else {
+            self.types[0].r#type == Type::Bool
+        }
+    }
 }
 
 fn is_number(types: &RefType) -> bool {

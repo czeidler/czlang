@@ -202,17 +202,17 @@ struct TestStruct {
 }
 
 struct TestStruct2 {
-    field1 TestStruct ? bool
+    field2 TestStruct ? bool
 }
 
 fun main() {
     var struct2 = TestStruct2 {
-        field1 = TestStruct {
+        field2 = TestStruct {
             field1 = 1,
         }
     }
 
-    var field2 u32 ? string | bool = struct2.field1?.field1
+    var field2 u32 ? string | bool = struct2.field2?.field1
 }
         "#,
         )
@@ -447,7 +447,7 @@ fun main() {
             }
 
             fun test2(arg i32) bool ? i32 {
-                return ? arg
+                return _ ? arg
             }
 
             fun main() {
@@ -469,6 +469,27 @@ fun main() {
 
             fun main() {
                 var result i32 = test() |?> { return }
+            }
+        "#,
+        )
+    }
+
+    #[test]
+    fn either_check() {
+        transpile_and_validate_project(
+            "test_projects/either_check",
+            r#"
+            fun main() {
+                var result i32 ? bool = 8
+                if result != ? {
+                    var value i32 = result
+                } else {
+                    var err bool = result
+                }
+
+                if result == ? {
+                    var err2 bool = result
+                }
             }
         "#,
         )

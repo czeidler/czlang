@@ -238,6 +238,8 @@ pub fn intersection(left_types: &SumType, right_types: &SumType) -> Option<SumTy
                         &SumType::from_types(right_err));
                         match (&value_intersection, &err_intersection) {
                             (None, None) => return None,
+                            (None, _) => if left_value.len() > 0 { return None },
+                            (_, None) => if right_value.len() > 0 { return None },
                             _ => {}
                         };
                         return Some(RefType {
@@ -248,18 +250,8 @@ pub fn intersection(left_types: &SumType, right_types: &SumType) -> Option<SumTy
                             err_intersection.map(|e|e.types().clone()).unwrap_or(vec![])),
                         })
                     }
-                    (Type::Either(left_value, left_err), _) =>{
-                        let Some(value_intersection) = intersection(&SumType::from_types(left_value),
-                        &SumType::from_type(right.clone())) else {
-                            return None;
-                        };
-
-                        return Some(RefType {
-                            node: left.node.clone(),
-                            is_reference: left.is_reference,
-                            is_mut: left.is_mut,
-                            r#type: Type::Either(value_intersection.types().clone(), left_err.clone()),
-                        })
+                    (Type::Either(_, _), _) =>{
+                        return None;
                     }
                     (_, Type::Either(right_value, right_err)) =>{
                         let Some(value_intersection) = intersection(&SumType::from_type(left.clone()), &SumType::from_types(right_value),
@@ -585,7 +577,7 @@ mod tests {
 
     #[test]
     fn test_intersection_6() {
-        // fun test() i32 ? bool { return ? bool }
+        // fun test() i32 ? bool { return _ ? bool }
         let left = vec![RefType::value(
             node(5),
             Type::Either(vec![], vec![RefType::value(node(0), Type::Bool)]),

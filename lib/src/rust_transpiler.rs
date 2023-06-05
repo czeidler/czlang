@@ -330,6 +330,7 @@ impl RustTranspiler {
             ExpressionType::ErrorExpression(error) => {
                 self.transpile_err_expr(analyzer, expression, error, block, writer)
             }
+            ExpressionType::EitherCheck(_) => panic!("Should be handled in if expression"),
         };
     }
 
@@ -544,6 +545,11 @@ impl RustTranspiler {
     ) {
         match target.as_either() {
             Some((value, err)) => {
+                if value == either.0 && err == either.1 {
+                    // nothing to map
+                    writer.write(expression);
+                    return;
+                }
                 writer.write("match ");
                 writer.write(expression);
                 writer.write(" {");
@@ -828,6 +834,15 @@ impl RustTranspiler {
         type_narrowing: &TypeNarrowing,
         writer: &mut Writer,
     ) {
+        if type_narrowing.original_types.as_either().is_some() {
+            if type_narrowing.reduction {
+                // != ?
+                writer.write(&format!("{}.is_ok()", type_narrowing.identifier));
+            } else {
+                writer.write(&format!("{}.is_err()", type_narrowing.identifier));
+            }
+            return;
+        }
         if type_narrowing.original_types.len() == 1 {
             // nothing needs to be narrowed
             writer.write("true");

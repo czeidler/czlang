@@ -626,6 +626,12 @@ pub struct PipeExpression {
 }
 
 #[derive(Debug, Clone)]
+pub struct EitherCheckExpression {
+    pub left: Box<Expression>,
+    pub is_equal: bool,
+}
+
+#[derive(Debug, Clone)]
 pub struct Expression {
     pub node: NodeData,
     pub r#type: ExpressionType,
@@ -650,6 +656,7 @@ pub enum ExpressionType {
     If(Ptr<IfExpression>),
     ErrorExpression(Box<Expression>),
     Pipe(PipeExpression),
+    EitherCheck(EitherCheckExpression),
 }
 
 #[derive(Debug, Clone)]
@@ -1075,6 +1082,9 @@ fn parse_expression(
         "err_pipe_expression" => {
             ExpressionType::Pipe(parse_pipe_expression(context, node, block, true)?)
         }
+        "either_check_expression" => {
+            ExpressionType::EitherCheck(parse_either_check_expression(context, node, block)?)
+        }
         _ => {
             log::error!("Unknown expression kind: {}", node.kind());
             return None;
@@ -1083,6 +1093,20 @@ fn parse_expression(
     Some(Expression {
         node: NodeData::from_node(&node),
         r#type: expression_type,
+    })
+}
+
+fn parse_either_check_expression(
+    context: &Ptr<FileContext>,
+    node: &Node,
+    block: &Ptr<Block>,
+) -> Option<EitherCheckExpression> {
+    let left = child_by_field(&node, "left")?;
+    let operator = child_by_field(&node, "op")?;
+    let operator = node_text(&operator, context)?;
+    Some(EitherCheckExpression {
+        left: Box::new(parse_expression(context, &left, block)?),
+        is_equal: operator == "",
     })
 }
 

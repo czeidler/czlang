@@ -2,12 +2,13 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     ast::{
-        Array, BinaryExpression, BinaryOperator, Block, BlockParent, BlockTrait, Expression,
-        ExpressionType, Field, FileContext, FileTrait, Function, FunctionCall, FunctionSignature,
-        FunctionTrait, IfAlternative, IfExpression, LangError, NodeData, Parameter, PipeExpression,
-        RefType, ReturnStatement, RootSymbol, SelectorExpression, SelectorField, SelectorFieldType,
-        Slice, Statement, Struct, StructFieldInitialization, StructInitialization, Type, TypeParam,
-        TypeParamType, UnaryOperator, VarDeclaration,
+        Array, BinaryExpression, BinaryOperator, Block, BlockParent, BlockTrait,
+        EitherCheckExpression, Expression, ExpressionType, Field, FileContext, FileTrait, Function,
+        FunctionCall, FunctionSignature, FunctionTrait, IfAlternative, IfExpression, LangError,
+        NodeData, Parameter, PipeExpression, RefType, ReturnStatement, RootSymbol,
+        SelectorExpression, SelectorField, SelectorFieldType, Slice, Statement, Struct,
+        StructFieldInitialization, StructInitialization, Type, TypeParam, TypeParamType,
+        UnaryOperator, VarDeclaration,
     },
     buildin::Buildins,
     sum_type::SumType,
@@ -245,6 +246,17 @@ fn apply_narrowing(flow: &Ptr<FlowContainer>, narrowing: &TypeNarrowing) -> Ptr<
         vars: HashMap::new(),
         returned: None,
     };
+    if let Some((value, err)) = narrowing.original_types.as_either() {
+        if narrowing.reduction {
+            // != ?
+            new_flow.vars.insert(narrowing.identifier.clone(), value);
+        } else {
+            // == ?
+            new_flow.vars.insert(narrowing.identifier.clone(), err);
+        }
+        return Ptr::new(new_flow);
+    }
+
     // true if in the form (typeof X != bool && typeof X != i32)
     // false if in the form (typeof X == bool || typeof X == i32)
     if narrowing.reduction {
@@ -270,6 +282,17 @@ fn apply_inverse_narrowing(
         vars: HashMap::new(),
         returned: None,
     };
+    if let Some((value, err)) = narrowing.original_types.as_either() {
+        if narrowing.reduction {
+            // != ?
+            new_flow.vars.insert(narrowing.identifier.clone(), err);
+        } else {
+            // == ?
+            new_flow.vars.insert(narrowing.identifier.clone(), value);
+        }
+        return Ptr::new(new_flow);
+    }
+
     // true if in the form (typeof X != bool && typeof X != i32)
     // false if in the form (typeof X == bool || typeof X == i32)
     if narrowing.reduction {
@@ -1240,6 +1263,7 @@ impl FileSemanticAnalyzer {
                 self.narrow_expression_type(block, &expression, types);
             }
             ExpressionType::Pipe(_) => {}
+            ExpressionType::EitherCheck(_) => {}
         }
     }
 
@@ -1682,6 +1706,13 @@ impl FileSemanticAnalyzer {
                     ),
                 ))))
             }
+            ExpressionType::EitherCheck(check) => {
+                self.errors.push(LangError::type_error(
+                    &check.left.node,
+                    "Either check expression can only be used within if expression".to_string(),
+                ));
+                return ExpressionSemantics::empty();
+            }
         };
 
         self.bind_expression_type(expression, expression_semantics.clone());
@@ -1901,12 +1932,22 @@ impl FileSemanticAnalyzer {
                         self.sum_types.insert(err.sum_type_name(), err.clone());
                     }
 
-                    return Some(SumType::from_type(RefType {
-                        node: field.node.clone(),
-                        is_reference: false,
-                        is_mut: false,
-                        r#type: Type::Either(field_types, err.types().clone()),
-                    }));
+                    if let Some((value, _)) = SumType::from_types(&field_types).as_either() {
+                        // only take value part from the either, the error part is already included in err
+                        return Some(SumType::from_type(RefType {
+                            node: field.node.clone(),
+                            is_reference: false,
+                            is_mut: false,
+                            r#type: Type::Either(value.types().clone(), err.types().clone()),
+                        }));
+                    } else {
+                        return Some(SumType::from_type(RefType {
+                            node: field.node.clone(),
+                            is_reference: false,
+                            is_mut: false,
+                            r#type: Type::Either(field_types, err.types().clone()),
+                        }));
+                    }
                 } else {
                     return Some(SumType::from_types(&field_types));
                 }
@@ -2046,9 +2087,22 @@ impl FileSemanticAnalyzer {
                         self.bind_if_type_narrowing(if_expression, narrowing.clone());
                         narrowing
                     })
+            } else if let ExpressionType::EitherCheck(check) = &if_expression.condition.r#type {
+                self.validate_either_check_expression(flow, context, check, is_assignment)
+                    .map(|narrowing| {
+                        self.bind_if_type_narrowing(if_expression, narrowing.clone());
+                        narrowing
+                    })
             } else {
-                self.validate_expression(flow, context, &if_expression.condition, is_assignment)
+                let types = self
+                    .validate_expression(flow, context, &if_expression.condition, is_assignment)
                     .into_types()?;
+                if !types.is_bool() {
+                    self.errors.push(LangError::type_error(
+                        &if_expression.condition.node,
+                        "If expression must evaluate to a boolean value".to_string(),
+                    ))
+                }
                 None
             };
         if let Some(narrowing) = &narrowing {
@@ -2121,6 +2175,45 @@ impl FileSemanticAnalyzer {
         if_block_result
     }
 
+    fn validate_either_check_expression(
+        &mut self,
+        flow: &mut CurrentFlowContainer,
+        context: &ExpContext,
+        check: &EitherCheckExpression,
+        is_assignment: bool,
+    ) -> Option<TypeNarrowing> {
+        let identifier = match &check.left.r#type {
+            ExpressionType::Identifier(identifier) => identifier,
+            _ => {
+                self.errors.push(LangError::type_error(
+                    &check.left.node,
+                    format!("Invalid typeof identifier"),
+                ));
+                return None;
+            }
+        };
+
+        let left = self.validate_expression(flow, context, &check.left, is_assignment);
+        let left_types = left.types();
+        if let Some((value, err)) = left_types.clone().and_then(|types| types.as_either()) {
+            let narrowed_type = if check.is_equal { err } else { value };
+            let result = TypeNarrowing {
+                original_types: left_types.unwrap(),
+                identifier: identifier.clone(),
+                identifier_node: check.left.node.clone(),
+                reduction: !check.is_equal,
+                types: narrowed_type,
+            };
+            Some(result)
+        } else {
+            self.errors.push(LangError::type_error(
+                &check.left.node,
+                "Must be an either type".to_string(),
+            ));
+            None
+        }
+    }
+
     fn validate_typeof_expression(
         &mut self,
         flow: &mut CurrentFlowContainer,
@@ -2160,7 +2253,7 @@ impl FileSemanticAnalyzer {
                 self.errors.push(LangError::type_error(
                     // TODO: parent node?
                     &expression.left.node,
-                    "Type narrowing identifier missmatch".to_string(),
+                    "Type narrowing identifier mismatch".to_string(),
                 ));
                 return None;
             }
