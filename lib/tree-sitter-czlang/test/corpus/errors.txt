@@ -32,7 +32,7 @@ Return error statement
 ==================
 
 fun x() i32 ? bool {
-  return ?false
+  return _ ? false
 }
 
 ---
@@ -63,8 +63,8 @@ Error expression
 ==================
 
 fun x() i32 ? bool {
-  var test = ?false
-  return ?true
+  var test = _ ? false
+  return _ ? true
 }
 
 ---
@@ -100,7 +100,7 @@ Error auto return
 
 fun x() i32 ? bool {
   testCall()?
-  return ?true
+  return _ ? true
 }
 
 ---
@@ -124,6 +124,54 @@ fun x() i32 ? bool {
         (error_expression
           (error_op)
           (true)
+        )
+      )
+    )
+  )
+)
+
+==================
+Error check
+==================
+
+fun x(arg i32 ? bool) {
+  if arg == ? {
+    return
+  }
+
+  if arg != ? {
+    return
+  }
+}
+
+---
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameter_list
+      (parameter
+        (identifier)
+        (error_type
+          (primitive_type)
+          (error_op)
+          (primitive_type))))
+    (block
+      (expression_statement
+        (if_expression
+          (either_check_expression
+            (identifier)
+            (error_op))
+          (block
+            (return_statement))))
+      (expression_statement
+        (if_expression
+          (either_check_expression
+            (identifier)
+            (error_op))
+          (block
+            (return_statement)
+          )
         )
       )
     )

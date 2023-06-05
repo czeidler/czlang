@@ -5,7 +5,7 @@ Pipe operators
 fun x(arg i32 ? null) i32 ? bool {
     arg
         |> $ |> 2
-        |?> ? false
+        |?> _ ? false
     return arg |> 5
 }
 
@@ -50,11 +50,11 @@ fun x(arg i32 ? null) i32 ? bool {
 Pipe with error return
 ==================
 
-fun x(arg i32 ? null)  {
+fun x(arg i32 ? null) {
     (arg
         |> $
         |> 2
-        |?> ? false)?
+        |?> _ ? false)?
 }
 
 ---
