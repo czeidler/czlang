@@ -273,6 +273,44 @@ fn apply_narrowing(flow: &Ptr<FlowContainer>, narrowing: &TypeNarrowing) -> Ptr<
     Ptr::new(new_flow)
 }
 
+/// Combine two flows from a type narrowing, e.g. consequence and alternative from an if/else clause.
+fn merge_narrowed_flows(
+    parent: &Ptr<FlowContainer>,
+    flow1: &Ptr<FlowContainer>,
+    flow2: &Ptr<FlowContainer>,
+    narrowing: &TypeNarrowing,
+) -> Ptr<FlowContainer> {
+    let mut new_flow = FlowContainer {
+        parent: Some(parent.clone()),
+        vars: HashMap::new(),
+        returned: None,
+    };
+
+    if let Some((_, _)) = narrowing.original_types.as_either() {
+        // For either types, currently, only a simple case is supported where the original type continues.
+        new_flow.vars.insert(
+            narrowing.identifier.clone(),
+            narrowing.original_types.clone(),
+        );
+        return Ptr::new(new_flow);
+    }
+
+    let mut union = flow1
+        .vars
+        .get(&narrowing.identifier)
+        .cloned()
+        .unwrap_or(SumType::empty());
+    union.union(
+        flow2
+            .vars
+            .get(&narrowing.identifier)
+            .cloned()
+            .unwrap_or(SumType::empty()),
+    );
+    new_flow.vars.insert(narrowing.identifier.clone(), union);
+    Ptr::new(new_flow)
+}
+
 fn apply_inverse_narrowing(
     flow: &Ptr<FlowContainer>,
     narrowing: &TypeNarrowing,
@@ -2121,7 +2159,7 @@ impl FileSemanticAnalyzer {
                 ));
             }
             if let Some(narrowing) = &narrowing {
-                if consequence_flow.returned.is_some() {
+                if flow.flow.returned.is_some() {
                     flow.flow = apply_inverse_narrowing(&original_flow, narrowing);
                 } else {
                     flow.flow = original_flow;
@@ -2130,7 +2168,7 @@ impl FileSemanticAnalyzer {
             return None;
         };
 
-        // if or if/else case:
+        // else or if/else case:
         if let Some(narrowing) = &narrowing {
             flow.flow = apply_inverse_narrowing(&original_flow, narrowing);
         }
@@ -2147,9 +2185,16 @@ impl FileSemanticAnalyzer {
         if let Some(narrowing) = &narrowing {
             match (&consequence_flow.returned, &flow.flow.returned) {
                 (None, Some(_)) => {
-                    flow.flow = apply_inverse_narrowing(&consequence_flow, narrowing)
+                    flow.flow = consequence_flow;
                 }
-                (None, None) => {}
+                (None, None) => {
+                    flow.flow = merge_narrowed_flows(
+                        &original_flow,
+                        &consequence_flow,
+                        &flow.flow,
+                        narrowing,
+                    );
+                }
                 (Some(_), None) => {
                     // keep current, alternative flow
                 }
