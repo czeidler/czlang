@@ -83,6 +83,14 @@ fn type_to_enum_variant(t: &Type) -> String {
     }
 }
 
+fn ref_type_to_enum_variant(t: &RefType) -> String {
+    if t.is_reference {
+        format!("Ref{}", type_to_enum_variant(&t.r#type))
+    } else {
+        type_to_enum_variant(&t.r#type)
+    }
+}
+
 impl RustTranspiler {
     fn transpile_types(&self, types: &Vec<RefType>, writer: &mut Writer) {
         if types.len() > 1 {
@@ -130,28 +138,39 @@ impl RustTranspiler {
     fn transpile_sum_type_def(&self, name: &str, types: &SumType, writer: &mut Writer) {
         writer.write("enum ");
         writer.write(name);
+        if types.has_reference() {
+            writer.write("<'a>");
+        }
         writer.write(" {");
         writer.new_line();
         writer.indented(|writer| {
             for t in types.types() {
-                let variant = type_to_enum_variant(&t.r#type);
-                match &t.r#type {
-                    Type::Null => writer.write(&variant),
+                let variant = ref_type_to_enum_variant(t);
+                let rust_type = match &t.r#type {
+                    Type::Null => "".to_string(),
                     Type::Str => todo!(),
-                    Type::String => writer.write(&format!("{}(String)", variant)),
-                    Type::Bool => writer.write(&format!("{}(bool)", variant)),
-                    Type::U8 => writer.write(&format!("{}(u8)", variant)),
-                    Type::I8 => writer.write(&format!("{}(i8)", variant)),
-                    Type::U32 => writer.write(&format!("{}(u32)", variant)),
-                    Type::I32 => writer.write(&format!("{}(i32)", variant)),
-                    Type::Identifier(identifier) => {
-                        writer.write(&format!("{}({})", &identifier, &identifier))
-                    }
-                    Type::Array(_) => writer.write("todoarray"),
-                    Type::Slice(_) => writer.write("todoslice"),
+                    Type::String => "String".to_string(),
+                    Type::Bool => "bool".to_string(),
+                    Type::U8 => "u8".to_string(),
+                    Type::I8 => "i8".to_string(),
+                    Type::U32 => "u32".to_string(),
+                    Type::I32 => "i32".to_string(),
+                    Type::Identifier(identifier) => identifier.clone(),
+                    Type::Array(_) => "todoarray".to_string(),
+                    Type::Slice(_) => "todoslice".to_string(),
                     Type::Either(_, _) => panic!("Validation should have failed"),
                     Type::Unresolved(_) => panic!("Validation should have failed"),
                 };
+                if rust_type == "" {
+                    writer.write(&variant);
+                } else {
+                    if t.is_reference {
+                        writer.write(&format!("{}(&'a {})", variant, rust_type))
+                    } else {
+                        writer.write(&format!("{}({})", variant, rust_type))
+                    };
+                }
+
                 writer.write(",");
                 writer.new_line();
             }
@@ -620,7 +639,7 @@ impl RustTranspiler {
                     let target_type = &target.types()[0];
                     writer.write(&resolved_name);
                     writer.write("::");
-                    let variant = type_to_enum_variant(&target_type.r#type);
+                    let variant = ref_type_to_enum_variant(target_type);
                     let full_variant = match target_type.r#type {
                         Type::Null => variant,
                         _ => format!("{}(e)", variant),
@@ -644,7 +663,7 @@ impl RustTranspiler {
             if resolved_type.len() == 1 {
                 writer.write(&target_name);
                 writer.write("::");
-                let variant = type_to_enum_variant(&resolved_type.types()[0].r#type);
+                let variant = ref_type_to_enum_variant(&resolved_type.types()[0]);
                 writer.write(&variant);
                 writer.write("(");
                 writer.write(expression);
@@ -658,7 +677,7 @@ impl RustTranspiler {
                     for resolved in narrowed_type.types() {
                         writer.write(&resolved_name);
                         writer.write("::");
-                        let variant = type_to_enum_variant(&resolved.r#type);
+                        let variant = ref_type_to_enum_variant(resolved);
                         let full_variant = match resolved.r#type {
                             Type::Null => variant,
                             _ => format!("{}(e)", variant),

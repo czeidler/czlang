@@ -165,6 +165,10 @@ impl SumType {
             self.types[0].r#type == Type::Bool
         }
     }
+
+    pub fn has_reference(&self) -> bool {
+        self.types.iter().any(|it| it.is_reference)
+    }
 }
 
 fn is_number(types: &RefType) -> bool {

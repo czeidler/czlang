@@ -192,7 +192,57 @@ fun main() { test() }
                     return
                 }
 
-                var test string = arg
+                var test bool | i32 = arg
+            }
+
+            fun main() {
+                test_call(32)
+            }
+        "#,
+        );
+    }
+
+    #[test]
+    fn type_of_validation_4() {
+        transpile_and_validate_project(
+            "test_projects/type_of_validation_4",
+            r#"
+            fun test_call(arg bool | i32 | &string) {
+                if typeof arg == bool {
+                    var b bool = arg
+                } else if typeof arg == i32 {
+                    var s i32 = arg
+                    return
+                } else {
+                    var s &string = arg
+                }
+
+                var test bool | &string = arg
+            }
+
+            fun main() {
+                test_call(32)
+            }
+        "#,
+        );
+    }
+
+    #[test]
+    fn type_of_validation_5() {
+        transpile_and_validate_project(
+            "test_projects/type_of_validation_5",
+            r#"
+            fun test_call(arg bool | i32 | string) {
+                if typeof arg == bool {
+                    var b bool = arg
+                    return
+                } else if typeof arg == i32 {
+                    var s i32 = arg
+                } else {
+                    var s &string = &arg
+                }
+
+                var test string | i32 = arg
             }
 
             fun main() {
