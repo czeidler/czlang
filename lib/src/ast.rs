@@ -1106,7 +1106,7 @@ fn parse_either_check_expression(
     let operator = node_text(&operator, context)?;
     Some(EitherCheckExpression {
         left: Box::new(parse_expression(context, &left, block)?),
-        is_equal: operator == "",
+        is_equal: operator == "==",
     })
 }
 
