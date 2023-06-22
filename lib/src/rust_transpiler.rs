@@ -639,7 +639,19 @@ impl RustTranspiler {
                     let target_type = &target.types()[0];
                     writer.write(&resolved_name);
                     writer.write("::");
-                    let variant = ref_type_to_enum_variant(target_type);
+
+                    let exact_match = resolved_type
+                        .types()
+                        .iter()
+                        .find(|it| it == &target_type)
+                        .is_some();
+                    let variant = if exact_match {
+                        ref_type_to_enum_variant(target_type)
+                    } else {
+                        // if not an exact match it must be `&` expression, thus use the base type
+                        type_to_enum_variant(&target_type.r#type)
+                    };
+
                     let full_variant = match target_type.r#type {
                         Type::Null => variant,
                         _ => format!("{}(e)", variant),
@@ -717,14 +729,22 @@ impl RustTranspiler {
             return;
         }
 
-        let (resolved_type, narrowed_type) = analyzer
-            .query_expression(block, &expression)
-            .map(|s| (s.resolved_types.clone().unwrap(), s.types().unwrap()))
-            .unwrap();
-
         let mut transpiled_expression = "".to_string();
         let mut str_writer = Writer::new(&mut transpiled_expression, writer.indentation);
         self.transpile_expression(analyzer, &expression, block, &mut str_writer);
+
+        // If expression is "&exp" map the inner operand to avoid type conversions
+        let expr = match &expression.r#type {
+            ExpressionType::UnaryExpression(op) => match op.operator {
+                UnaryOperator::Reference => &op.operand,
+                _ => expression,
+            },
+            _ => expression,
+        };
+        let (resolved_type, narrowed_type) = analyzer
+            .query_expression(block, expr)
+            .map(|s| (s.resolved_types.clone().unwrap(), s.types().unwrap()))
+            .unwrap();
         self.transpile_type_mapping(
             &transpiled_expression,
             target,
