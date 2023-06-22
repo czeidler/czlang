@@ -58,6 +58,13 @@ impl SumType {
         output
     }
 
+    pub fn apply_reference(&self) -> SumType {
+        self.types
+            .iter()
+            .map(|it| RefType::reference(it.node.clone(), it.r#type.clone()))
+            .collect()
+    }
+
     pub fn push(&mut self, t: RefType) {
         if !self.types.contains(&t) {
             self.types.push(t);

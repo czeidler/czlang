@@ -1442,18 +1442,14 @@ impl FileSemanticAnalyzer {
         return None;
     }
 
-    /// Returns the resolved type of the expression.
-    /// If None is returned the type couldn't be resolved.
-    ///
-    /// # Arguments
-    /// * is_assignment: If the expression is expected to return a value, e.g. from a block
-    fn validate_expression(
+    /// Helper method: validates the expression without binding it
+    fn check_expression_semantics(
         &mut self,
         flow: &mut CurrentFlowContainer,
         context: &ExpContext,
         expression: &Expression,
         is_assignment: bool,
-    ) -> ExpressionSemantics {
+    ) -> Result<Option<ExpressionSemantics>, LangError> {
         let expression_semantics = match &expression.r#type {
             ExpressionType::String(_) => ExpressionSemantics::resolved_types(Some(
                 SumType::from_type(RefType::value(expression.node.clone(), Type::String)),
@@ -1463,11 +1459,10 @@ impl FileSemanticAnalyzer {
                 let binding = match self.lookup_identifier(context, identifier) {
                     Some(identifier) => identifier,
                     None => {
-                        self.errors.push(LangError::type_error(
+                        return Err(LangError::type_error(
                             &expression.node,
                             format!("Identifier not found: {:?}", identifier),
                         ));
-                        return ExpressionSemantics::empty();
                     }
                 };
 
@@ -1498,42 +1493,50 @@ impl FileSemanticAnalyzer {
                 SumType::from_type(RefType::value(expression.node.clone(), Type::Bool)),
             )),
 
-            ExpressionType::UnaryExpression(unary) => {
-                ExpressionSemantics::resolved_types(match unary.operator {
-                    UnaryOperator::Minus => match unary.operand.r#type {
-                        ExpressionType::IntLiteral(_) => Some(SumType::from_type(RefType::value(
+            ExpressionType::UnaryExpression(unary) => match unary.operator {
+                UnaryOperator::Minus => match unary.operand.r#type {
+                    ExpressionType::IntLiteral(_) => ExpressionSemantics::resolved_types(Some(
+                        SumType::from_type(RefType::value(
                             unary.operand.node.clone(),
                             Type::Unresolved(vec![RefType::value(
                                 unary.operand.node.clone(),
                                 Type::I32,
                             )]),
-                        ))),
-                        _ => {
-                            self.errors.push(LangError::type_error(
-                                &expression.node,
-                                format!("Unexpected operand: {:?}", unary.operand.r#type),
-                            ));
-                            return ExpressionSemantics::empty();
-                        }
-                    },
-                    UnaryOperator::Not => self
-                        .validate_expression(flow, context, &unary.operand, is_assignment)
-                        .into_types(),
-                    UnaryOperator::Reference => {
-                        let types = self
-                            .validate_expression(flow, context, &unary.operand, is_assignment)
-                            .into_types();
-
-                        types.map(|s| {
-                            s.types()
-                                .into_iter()
-                                .map(|it| RefType::reference(it.node.clone(), it.r#type.clone()))
-                                .collect()
-                        })
+                        )),
+                    )),
+                    _ => {
+                        return Err(LangError::type_error(
+                            &expression.node,
+                            format!("Unexpected operand: {:?}", unary.operand.r#type),
+                        ));
                     }
-                    UnaryOperator::TypeOf => None,
-                })
-            }
+                },
+                UnaryOperator::Not => {
+                    match self.check_expression_semantics(
+                        flow,
+                        context,
+                        &unary.operand,
+                        is_assignment,
+                    )? {
+                        Some(semantics) => semantics,
+                        None => return Ok(None),
+                    }
+                }
+                UnaryOperator::Reference => {
+                    let mut semantics =
+                        self.validate_expression(flow, context, &unary.operand, is_assignment);
+
+                    semantics.resolved_types = semantics
+                        .resolved_types
+                        .map(|types| types.apply_reference());
+                    semantics.narrowed_types = semantics
+                        .narrowed_types
+                        .map(|types| types.apply_reference());
+                    semantics
+                }
+
+                UnaryOperator::TypeOf => return Ok(None),
+            },
             ExpressionType::BinaryExpression(binary) => {
                 let left = self
                     .validate_expression(flow, context, &binary.left, is_assignment)
@@ -1544,14 +1547,13 @@ impl FileSemanticAnalyzer {
                     .into_types()
                     .unwrap_or(SumType::new(vec![]));
                 let Some(overlap) = intersection(&left, &right) else {
-                    self.errors.push(LangError::type_error(
+                    return Err(LangError::type_error(
                         &expression.node,
                         format!(
                             "Incompatible type in expression: left == {:?}, right == {:?}",
                             left, right,
                         ),
                     ));
-                    return ExpressionSemantics::empty();
                 };
                 let number_required = match binary.operator {
                     BinaryOperator::Add => true,
@@ -1568,11 +1570,10 @@ impl FileSemanticAnalyzer {
                     BinaryOperator::Or => false,
                 };
                 if number_required && !left.is_number() {
-                    self.errors.push(LangError::type_error(
+                    return Err(LangError::type_error(
                         &expression.node,
                         "Operator requires a number".to_string(),
                     ));
-                    return ExpressionSemantics::empty();
                 }
                 ExpressionSemantics::resolved_types(Some(overlap))
             }
@@ -1609,17 +1610,16 @@ impl FileSemanticAnalyzer {
                     match self.query_function_call(&fun_call).and_then(|s| s.binding) {
                         Some(fun) => fun,
                         None => {
-                            self.errors.push(LangError::type_error(
+                            return Err(LangError::type_error(
                                 &expression.node,
                                 format!("No fun with name {} found", fun_call.name),
                             ));
-                            return ExpressionSemantics::empty();
                         }
                     };
                 let fun_signature = fun_declaration.as_function_signature();
 
                 if fun_signature.parameters.len() != fun_call.arguments.len() {
-                    self.errors.push(LangError::type_error(
+                    return Err(LangError::type_error(
                         &expression.node,
                         format!(
                             "Expected {} arguments but found {}",
@@ -1627,7 +1627,6 @@ impl FileSemanticAnalyzer {
                             fun_call.arguments.len()
                         ),
                     ));
-                    return ExpressionSemantics::empty();
                 }
 
                 for (i, parameter) in fun_signature.parameters.iter().enumerate() {
@@ -1640,14 +1639,13 @@ impl FileSemanticAnalyzer {
                         .query_parameter_type(&context.block.fun().signature, parameter)
                         .unwrap_or(SumType::empty());
                     let Some(intersection) = intersection(&arg_types, &parameter_type) else {
-                        self.errors.push(LangError::type_error(
+                        return Err(LangError::type_error(
                             &arg.node,
                             format!(
                                 "{:?}: Argument has invalid type {:?}; but expected {:?}",
                                 fun_call.name, arg_types, parameter.types
                             ),
                         ));
-                        return ExpressionSemantics::empty();
                     };
                     // overwrite previous results
                     self.expressions.insert(
@@ -1660,11 +1658,17 @@ impl FileSemanticAnalyzer {
             }
             ExpressionType::StructInitialization(struct_init) => {
                 let Some(binding) = self.bind_type_identifier(TypeQueryContext::Function(context.block.fun().signature.clone()), &struct_init.name_node, &struct_init.name) else {
-                    return ExpressionSemantics::empty();
+                    // Error belongs to the type identifier, just return None here
+                    return Ok(None);
                 };
                 let struct_dec = match binding {
                     TypeBinding::Struct(struct_dec) => struct_dec,
-                    TypeBinding::StructTypeArgument(_) => return ExpressionSemantics::empty(),
+                    TypeBinding::StructTypeArgument(_) => {
+                        return Err(LangError::type_error(
+                            &struct_init.node,
+                            "Unsupported...".to_string(),
+                        ))
+                    }
                 };
                 let mut expected_fields =
                     struct_dec.fields.iter().fold(HashMap::new(), |mut set, f| {
@@ -1719,7 +1723,7 @@ impl FileSemanticAnalyzer {
             ),
             ExpressionType::Block(block) => match self.validate_block(flow, block, is_assignment) {
                 Some(s) => s,
-                None => return ExpressionSemantics::empty(),
+                None => return Ok(None),
             },
             ExpressionType::If(if_expression) => ExpressionSemantics::resolved_types(
                 self.validate_if_expression(flow, context, if_expression, is_assignment),
@@ -1745,14 +1749,37 @@ impl FileSemanticAnalyzer {
                 ))))
             }
             ExpressionType::EitherCheck(check) => {
-                self.errors.push(LangError::type_error(
+                return Err(LangError::type_error(
                     &check.left.node,
                     "Either check expression can only be used within if expression".to_string(),
                 ));
-                return ExpressionSemantics::empty();
             }
         };
+        Ok(Some(expression_semantics))
+    }
 
+    /// Returns the resolved type of the expression.
+    ///
+    /// # Arguments
+    /// * is_assignment: If the expression is expected to return a value, e.g. from a block
+    fn validate_expression(
+        &mut self,
+        flow: &mut CurrentFlowContainer,
+        context: &ExpContext,
+        expression: &Expression,
+        is_assignment: bool,
+    ) -> ExpressionSemantics {
+        let expression_semantics =
+            match self.check_expression_semantics(flow, context, expression, is_assignment) {
+                Ok(expression_semantics) => match expression_semantics {
+                    Some(expression_semantics) => expression_semantics,
+                    None => return ExpressionSemantics::empty(),
+                },
+                Err(err) => {
+                    self.errors.push(err);
+                    return ExpressionSemantics::empty();
+                }
+            };
         self.bind_expression_type(expression, expression_semantics.clone());
 
         expression_semantics
