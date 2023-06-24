@@ -247,13 +247,23 @@ fn apply_narrowing(flow: &Ptr<FlowContainer>, narrowing: &TypeNarrowing) -> Ptr<
         returned: None,
     };
     if let Some((value, err)) = narrowing.original_types.as_either() {
-        if narrowing.reduction {
-            // != ?
-            new_flow.vars.insert(narrowing.identifier.clone(), value);
-        } else {
-            // == ?
-            new_flow.vars.insert(narrowing.identifier.clone(), err);
-        }
+        let original_either = narrowing.original_types.types().get(0).unwrap();
+        let narrowed_type = SumType::from_type(RefType {
+            node: original_either.node.clone(),
+            is_reference: original_either.is_reference,
+            is_mut: original_either.is_mut,
+            r#type: if narrowing.reduction {
+                // != ?
+                Type::Either(value.types().clone(), vec![])
+            } else {
+                // == ?
+                Type::Either(vec![], err.types().clone())
+            },
+        });
+        new_flow
+            .vars
+            .insert(narrowing.identifier.clone(), narrowed_type);
+
         return Ptr::new(new_flow);
     }
 
@@ -321,13 +331,23 @@ fn apply_inverse_narrowing(
         returned: None,
     };
     if let Some((value, err)) = narrowing.original_types.as_either() {
-        if narrowing.reduction {
-            // != ?
-            new_flow.vars.insert(narrowing.identifier.clone(), err);
-        } else {
-            // == ?
-            new_flow.vars.insert(narrowing.identifier.clone(), value);
-        }
+        let original_either = narrowing.original_types.types().get(0).unwrap();
+        let narrowed_type = SumType::from_type(RefType {
+            node: original_either.node.clone(),
+            is_reference: original_either.is_reference,
+            is_mut: original_either.is_mut,
+            r#type: if narrowing.reduction {
+                // != ?
+                Type::Either(vec![], err.types().clone())
+            } else {
+                // == ?
+                Type::Either(value.types().clone(), vec![])
+            },
+        });
+        new_flow
+            .vars
+            .insert(narrowing.identifier.clone(), narrowed_type);
+
         return Ptr::new(new_flow);
     }
 
@@ -2268,9 +2288,20 @@ impl FileSemanticAnalyzer {
         let left = self.validate_expression(flow, context, &check.left, is_assignment);
         let left_types = left.types();
         if let Some((value, err)) = left_types.clone().and_then(|types| types.as_either()) {
-            let narrowed_type = if check.is_equal { err } else { value };
+            let original_types = left_types.unwrap();
+            let original_either = original_types.types().get(0).unwrap();
+            let narrowed_type = SumType::from_type(RefType {
+                node: original_either.node.clone(),
+                is_reference: original_either.is_reference,
+                is_mut: original_either.is_mut,
+                r#type: if check.is_equal {
+                    Type::Either(vec![], err.types().clone())
+                } else {
+                    Type::Either(value.types().clone(), vec![])
+                },
+            });
             let result = TypeNarrowing {
-                original_types: left_types.unwrap(),
+                original_types,
                 identifier: identifier.clone(),
                 identifier_node: check.left.node.clone(),
                 reduction: !check.is_equal,

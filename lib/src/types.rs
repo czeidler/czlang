@@ -220,8 +220,8 @@ pub fn intersection(left_types: &SumType, right_types: &SumType) -> Option<SumTy
                             &SumType::from_types(&r.types),
                         );
                         let Some(inter) = inter else {
-                        return None;
-                    };
+                            return None;
+                        };
                         return Some(RefType {
                             node: left.node.clone(),
                             is_reference: left.is_reference,
@@ -250,7 +250,29 @@ pub fn intersection(left_types: &SumType, right_types: &SumType) -> Option<SumTy
                             err_intersection.map(|e|e.types().clone()).unwrap_or(vec![])),
                         })
                     }
-                    (Type::Either(_, _), _) =>{
+                    (Type::Either(left_value, left_err), _) =>{
+                        if left_value.is_empty() {
+                            let Some(inter)=  intersection(&SumType::from_types(left_err), &SumType::from_type(right.clone())) else {
+                                return None;
+                            };
+                            return Some(RefType {
+                                node: left.node.clone(),
+                                is_reference: left.is_reference,
+                                is_mut: left.is_mut,
+                                r#type: Type::Either(vec![], inter.types().clone()),
+                            })
+                        }
+                        if left_err.is_empty() {
+                            let Some(inter) =  intersection(&SumType::from_types(left_value), &SumType::from_type(right.clone())) else {
+                                return None;
+                            };
+                            return Some(RefType {
+                                node: left.node.clone(),
+                                is_reference: left.is_reference,
+                                is_mut: left.is_mut,
+                                r#type: Type::Either(inter.types().clone(), vec![]),
+                            })
+                        }
                         return None;
                     }
                     (_, Type::Either(right_value, right_err)) =>{

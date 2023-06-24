@@ -560,6 +560,7 @@ impl RustTranspiler {
         expression: &str,
         target: &SumType,
         either: (SumType, SumType),
+        narrowed_type: &SumType,
         writer: &mut Writer,
     ) {
         match target.as_either() {
@@ -595,9 +596,18 @@ impl RustTranspiler {
                 });
                 writer.write("}");
             }
-            None => {
-                panic!()
-            }
+            None => match narrowed_type.as_either() {
+                Some((value, err)) => {
+                    if value.is_empty() {
+                        writer.write(&format!("{}.unwrap_err()", expression));
+                    } else if err.is_empty() {
+                        writer.write(&format!("{}.unwrap()", expression));
+                    } else {
+                        panic!();
+                    }
+                }
+                None => panic!(),
+            },
         }
     }
 
@@ -618,7 +628,13 @@ impl RustTranspiler {
         if target.len() == 1 {
             if resolved_type.len() == 1 {
                 if let Some((value, err)) = resolved_type.as_either() {
-                    self.transpile_either_mapping(expression, target, (value, err), writer);
+                    self.transpile_either_mapping(
+                        expression,
+                        target,
+                        (value, err),
+                        narrowed_type,
+                        writer,
+                    );
                 } else {
                     if let Some(_) = target.as_either() {
                         writer.write("Ok(");
