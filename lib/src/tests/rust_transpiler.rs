@@ -494,4 +494,19 @@ fun main() {
         "#,
         )
     }
+
+    #[test]
+    fn either_check_2() {
+        transpile_and_validate_project(
+            "test_projects/either_check_2",
+            r#"
+            fun main() {
+                var result i32 | string ? bool = 8
+                if result != ? {
+                    var value i32 | string | bool = result
+                }
+            }
+        "#,
+        )
+    }
 }

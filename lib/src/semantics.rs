@@ -711,7 +711,7 @@ impl FileSemanticAnalyzer {
             .map(|s| s.inferred_types.as_ref())
             .flatten()
         {
-            Some(resolved_types) => resolved_types.clone(),
+            Some(inferred_types) => inferred_types.clone(),
             None => var_declaration
                 .types
                 .as_ref()
@@ -819,7 +819,10 @@ impl FileSemanticAnalyzer {
                 .insert(result_types.sum_type_name(), result_types.clone());
         }
         // Add sum type if type is an Either type
-        if let Some(err) = result_types.err() {
+        if let Some((value, err)) = result_types.as_either() {
+            if value.len() > 1 {
+                self.sum_types.insert(value.sum_type_name(), value);
+            }
             if err.len() > 1 {
                 self.sum_types.insert(err.sum_type_name(), err);
             }
@@ -1250,14 +1253,16 @@ impl FileSemanticAnalyzer {
                         let Some(inter) = intersection(types, &var_types) else {
                             return;
                         };
-                        // update resolved types
-                        let entry = self
-                            .variable_declarations
-                            .entry(var_declaration.node.id)
-                            .or_insert(VarDeclarationSemantics {
-                                inferred_types: None,
-                            });
-                        entry.inferred_types = Some(inter);
+                        // update inferred_types types (if var didn't had any types declared)
+                        if var_declaration.types.is_none() {
+                            let entry = self
+                                .variable_declarations
+                                .entry(var_declaration.node.id)
+                                .or_insert(VarDeclarationSemantics {
+                                    inferred_types: None,
+                                });
+                            entry.inferred_types = Some(inter);
+                        }
 
                         // follow the back propagation further
                         self.back_propagate_types(block, &var_declaration.value, types);
@@ -1330,8 +1335,16 @@ impl FileSemanticAnalyzer {
         let resolved_types = match self
             .query_expression(block, expression)
             .and_then(|s| s.resolved_types)
-            .and_then(|resolved_types| intersection(types, &resolved_types))
-        {
+            .and_then(|resolved_types| {
+                if resolved_types.as_either().is_some() {
+                    return intersection(types, &resolved_types);
+                }
+                if let Some((value, _)) = types.as_either() {
+                    // e.g. resolved = 8 && types = i32 | string ? bool
+                    return intersection(&value, &resolved_types);
+                }
+                intersection(types, &resolved_types)
+            }) {
             Some(resolved_types) => resolved_types,
             None => return,
         };
@@ -1800,6 +1813,7 @@ impl FileSemanticAnalyzer {
                     return ExpressionSemantics::empty();
                 }
             };
+
         self.bind_expression_type(expression, expression_semantics.clone());
 
         expression_semantics

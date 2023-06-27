@@ -636,9 +636,15 @@ impl RustTranspiler {
                         writer,
                     );
                 } else {
-                    if let Some(_) = target.as_either() {
+                    if let Some((value, _)) = target.as_either() {
                         writer.write("Ok(");
-                        writer.write(expression);
+                        self.transpile_type_mapping(
+                            expression,
+                            &value,
+                            resolved_type,
+                            narrowed_type,
+                            writer,
+                        );
                         writer.write(")");
                     } else {
                         // the target is a simple type, i.e. we can directly assign the expression
@@ -689,6 +695,28 @@ impl RustTranspiler {
                 return;
             }
             if resolved_type.len() == 1 {
+                if let Some((value, err)) = narrowed_type.as_either() {
+                    if err.is_empty() {
+                        self.transpile_type_mapping(
+                            &format!("{}.unwrap()", expression),
+                            target,
+                            &value,
+                            &value,
+                            writer,
+                        );
+                    }
+                    if value.is_empty() {
+                        self.transpile_type_mapping(
+                            &format!("{}.unwrap_err()", expression),
+                            target,
+                            &err,
+                            &err,
+                            writer,
+                        );
+                    }
+                    return;
+                }
+
                 writer.write(&target_name);
                 writer.write("::");
                 let variant = ref_type_to_enum_variant(&resolved_type.types()[0]);
@@ -761,6 +789,7 @@ impl RustTranspiler {
             .query_expression(block, expr)
             .map(|s| (s.resolved_types.clone().unwrap(), s.types().unwrap()))
             .unwrap();
+
         self.transpile_type_mapping(
             &transpiled_expression,
             target,
@@ -849,6 +878,7 @@ impl RustTranspiler {
         }
         writer.write(" = ");
         let var_types = analyzer.query_var_types(var_declaration);
+
         self.transpile_expression_with_mapping(
             analyzer,
             &var_declaration.value,

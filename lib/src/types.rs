@@ -8,7 +8,16 @@ use crate::{
 pub type Ptr<T> = Arc<T>;
 
 pub fn types_to_string(types: &Vec<RefType>) -> String {
-    let parts: Vec<String> = types.into_iter().map(|it| format!("{:#}", it)).collect();
+    let parts: Vec<String> = types
+        .into_iter()
+        .map(|it| {
+            if matches!(it.r#type, Type::Either(_, _)) && types.len() > 1 {
+                format!("({:#})", it)
+            } else {
+                format!("{:#}", it)
+            }
+        })
+        .collect();
     parts.join(" | ")
 }
 
@@ -53,7 +62,17 @@ impl fmt::Display for RefType {
                 Ok(())
             }
             Type::Either(data, error) => {
-                write!(f, "{} ? {}", types_to_string(data), types_to_string(error))?;
+                let val_str = if data.is_empty() {
+                    "_".to_string()
+                } else {
+                    types_to_string(data)
+                };
+                let err_str = if error.is_empty() {
+                    "_".to_string()
+                } else {
+                    types_to_string(error)
+                };
+                write!(f, "{} ? {}", val_str, err_str)?;
                 Ok(())
             }
             Type::Unresolved(types) => {
@@ -252,7 +271,7 @@ pub fn intersection(left_types: &SumType, right_types: &SumType) -> Option<SumTy
                     }
                     (Type::Either(left_value, left_err), _) =>{
                         if left_value.is_empty() {
-                            let Some(inter)=  intersection(&SumType::from_types(left_err), &SumType::from_type(right.clone())) else {
+                            let Some(inter)=  intersection(&SumType::from_types(left_err), right_types) else {
                                 return None;
                             };
                             return Some(RefType {
@@ -263,7 +282,7 @@ pub fn intersection(left_types: &SumType, right_types: &SumType) -> Option<SumTy
                             })
                         }
                         if left_err.is_empty() {
-                            let Some(inter) =  intersection(&SumType::from_types(left_value), &SumType::from_type(right.clone())) else {
+                            let Some(inter) =  intersection(&SumType::from_types(left_value), right_types) else {
                                 return None;
                             };
                             return Some(RefType {
