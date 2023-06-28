@@ -212,7 +212,12 @@ fn find_in_expression(
             };
             s.resolved_types.map(|t| QueryResult::Literal(t))
         }
-
+        ExpressionType::EitherCheck(check) => {
+            if check.left.node.contains(position) {
+                return find_in_expression(analyzer, block, &check.left, position);
+            }
+            None
+        }
         _ => None,
     }
 }
