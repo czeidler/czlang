@@ -360,8 +360,8 @@ impl Server {
                             }
                         }
                         IdentifierBinding::Parameter(param) => {
-                            if expression_semantics.narrowed_types.is_some() {
-                                format!("(narrowed parameter) {}", format_param(&param))
+                            if let Some(narrowed_types) = expression_semantics.narrowed_types {
+                                format!("(narrowed parameter) {}", narrowed_types.to_string())
                             } else {
                                 format!("(parameter) {}", format_param(&param))
                             }
