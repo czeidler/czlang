@@ -347,13 +347,10 @@ impl Server {
                     };
                     match binding {
                         IdentifierBinding::VarDeclaration(var) => {
-                            if expression_semantics.narrowed_types.is_some() {
+                            if let Some(narrowed_types) = expression_semantics.narrowed_types {
                                 format!(
                                     "(narrowed variable): {}",
-                                    format_var_declaration(
-                                        &var,
-                                        &file.file_analyzer.query_var_types(&var)
-                                    )
+                                    format_var_declaration(&var, &narrowed_types)
                                 )
                             } else {
                                 format_var_declaration(
