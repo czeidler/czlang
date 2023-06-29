@@ -154,10 +154,21 @@ fn find_in_expression(
             }
             None
         }
-        ExpressionType::FunctionCall(call) => match analyzer.query_function_call(&call) {
-            Some(function_call) => Some(QueryResult::FunctionCall(function_call.clone())),
-            None => None,
-        },
+        ExpressionType::FunctionCall(call) => {
+            if call.name_node.contains(position) {
+                return match analyzer.query_function_call(&call) {
+                    Some(function_call) => Some(QueryResult::FunctionCall(function_call.clone())),
+                    None => None,
+                };
+            }
+
+            for arg in &call.arguments {
+                if arg.node.contains(position) {
+                    return find_in_expression(analyzer, block, arg, position);
+                }
+            }
+            None
+        }
         ExpressionType::StructInitialization(struct_init) => {
             if struct_init.name_node.contains(position) {
                 return analyzer
@@ -215,6 +226,15 @@ fn find_in_expression(
         ExpressionType::EitherCheck(check) => {
             if check.left.node.contains(position) {
                 return find_in_expression(analyzer, block, &check.left, position);
+            }
+            None
+        }
+        ExpressionType::Pipe(pipe) => {
+            if pipe.left.node.contains(position) {
+                return find_in_expression(analyzer, block, &pipe.left, position);
+            }
+            if pipe.right.node.contains(position) {
+                return find_in_expression(analyzer, block, &pipe.right, position);
             }
             None
         }
