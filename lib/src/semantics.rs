@@ -1680,11 +1680,8 @@ impl FileSemanticAnalyzer {
                             ),
                         ));
                     };
-                    // overwrite previous results
-                    self.expressions.insert(
-                        arg.node.id,
-                        ExpressionSemantics::resolved_types(Some(intersection)),
-                    );
+
+                    self.back_propagate_types(&context.block, arg, &intersection);
                 }
 
                 ExpressionSemantics::resolved_types(self.query_return_type(&fun_signature))
