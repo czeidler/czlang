@@ -448,6 +448,7 @@ impl Server {
                     }
                 }
                 QueryResult::StructIdentifier(struct_dec) => struct_dec.name_node.span.clone(),
+                QueryResult::Function(fun) => fun.signature.name_node.span.clone(),
                 QueryResult::FunctionCall(fun) => {
                     if let Some(binding) = fun.binding {
                         binding.as_function_signature().name_node.span.clone()
@@ -504,6 +505,9 @@ impl Server {
             let position = SourcePosition::new(position.line as usize, position.character as usize);
             let Some(result) = find_in_file(&mut file.file_analyzer, position) else { return None };
             let usages = match result {
+                QueryResult::Function(fun) => {
+                    file.file_analyzer.query_usage(fun.signature.name_node.id)
+                }
                 QueryResult::VarDeclaration(var) => {
                     file.file_analyzer.query_usage(var.name_node.id)
                 }

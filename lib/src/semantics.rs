@@ -635,6 +635,10 @@ impl FileSemanticAnalyzer {
         }
 
         let binding = self.lookup_function_declaration(call);
+        if let Some(binding) = &binding {
+            self.bind_fun_call_usage(&call.name_node, binding);
+        }
+
         let existing = self
             .function_calls
             .insert(call.node.id, FunctionCallSemantics { binding });
@@ -1841,6 +1845,16 @@ impl FileSemanticAnalyzer {
             IdentifierBinding::VarDeclaration(var) => var.name_node.id,
             IdentifierBinding::Parameter(param) => param.name_node.id,
             IdentifierBinding::PipeArg(_) => return,
+        };
+        let references = self.usages.entry(id).or_default();
+        assert!(!references.contains(reference));
+        references.push(reference.clone());
+    }
+
+    fn bind_fun_call_usage(&mut self, reference: &NodeData, binding: &FunctionCallBinding) {
+        let id = match binding {
+            FunctionCallBinding::Function(fun) => fun.signature.name_node.id,
+            FunctionCallBinding::Buildin(_) => return,
         };
         let references = self.usages.entry(id).or_default();
         assert!(!references.contains(reference));
