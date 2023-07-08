@@ -395,6 +395,9 @@ pub struct FileSemanticAnalyzer {
 
     /// Binding for a struct field initialization to the matching Field in of the target struct
     struct_field_inits: HashMap<usize, Field>,
+
+    /// Map of node usages
+    usages: HashMap<usize, Vec<NodeData>>,
 }
 
 impl FileSemanticAnalyzer {
@@ -418,6 +421,8 @@ impl FileSemanticAnalyzer {
             method_calls: HashMap::new(),
             blocks: HashMap::new(),
             struct_field_inits: HashMap::new(),
+
+            usages: HashMap::new(),
         }
     }
 
@@ -732,6 +737,17 @@ impl FileSemanticAnalyzer {
         self.query_fun(&block.fun());
 
         self.pipe_expressions.get(&node.id).map(|s| s.clone())
+    }
+
+    pub fn query_usage(&mut self, node_id: usize) -> Vec<NodeData> {
+        // validate whole file
+        // TODO this can be optimized, e.g. when in a block it might be enough to just validate the block
+        self.query_file();
+
+        self.usages
+            .get(&node_id)
+            .map(|it| it.clone())
+            .unwrap_or_default()
     }
 
     fn validate_file(&mut self) -> FileSemantics {
@@ -1813,7 +1829,22 @@ impl FileSemanticAnalyzer {
 
         self.bind_expression_type(expression, expression_semantics.clone());
 
+        if let Some(binding) = &expression_semantics.binding {
+            self.bind_identifier_usage(&expression.node, binding);
+        }
+
         expression_semantics
+    }
+
+    fn bind_identifier_usage(&mut self, reference: &NodeData, binding: &IdentifierBinding) {
+        let id = match binding {
+            IdentifierBinding::VarDeclaration(var) => var.name_node.id,
+            IdentifierBinding::Parameter(param) => param.name_node.id,
+            IdentifierBinding::PipeArg(_) => return,
+        };
+        let references = self.usages.entry(id).or_default();
+        assert!(!references.contains(reference));
+        references.push(reference.clone());
     }
 
     fn bind_pipe(&mut self, node: &NodeData, pipe_arg: &Option<SumType>) {

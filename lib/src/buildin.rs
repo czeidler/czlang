@@ -40,8 +40,8 @@ impl Buildins {
                     .into_iter()
                     .collect(),
                     is_mutable: false,
-
                     origin: None,
+                    name_node: dummy_node(5),
                 }],
                 return_type: None,
                 receiver: None,

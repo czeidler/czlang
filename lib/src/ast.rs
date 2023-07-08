@@ -415,6 +415,7 @@ pub type StringTemplate = Vec<StringTemplatePart>;
 #[derive(Debug, Clone)]
 pub struct Parameter {
     pub node: NodeData,
+    pub name_node: NodeData,
     pub name: String,
     pub is_mutable: bool,
     pub types: Vec<RefType>,
@@ -1359,11 +1360,8 @@ fn parse_parameter<'a>(context: &Ptr<FileContext>, node: Node<'a>) -> Option<Par
     let _type = node.child_by_field_name("type".as_bytes())?;
 
     Some(Parameter {
-        node: NodeData {
-            id: node.id(),
-            parent: node.parent().unwrap().id(),
-            span: SourceSpan::from_node(&node),
-        },
+        node: NodeData::from_node(&node),
+        name_node: NodeData::from_node(&name),
         name: node_text(&name, context)?,
         is_mutable,
         types: parse_types(context, &_type)?,

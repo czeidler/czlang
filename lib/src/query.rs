@@ -18,7 +18,7 @@ pub enum QueryResult {
     Function(Ptr<Function>),
     FunctionCall(FunctionCallSemantics),
     Parameter(Parameter),
-    Identifier(Ptr<Block>, ExpressionSemantics),
+    Identifier(usize, Ptr<Block>, ExpressionSemantics),
     StructIdentifier(Ptr<Struct>),
     VarDeclaration(Ptr<VarDeclaration>),
     StructDeclaration(Ptr<Struct>),
@@ -135,6 +135,7 @@ fn find_in_expression(
             let Some(identifier_semantics) = analyzer
                 .query_identifier(block.block, expression.node.id) else { return None };
             Some(QueryResult::Identifier(
+                expression.node.id,
                 block.block.clone(),
                 identifier_semantics,
             ))

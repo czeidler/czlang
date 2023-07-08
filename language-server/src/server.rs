@@ -341,7 +341,7 @@ impl Server {
                 QueryResult::Parameter(parameter) => {
                     format!("(parameter) {}", format_param(&parameter))
                 }
-                QueryResult::Identifier(_, expression_semantics) => {
+                QueryResult::Identifier(_, _, expression_semantics) => {
                     let Some(binding) = expression_semantics.binding.as_ref() else {
                         return None;
                     };
@@ -349,7 +349,11 @@ impl Server {
                         IdentifierBinding::VarDeclaration(var) => {
                             if let Some(narrowed_types) = expression_semantics.narrowed_types {
                                 format!(
-                                    "(narrowed variable): {}",
+                                    "{}\n(narrowed variable): {}",
+                                    format_var_declaration(
+                                        &var,
+                                        &file.file_analyzer.query_var_types(&var),
+                                    ),
                                     format_var_declaration(&var, &narrowed_types)
                                 )
                             } else {
@@ -361,7 +365,11 @@ impl Server {
                         }
                         IdentifierBinding::Parameter(param) => {
                             if let Some(narrowed_types) = expression_semantics.narrowed_types {
-                                format!("(narrowed parameter) {}", narrowed_types.to_string())
+                                format!(
+                                    "{}\n(narrowed parameter) {}",
+                                    format_param(&param),
+                                    narrowed_types.to_string()
+                                )
                             } else {
                                 format!("(parameter) {}", format_param(&param))
                             }
@@ -429,7 +437,7 @@ impl Server {
             let Some(result) = find_in_file(&mut file.file_analyzer, position) else { return None };
 
             let target = match result {
-                QueryResult::Identifier(_, identifier_semantics) => {
+                QueryResult::Identifier(_, _, identifier_semantics) => {
                     let Some(binding) = identifier_semantics.binding else {
                         return None;
                     };
@@ -466,6 +474,8 @@ impl Server {
                     }
                 }
                 QueryResult::StructFieldInitialization(field) => field.name_node.span,
+                QueryResult::VarDeclaration(var) => var.name_node.span.clone(),
+                QueryResult::Parameter(param) => param.name_node.span,
                 _ => return None,
             };
             let target = Range::new(
@@ -476,6 +486,46 @@ impl Server {
                 uri: url.as_ref().clone(),
                 range: target,
             }))
+        })?;
+        Ok(())
+    }
+
+    fn references(&self, id: RequestId, mut params: ReferenceParams) -> Result<()> {
+        normalize_uri(&mut params.text_document_position.text_document.uri);
+        let url = Arc::new(params.text_document_position.text_document.uri.clone());
+        let position = params.text_document_position.position;
+        let project = self.project.clone();
+        self.handle_feature_request(id, params, url.clone(), move |_request| {
+            let mut project = project.lock().unwrap();
+            let uri: String = url.as_ref().clone().into();
+            let file = project.open_files.get_mut(&uri);
+            let Some(file) = file else {return None};
+
+            let position = SourcePosition::new(position.line as usize, position.character as usize);
+            let Some(result) = find_in_file(&mut file.file_analyzer, position) else { return None };
+            let usages = match result {
+                QueryResult::VarDeclaration(var) => {
+                    file.file_analyzer.query_usage(var.name_node.id)
+                }
+                QueryResult::Parameter(par) => file.file_analyzer.query_usage(par.name_node.id),
+
+                _ => return None,
+            };
+            let usage_location: Vec<Location> = usages
+                .into_iter()
+                .map(|usage| usage.span)
+                .map(|span| {
+                    Range::new(
+                        Position::new(span.start.row as u32, span.start.column as u32),
+                        Position::new(span.end.row as u32, span.end.column as u32),
+                    )
+                })
+                .map(|range| Location {
+                    uri: url.as_ref().clone(),
+                    range,
+                })
+                .collect();
+            Some(usage_location)
         })?;
         Ok(())
     }
@@ -560,6 +610,7 @@ impl Server {
                                     Ok(())
                                 })?
                                 .on::<GotoDefinition, _>(|id, params| self.goto_definition(id, params))?
+                                .on::<References, _>(|id, params| self.references(id, params))?
                                 .on::<PrepareRenameRequest, _>(|id, params| {
                                     self.prepare_rename(id, params)
                                 })?

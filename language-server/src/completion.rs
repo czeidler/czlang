@@ -31,7 +31,7 @@ pub fn dot_completion(
         return Some(vec![]);
     };
     match result {
-        QueryResult::Identifier(block, identifier_semantics) => {
+        QueryResult::Identifier(_, block, identifier_semantics) => {
             let Some(binding) = identifier_semantics.binding else {
                 return Some(vec![]);
             };
