@@ -22,6 +22,7 @@ use threadpool::ThreadPool;
 use crate::{
     completion::{dot_completion, scope_symbols_completion},
     dispatch::{NotificationDispatcher, RequestDispatcher},
+    inlay_hint::inlay_hints,
     normalize_uri,
 };
 
@@ -91,7 +92,7 @@ impl Server {
                 },
             )),
             document_link_provider: None,
-            folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
+            folding_range_provider: None,
             definition_provider: Some(OneOf::Left(true)),
             references_provider: Some(OneOf::Left(true)),
             hover_provider: Some(HoverProviderCapability::Simple(true)),
@@ -99,14 +100,14 @@ impl Server {
                 trigger_characters: Some(vec![".".into()]),
                 ..CompletionOptions::default()
             }),
-            document_symbol_provider: Some(OneOf::Left(true)),
-            workspace_symbol_provider: Some(OneOf::Left(true)),
+            document_symbol_provider: None,
+            workspace_symbol_provider: None,
             rename_provider: Some(OneOf::Right(RenameOptions {
                 prepare_provider: Some(true),
                 work_done_progress_options: WorkDoneProgressOptions::default(),
             })),
-            document_highlight_provider: Some(OneOf::Left(true)),
-            document_formatting_provider: Some(OneOf::Left(true)),
+            document_highlight_provider: None,
+            document_formatting_provider: None,
             inlay_hint_provider: Some(OneOf::Left(true)),
             ..ServerCapabilities::default()
         }
@@ -572,9 +573,32 @@ impl Server {
         Ok(())
     }
 
-    fn inlay_hints(&self, _id: RequestId, mut params: InlayHintParams) -> Result<()> {
+    fn inlay_hints(&self, id: RequestId, mut params: InlayHintParams) -> Result<()> {
         normalize_uri(&mut params.text_document.uri);
-        let _uri = Arc::new(params.text_document.uri.clone());
+        let url = Arc::new(params.text_document.uri.clone());
+        let project = self.project.clone();
+        self.handle_feature_request(id, params, url.clone(), move |request| {
+            let mut project = project.lock().unwrap();
+            let uri: String = url.as_ref().clone().into();
+            let file = project.open_files.get_mut(&uri);
+            let Some(file) = file else {return None};
+
+            let range = &request.params.range;
+            let hints = inlay_hints(
+                file,
+                &SourceSpan {
+                    start: SourcePosition {
+                        row: range.start.line as usize,
+                        column: range.start.character as usize,
+                    },
+                    end: SourcePosition {
+                        row: range.end.line as usize,
+                        column: range.end.character as usize,
+                    },
+                },
+            );
+            Some(hints)
+        })?;
         Ok(())
     }
 
@@ -623,14 +647,14 @@ impl Server {
                                     self.document_highlight(id, params)
                                 })?
                                 .on::<Formatting, _>(|id, params| self.formatting(id, params))?
-                                .on::<ExecuteCommand,_>(|id, params| self.execute_command(id, params))?
+                                .on::<ExecuteCommand, _>(|id, params| self.execute_command(id, params))?
                                 .on::<SemanticTokensRangeRequest, _>(|id, params| {
                                     self.semantic_tokens_range(id, params)
                                 })?
                                 .on::<InlayHintRequest, _>(|id,params| {
                                     self.inlay_hints(id, params)
                                 })?
-                                .on::<InlayHintResolveRequest,_>(|id, params| {
+                                .on::<InlayHintResolveRequest, _>(|id, params| {
                                     self.inlay_hint_resolve(id, params)
                                 })?
                                 .default()
@@ -654,7 +678,6 @@ impl Server {
                                 .default();
                         }
                         Message::Response(_) => {
-
                         }
                     };
                 },

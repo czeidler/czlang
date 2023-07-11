@@ -1,5 +1,6 @@
 mod completion;
 mod dispatch;
+mod inlay_hint;
 mod server;
 
 pub use self::server::Server;
