@@ -2,9 +2,9 @@
   "dependencies": {
     "generator-code": "^1.7.1",
     "yo": "^4.3.1",
-    "vscode-jsonrpc": "^3.0.1-alpha.3",
-    "vscode-languageserver-types": "^3.0.1-alpha.5",
-    "vscode-languageclient": "^3.0.1-alpha.7"
+    "vscode-jsonrpc": "8.1.0",
+    "vscode-languageserver-types": "3.17.3",
+    "vscode-languageclient": "8.1.0"
   },
   "devDependencies": {
     "vscode": "^1.0.0",
