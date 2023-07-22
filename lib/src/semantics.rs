@@ -993,6 +993,15 @@ impl FileSemanticAnalyzer {
             flow: FlowContainer::start_flow(),
         };
         self.validate_block(&mut flow_container, &fun.body(), false);
+
+        if let Some(ret) = &fun.signature.return_type {
+            if flow_container.flow.returned.is_none() {
+                self.errors.push(LangError::type_error(
+                    &ret.node,
+                    "Block must return a value".to_string(),
+                ));
+            }
+        }
     }
 
     fn bind_block_return(&mut self, block: &Ptr<Block>, last_expression: &Expression) {
