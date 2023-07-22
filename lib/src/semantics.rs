@@ -1118,7 +1118,7 @@ impl FileSemanticAnalyzer {
         };
 
         let overlap = intersection(&ret_types, &fun_ret_type);
-        if overlap.is_none() {
+        let Some(overlap) = overlap else {
             self.errors.push(LangError::type_error(
                 &expression
                     .map(|e| e.node.clone())
@@ -1134,8 +1134,11 @@ impl FileSemanticAnalyzer {
                 ),
             ));
             return ExpressionSemantics::empty();
+        };
+        if let Some(ret_value_expression) = &ret.expression {
+            self.back_propagate_types(block, ret_value_expression, &overlap);
         }
-        ExpressionSemantics::resolved_types(overlap)
+        ExpressionSemantics::resolved_types(Some(overlap))
     }
 
     /// If statement is an expression this method returns the ExpressionSemantics None.
