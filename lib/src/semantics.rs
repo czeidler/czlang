@@ -583,6 +583,7 @@ impl FileSemanticAnalyzer {
         ))
     }
 
+    /// Queries the validated, declared variable type
     pub fn query_variable_type(
         &mut self,
         fun: &Ptr<Function>,

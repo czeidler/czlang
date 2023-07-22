@@ -34,6 +34,25 @@ fn inlay_hint_from_block(
                 inlay_hints_from_expr(file, &block, range, &exp.expression, hints);
             }
             Statement::VarDeclaration(var) => {
+                if var.types.is_none() {
+                    let var_type = file.file_analyzer.query_var_types(&var);
+                    hints.push(InlayHint {
+                        position: Position {
+                            line: var.name_node.span.end.row as u32,
+                            character: var.name_node.span.end.column as u32,
+                        },
+                        label: InlayHintLabel::String(format!(
+                            " {}",
+                            types_to_string(var_type.types())
+                        )),
+                        kind: Some(InlayHintKind::TYPE),
+                        text_edits: None,
+                        tooltip: None,
+                        padding_left: None,
+                        padding_right: None,
+                        data: None,
+                    });
+                }
                 inlay_hints_from_expr(file, &block, range, &var.value, hints);
             }
             Statement::Return(ret) => {
