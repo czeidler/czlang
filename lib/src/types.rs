@@ -294,7 +294,7 @@ pub fn intersection(left_types: &SumType, right_types: &SumType) -> Option<SumTy
                         }
                         return None;
                     }
-                    (_, Type::Either(right_value, right_err)) =>{
+                    (_, Type::Either(right_value, _)) =>{
                         let Some(value_intersection) = intersection(&SumType::from_type(left.clone()), &SumType::from_types(right_value),
                         ) else {
                             return None;
@@ -304,7 +304,7 @@ pub fn intersection(left_types: &SumType, right_types: &SumType) -> Option<SumTy
                             node: left.node.clone(),
                             is_reference: left.is_reference,
                             is_mut: left.is_mut,
-                            r#type: Type::Either(value_intersection.types().clone(), right_err.clone()),
+                            r#type: Type::Either(value_intersection.types().clone(), vec![]),
                         })
                     }
                     (Type::Unresolved(l), Type::Unresolved(r)) => {
