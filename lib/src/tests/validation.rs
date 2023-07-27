@@ -1,6 +1,9 @@
 #[cfg(test)]
 mod rust_validation_tests {
-    use crate::test_utils::{transpile_and_validate_project, validate_project};
+    use crate::{
+        test_utils::{transpile_and_validate_project, validate_project},
+        tests::find_var_in_fun,
+    };
 
     #[test]
     fn expression_validation_1() {
@@ -312,5 +315,45 @@ fun main() { test() }
         "#,
         )
         .unwrap_err();
+    }
+
+    #[test]
+    fn pipe_types() {
+        let analysis = validate_project(
+            "test_projects/pipe_types",
+            r#"
+            fun value() i32 {
+                return 8
+            }
+
+            fun either() i32 ? null {
+                return 8
+            }
+
+            fun either2() bool ? i32 {
+                return true
+            }
+
+            fun main() {
+                var value0 = value() |> true
+                var value1= value() |> _ ? false
+                var value2 = either() |> false
+                var value3 = either() |?> true
+                var value4 = either() |?> either2()
+            }
+        "#,
+        )
+        .unwrap();
+
+        let value = find_var_in_fun(&analysis, "main", "value0").unwrap();
+        assert_eq!(value.to_string(), "bool");
+        let value = find_var_in_fun(&analysis, "main", "value1").unwrap();
+        assert_eq!(value.to_string(), "_ ? bool");
+        let value = find_var_in_fun(&analysis, "main", "value2").unwrap();
+        assert_eq!(value.to_string(), "bool");
+        let value = find_var_in_fun(&analysis, "main", "value3").unwrap();
+        assert_eq!(value.to_string(), "bool | i32");
+        let value = find_var_in_fun(&analysis, "main", "value4").unwrap();
+        assert_eq!(value.to_string(), "bool | i32 ? null | i32");
     }
 }

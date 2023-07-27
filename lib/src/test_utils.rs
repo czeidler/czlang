@@ -41,7 +41,10 @@ pub fn check_project(test_dir: &str) {
     assert!(output.status.success());
 }
 
-pub fn validate_project<'a>(test_dir: &str, file_content: &str) -> Result<(), anyhow::Error> {
+pub fn validate_project<'a>(
+    test_dir: &str,
+    file_content: &str,
+) -> Result<FileSemanticAnalyzer, anyhow::Error> {
     create_project(test_dir, file_content);
     let project_dir = Path::new(test_dir);
 
@@ -70,7 +73,7 @@ pub fn validate_project<'a>(test_dir: &str, file_content: &str) -> Result<(), an
         return Err(anyhow::Error::msg(analyzer.errors[0].msg.clone()));
     }
 
-    Ok(())
+    Ok(analyzer)
 }
 
 pub fn transpile_and_validate_project(test_dir: &str, file_content: &str) {

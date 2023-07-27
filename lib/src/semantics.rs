@@ -367,6 +367,7 @@ fn apply_inverse_narrowing(
     Ptr::new(new_flow)
 }
 
+#[derive(Debug)]
 pub struct FileSemanticAnalyzer {
     pub file: Ptr<FileContext>,
     /// List of all sum_types in the file
@@ -1936,16 +1937,36 @@ impl FileSemanticAnalyzer {
             is_assignment,
         );
 
-        if flow.flow.returned.is_some() {
-            if let Some((value, err)) = left_exp_types.as_either() {
-                if pipe.is_err_pipe {
-                    return Some(value);
-                } else {
-                    return Some(err);
-                }
-            }
+        let right_types = right.types();
+        if !pipe.is_err_pipe {
+            return right_types;
         }
-        right.types()
+
+        // left must be an error either
+        let (mut left_value, mut left_error) = left_exp_types.as_either().unwrap();
+        let right_types = right.types();
+
+        let left = left_exp_types.types()[0].clone();
+        if let Some((right_value, right_err)) = right_types
+            .as_ref()
+            .map(|it| it.as_either())
+            .unwrap_or(None)
+        {
+            left_value.union(right_value);
+            left_error.union(right_err);
+            return Some(SumType::from_type(RefType {
+                node: left.node.clone(),
+                is_reference: left.is_reference,
+                is_mut: left.is_mut,
+                r#type: Type::Either(
+                    left_value.into_iter().collect(),
+                    left_error.into_iter().collect(),
+                ),
+            }));
+        } else {
+            left_value.union(right_types.unwrap_or(SumType::empty()));
+            return Some(left_value);
+        }
     }
 
     fn bind_expression_type(&mut self, expression: &Expression, semantics: ExpressionSemantics) {
