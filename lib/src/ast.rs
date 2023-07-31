@@ -381,11 +381,7 @@ impl<'a> Iterator for StatementIterator<'a> {
                         continue;
                     };
 
-                    let err_return = child_by_field(&statement_node, "error_return").is_some();
-                    Some(Statement::Expression(ExpressionStatement {
-                        expression,
-                        err_return,
-                    }))
+                    Some(Statement::Expression(ExpressionStatement { expression }))
                 }
                 "var_declaration" => parse_var_declaration(&self.file, statement_node, &self.block)
                     .map(|statement| Statement::VarDeclaration(Ptr::new(statement))),
@@ -545,8 +541,6 @@ pub struct ReturnStatement {
 #[derive(Debug, Clone)]
 pub struct ExpressionStatement {
     pub expression: Expression,
-    /// Expression ends with a "?"
-    pub err_return: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -627,6 +621,11 @@ pub struct PipeExpression {
 }
 
 #[derive(Debug, Clone)]
+pub struct ReturnErrorPipeExpression {
+    pub left: Box<Expression>,
+}
+
+#[derive(Debug, Clone)]
 pub struct EitherCheckExpression {
     pub left: Box<Expression>,
     pub is_equal: bool,
@@ -657,6 +656,7 @@ pub enum ExpressionType {
     If(Ptr<IfExpression>),
     ErrorExpression(Box<Expression>),
     Pipe(PipeExpression),
+    ReturnErrorPipe(ReturnErrorPipeExpression),
     EitherCheck(EitherCheckExpression),
 }
 
@@ -1083,6 +1083,9 @@ fn parse_expression(
         "err_pipe_expression" => {
             ExpressionType::Pipe(parse_pipe_expression(context, node, block, true)?)
         }
+        "return_err_pipe_expression" => {
+            ExpressionType::ReturnErrorPipe(parse_return_err_pipe_expression(context, node, block)?)
+        }
         "either_check_expression" => {
             ExpressionType::EitherCheck(parse_either_check_expression(context, node, block)?)
         }
@@ -1123,6 +1126,17 @@ fn parse_pipe_expression(
         left: Box::new(parse_expression(context, &left, block)?),
         right: Box::new(parse_expression(context, &right, block)?),
         is_err_pipe,
+    })
+}
+
+fn parse_return_err_pipe_expression(
+    context: &Ptr<FileContext>,
+    node: &Node,
+    block: &Ptr<Block>,
+) -> Option<ReturnErrorPipeExpression> {
+    let left = child_by_field(&node, "left")?;
+    Some(ReturnErrorPipeExpression {
+        left: Box::new(parse_expression(context, &left, block)?),
     })
 }
 

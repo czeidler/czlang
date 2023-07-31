@@ -5,10 +5,10 @@ use std::path::{Path, PathBuf};
 use crate::ast::{
     print_err, Array, ArrayExpression, BinaryOperator, Block, BlockTrait, Expression,
     ExpressionType, Field, FileContext, Function, FunctionCall, FunctionSignature, FunctionTrait,
-    IfAlternative, IfExpression, Parameter, PipeExpression, RefType, SelectorExpression,
-    SelectorFieldType, Slice, SliceExpression, Statement, StringTemplatePart, Struct,
-    StructFieldInitialization, StructInitialization, Type, TypeParam, TypeParamType, UnaryOperator,
-    VarDeclaration,
+    IfAlternative, IfExpression, Parameter, PipeExpression, RefType, ReturnErrorPipeExpression,
+    SelectorExpression, SelectorFieldType, Slice, SliceExpression, Statement, StringTemplatePart,
+    Struct, StructFieldInitialization, StructInitialization, Type, TypeParam, TypeParamType,
+    UnaryOperator, VarDeclaration,
 };
 use crate::buildin::Buildins;
 use crate::semantics::{FileSemanticAnalyzer, TypeNarrowing};
@@ -346,6 +346,9 @@ impl RustTranspiler {
                 self.transpile_if_expression(analyzer, if_expression, block, &target, writer)
             }
             ExpressionType::Pipe(pipe) => self.transpile_pipe_expr(analyzer, pipe, block, writer),
+            ExpressionType::ReturnErrorPipe(pipe) => {
+                self.transpile_ret_err_pipe_expr(analyzer, pipe, block, writer)
+            }
             ExpressionType::ErrorExpression(error) => {
                 self.transpile_err_expr(analyzer, expression, error, block, writer)
             }
@@ -414,6 +417,57 @@ impl RustTranspiler {
             writer.new_line();
         });
         writer.write("}");
+    }
+
+    fn transpile_ret_err_pipe_expr(
+        &self,
+        analyzer: &mut FileSemanticAnalyzer,
+        pipe: &ReturnErrorPipeExpression,
+        block: &Block,
+        writer: &mut Writer,
+    ) {
+        self.transpile_expression(analyzer, &pipe.left, block, writer);
+
+        let expression_type = analyzer
+            .query_expression(block, &pipe.left)
+            .unwrap()
+            .types()
+            .unwrap()
+            .types()[0]
+            .clone();
+        let expression_err = match expression_type.r#type {
+            Type::Either(_, err) => err,
+            _ => {
+                panic!("Should be an either type")
+            }
+        };
+        let return_type = block
+            .fun()
+            .signature
+            .return_type
+            .as_ref()
+            .unwrap()
+            .types
+            .clone();
+        let return_err = match &return_type[0].r#type {
+            Type::Either(_, err) => err.clone(),
+            _ => {
+                panic!("Should be an either type")
+            }
+        };
+        if expression_err != return_err {
+            let expression_err = SumType::from_types(&expression_err);
+            writer.write(".map_err(|err| ");
+            self.transpile_type_mapping(
+                "err",
+                &SumType::from_types(&return_err),
+                &expression_err,
+                &expression_err,
+                writer,
+            );
+            writer.write(")");
+        }
+        writer.write("?");
     }
 
     fn transpile_selector_expr(
@@ -1027,48 +1081,6 @@ impl RustTranspiler {
                 Statement::Expression(statement) => {
                     if iterator.peek().is_some() {
                         self.transpile_expression(analyzer, &statement.expression, block, writer);
-                        if statement.err_return {
-                            let expression_type = analyzer
-                                .query_expression(block, &statement.expression)
-                                .unwrap()
-                                .types()
-                                .unwrap()
-                                .types()[0]
-                                .clone();
-                            let expression_err = match expression_type.r#type {
-                                Type::Either(_, err) => err,
-                                _ => {
-                                    panic!("Should be an either type")
-                                }
-                            };
-                            let return_type = block
-                                .fun()
-                                .signature
-                                .return_type
-                                .as_ref()
-                                .unwrap()
-                                .types
-                                .clone();
-                            let return_err = match &return_type[0].r#type {
-                                Type::Either(_, err) => err.clone(),
-                                _ => {
-                                    panic!("Should be an either type")
-                                }
-                            };
-                            if expression_err != return_err {
-                                let expression_err = SumType::from_types(&expression_err);
-                                writer.write(".map_err(|err| ");
-                                self.transpile_type_mapping(
-                                    "err",
-                                    &SumType::from_types(&return_err),
-                                    &expression_err,
-                                    &expression_err,
-                                    writer,
-                                );
-                                writer.write(")");
-                            }
-                            writer.write("?");
-                        }
                         writer.write(";");
                         writer.new_line();
                         continue;
@@ -1077,9 +1089,6 @@ impl RustTranspiler {
                         .query_block(block)
                         .and_then(|s| s.block_return) else {
                         self.transpile_expression(analyzer, &statement.expression, block, writer);
-                        if statement.err_return {
-                            writer.write("?");
-                        }
                         writer.write(";");
                         writer.new_line();
                         return;

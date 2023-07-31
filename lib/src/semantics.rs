@@ -1158,34 +1158,6 @@ impl FileSemanticAnalyzer {
                     &statement.expression,
                     is_assignment,
                 );
-                if statement.err_return {
-                    let Some(expr_types) = semantics.types() else {
-                        self.errors.push(LangError::type_error(
-                            &statement.expression.node,
-                            format!(
-                                "Invalid expression type in error return"
-                            ),
-                        ));
-                        return None;
-                    };
-                    let return_types = block
-                        .fun()
-                        .signature
-                        .return_type
-                        .as_ref()
-                        .map(|t| SumType::from_types(&t.types))
-                        .unwrap_or(SumType::empty());
-                    match intersection(&expr_types, &return_types) {
-                        Some(_) => {}
-                        None => {
-                            self.errors.push(LangError::type_error(
-                                &statement.expression.node,
-                                format!("No overlap between expression error ({}) and function return type ({})",  types_to_string(expr_types.types()), types_to_string(return_types.types())),
-                            ));
-                            return None;
-                        }
-                    }
-                }
                 return Some(semantics);
             }
             Statement::VarDeclaration(var_declaration) => {
@@ -1360,6 +1332,7 @@ impl FileSemanticAnalyzer {
                 self.narrow_expression_type(block, &expression, types);
             }
             ExpressionType::Pipe(_) => {}
+            ExpressionType::ReturnErrorPipe(_) => {}
             ExpressionType::EitherCheck(_) => {}
         }
     }
@@ -1817,6 +1790,51 @@ impl FileSemanticAnalyzer {
                     &check.left.node,
                     "Either check expression can only be used within if expression".to_string(),
                 ));
+            }
+            ExpressionType::ReturnErrorPipe(pipe) => {
+                let semantics = self.validate_expression(flow, context, &pipe.left, is_assignment);
+                let Some(expr_types) = semantics.types() else {
+                    return Err(LangError::type_error(
+                        &pipe.left.node,
+                        format!(
+                            "Invalid expression type in error return"
+                        ),
+                    ));
+                };
+                let Some((expr_value, expr_err)) = expr_types.as_either() else {
+                    return Err(LangError::type_error(
+                        &pipe.left.node,
+                        format!(
+                            "Expression is not an error error type"
+                        ),
+                    ));
+                };
+                let return_types = context
+                    .block
+                    .fun()
+                    .signature
+                    .return_type
+                    .as_ref()
+                    .map(|t| SumType::from_types(&t.types))
+                    .unwrap_or(SumType::empty());
+                let Some((_, ret_err)) = return_types.as_either() else {
+                    return Err(LangError::type_error(
+                        &pipe.left.node,
+                        format!(
+                            "Function must return an error either type"
+                        ),
+                    ));
+                };
+                match intersection(&expr_err, &ret_err) {
+                    Some(_) => {}
+                    None => {
+                        return Err(LangError::type_error(
+                            &pipe.left.node,
+                            format!("No overlap between expression error ({}) and function return type ({})",  types_to_string(expr_types.types()), types_to_string(return_types.types())),
+                        ));
+                    }
+                }
+                ExpressionSemantics::resolved_types(Some(expr_value))
             }
         };
         Ok(Some(expression_semantics))

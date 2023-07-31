@@ -410,7 +410,7 @@ fun main() {
 
             fun test_call2() bool ? i32 | string {
                 var test bool ? string  = true
-                test?
+                var test2 bool = test?
                 return false
             }
 
