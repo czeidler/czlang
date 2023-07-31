@@ -72,6 +72,10 @@
             "named": true
           },
           {
+            "type": "return_err_pipe_expression",
+            "named": true
+          },
+          {
             "type": "selector_expression",
             "named": true
           },
@@ -165,6 +169,10 @@
           },
           {
             "type": "pipe_expression",
+            "named": true
+          },
+          {
+            "type": "return_err_pipe_expression",
             "named": true
           },
           {
@@ -306,6 +314,10 @@
             "named": true
           },
           {
+            "type": "return_err_pipe_expression",
+            "named": true
+          },
+          {
             "type": "selector_expression",
             "named": true
           },
@@ -399,6 +411,10 @@
           },
           {
             "type": "pipe_expression",
+            "named": true
+          },
+          {
+            "type": "return_err_pipe_expression",
             "named": true
           },
           {
@@ -566,6 +582,10 @@
             "named": true
           },
           {
+            "type": "return_err_pipe_expression",
+            "named": true
+          },
+          {
             "type": "selector_expression",
             "named": true
           },
@@ -682,6 +702,10 @@
           },
           {
             "type": "pipe_expression",
+            "named": true
+          },
+          {
+            "type": "return_err_pipe_expression",
             "named": true
           },
           {
@@ -805,6 +829,10 @@
             "named": true
           },
           {
+            "type": "return_err_pipe_expression",
+            "named": true
+          },
+          {
             "type": "selector_expression",
             "named": true
           },
@@ -901,6 +929,10 @@
             "named": true
           },
           {
+            "type": "return_err_pipe_expression",
+            "named": true
+          },
+          {
             "type": "selector_expression",
             "named": true
           },
@@ -988,6 +1020,10 @@
           },
           {
             "type": "pipe_expression",
+            "named": true
+          },
+          {
+            "type": "return_err_pipe_expression",
             "named": true
           },
           {
@@ -1087,6 +1123,10 @@
             "named": true
           },
           {
+            "type": "return_err_pipe_expression",
+            "named": true
+          },
+          {
             "type": "selector_expression",
             "named": true
           },
@@ -1119,6 +1159,11 @@
         }
       ]
     }
+  },
+  {
+    "type": "error_op",
+    "named": true,
+    "fields": {}
   },
   {
     "type": "error_type",
@@ -1216,16 +1261,6 @@
     "type": "expression_statement",
     "named": true,
     "fields": {
-      "error_return": {
-        "multiple": false,
-        "required": false,
-        "types": [
-          {
-            "type": "error_op",
-            "named": true
-          }
-        ]
-      },
       "expression": {
         "multiple": false,
         "required": true,
@@ -1292,6 +1327,10 @@
           },
           {
             "type": "pipe_expression",
+            "named": true
+          },
+          {
+            "type": "return_err_pipe_expression",
             "named": true
           },
           {
@@ -1655,6 +1694,10 @@
             "named": true
           },
           {
+            "type": "return_err_pipe_expression",
+            "named": true
+          },
+          {
             "type": "selector_expression",
             "named": true
           },
@@ -1820,6 +1863,10 @@
           },
           {
             "type": "pipe_expression",
+            "named": true
+          },
+          {
+            "type": "return_err_pipe_expression",
             "named": true
           },
           {
@@ -2239,6 +2286,10 @@
             "named": true
           },
           {
+            "type": "return_err_pipe_expression",
+            "named": true
+          },
+          {
             "type": "selector_expression",
             "named": true
           },
@@ -2383,6 +2434,10 @@
             "named": true
           },
           {
+            "type": "return_err_pipe_expression",
+            "named": true
+          },
+          {
             "type": "selector_expression",
             "named": true
           },
@@ -2470,6 +2525,10 @@
           },
           {
             "type": "pipe_expression",
+            "named": true
+          },
+          {
+            "type": "return_err_pipe_expression",
             "named": true
           },
           {
@@ -2628,6 +2687,106 @@
     }
   },
   {
+    "type": "return_err_pipe_expression",
+    "named": true,
+    "fields": {
+      "left": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "array_expression",
+            "named": true
+          },
+          {
+            "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "block",
+            "named": true
+          },
+          {
+            "type": "either_check_expression",
+            "named": true
+          },
+          {
+            "type": "err_pipe_expression",
+            "named": true
+          },
+          {
+            "type": "error_expression",
+            "named": true
+          },
+          {
+            "type": "false",
+            "named": true
+          },
+          {
+            "type": "float_literal",
+            "named": true
+          },
+          {
+            "type": "function_call",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "if_expression",
+            "named": true
+          },
+          {
+            "type": "int_literal",
+            "named": true
+          },
+          {
+            "type": "interpreted_string_literal",
+            "named": true
+          },
+          {
+            "type": "null",
+            "named": true
+          },
+          {
+            "type": "parenthesized_expression",
+            "named": true
+          },
+          {
+            "type": "pipe_expression",
+            "named": true
+          },
+          {
+            "type": "return_err_pipe_expression",
+            "named": true
+          },
+          {
+            "type": "selector_expression",
+            "named": true
+          },
+          {
+            "type": "slice_expression",
+            "named": true
+          },
+          {
+            "type": "struct_initialization",
+            "named": true
+          },
+          {
+            "type": "true",
+            "named": true
+          },
+          {
+            "type": "unary_expression",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "type": "return_statement",
     "named": true,
     "fields": {
@@ -2697,6 +2856,10 @@
           },
           {
             "type": "pipe_expression",
+            "named": true
+          },
+          {
+            "type": "return_err_pipe_expression",
             "named": true
           },
           {
@@ -2793,6 +2956,10 @@
           },
           {
             "type": "pipe_expression",
+            "named": true
+          },
+          {
+            "type": "return_err_pipe_expression",
             "named": true
           },
           {
@@ -2985,6 +3152,10 @@
             "named": true
           },
           {
+            "type": "return_err_pipe_expression",
+            "named": true
+          },
+          {
             "type": "selector_expression",
             "named": true
           },
@@ -3075,6 +3246,10 @@
             "named": true
           },
           {
+            "type": "return_err_pipe_expression",
+            "named": true
+          },
+          {
             "type": "selector_expression",
             "named": true
           },
@@ -3162,6 +3337,10 @@
           },
           {
             "type": "pipe_expression",
+            "named": true
+          },
+          {
+            "type": "return_err_pipe_expression",
             "named": true
           },
           {
@@ -3607,6 +3786,10 @@
             "named": true
           },
           {
+            "type": "return_err_pipe_expression",
+            "named": true
+          },
+          {
             "type": "selector_expression",
             "named": true
           },
@@ -3787,6 +3970,10 @@
             "named": true
           },
           {
+            "type": "return_err_pipe_expression",
+            "named": true
+          },
+          {
             "type": "selector_expression",
             "named": true
           },
@@ -3907,6 +4094,10 @@
     "named": false
   },
   {
+    "type": "?",
+    "named": false
+  },
+  {
     "type": "?.",
     "named": false
   },
@@ -3933,10 +4124,6 @@
   {
     "type": "else",
     "named": false
-  },
-  {
-    "type": "error_op",
-    "named": true
   },
   {
     "type": "escape_sequence",

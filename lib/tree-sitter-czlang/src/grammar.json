@@ -1058,22 +1058,6 @@
             "type": "SYMBOL",
             "name": "_expression"
           }
-        },
-        {
-          "type": "CHOICE",
-          "members": [
-            {
-              "type": "FIELD",
-              "name": "error_return",
-              "content": {
-                "type": "SYMBOL",
-                "name": "error_op"
-              }
-            },
-            {
-              "type": "BLANK"
-            }
-          ]
         }
       ]
     },
@@ -1314,6 +1298,10 @@
         },
         {
           "type": "SYMBOL",
+          "name": "return_err_pipe_expression"
+        },
+        {
+          "type": "SYMBOL",
           "name": "either_check_expression"
         }
       ]
@@ -1431,6 +1419,27 @@
               "type": "SYMBOL",
               "name": "_expression"
             }
+          }
+        ]
+      }
+    },
+    "return_err_pipe_expression": {
+      "type": "PREC_RIGHT",
+      "value": 0,
+      "content": {
+        "type": "SEQ",
+        "members": [
+          {
+            "type": "FIELD",
+            "name": "left",
+            "content": {
+              "type": "SYMBOL",
+              "name": "_expression"
+            }
+          },
+          {
+            "type": "STRING",
+            "value": "?"
           }
         ]
       }

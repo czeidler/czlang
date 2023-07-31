@@ -114,12 +114,137 @@ fun x() i32 ? bool {
       (primitive_type))
     (block
       (expression_statement
-        (function_call
-          (identifier)
-          (argument_list)
+        (return_err_pipe_expression
+          (function_call
+            (identifier)
+            (argument_list)
+          )
         )
-        (error_op)
       )
+      (return_statement
+        (error_expression
+          (error_op)
+          (true)
+        )
+      )
+    )
+  )
+)
+
+==================
+Error auto return with assignment
+==================
+
+fun x() i32 ? bool {
+  var test = testCall()?
+  return _ ? true
+}
+
+---
+(source_file
+  (function_definition
+    (identifier)
+    (parameter_list)
+    (error_type
+      (primitive_type)
+      (error_op)
+      (primitive_type))
+    (block
+      (var_declaration
+        (identifier)
+        (return_err_pipe_expression
+          (function_call
+            (identifier)
+            (argument_list)
+          )
+        )
+      )
+      (return_statement
+        (error_expression
+          (error_op)
+          (true)
+        )
+      )
+    )
+  )
+)
+
+==================
+Error auto return after expression
+==================
+
+fun x(arg bool ? bool) i32 ? bool {
+  var test = testCall(arg?)?
+  test?
+  method()?.method2()?
+  if true {
+    _ ? false
+  } else {
+    _ ? true
+  }?
+  return _ ? true
+}
+
+---
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameter_list
+      (parameter
+        (identifier)
+        (error_type
+          (primitive_type)
+          (error_op)
+          (primitive_type))))
+    (error_type
+      (primitive_type)
+      (error_op)
+      (primitive_type))
+    (block
+      (var_declaration
+        (identifier)
+        (return_err_pipe_expression
+          (function_call
+            (identifier)
+            (argument_list
+              (return_err_pipe_expression
+                (identifier)
+              )
+            )
+          )
+        )
+      )
+      (expression_statement
+        (return_err_pipe_expression
+          (identifier)
+          ))
+      (expression_statement
+        (return_err_pipe_expression
+          (selector_expression
+            (function_call
+              (identifier)
+              (argument_list))
+            (selector_field
+              (function_call
+                (identifier)
+                (argument_list))))
+          ))
+      (expression_statement
+        (return_err_pipe_expression
+          (if_expression
+            (true)
+            (block
+              (expression_statement
+                (error_expression
+                  (error_op)
+                  (false))))
+            (block
+              (expression_statement
+                (error_expression
+                  (error_op)
+                  (true)))))
+          ))
       (return_statement
         (error_expression
           (error_op)
