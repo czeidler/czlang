@@ -239,6 +239,12 @@ fn find_in_expression(
             }
             None
         }
+        ExpressionType::ReturnErrorPipe(pipe) => {
+            if pipe.left.node.contains(position) {
+                return find_in_expression(analyzer, block, &pipe.left, position);
+            }
+            None
+        }
         _ => None,
     }
 }
