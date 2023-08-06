@@ -34,3 +34,53 @@ fun x() i32 {
     )
   )
 )
+
+==================
+Function call with trailing closure
+==================
+
+fun x() i32 {
+  callFunction(2) {}
+
+  callFunction2 {}
+
+  // test block is still working
+  var test = {
+    2
+  }
+
+  {
+
+  }
+}
+
+---
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameter_list)
+    (primitive_type)
+    (block
+      (expression_statement
+        (function_call
+          (identifier)
+          (argument_list
+            (int_literal))
+          (block)))
+      (expression_statement
+        (function_call
+          (identifier)
+          (block)))
+      (comment)
+      (var_declaration
+        (identifier)
+        (block
+          (expression_statement
+            (int_literal))))
+      (expression_statement
+        (block)
+      )
+    )
+  )
+)
