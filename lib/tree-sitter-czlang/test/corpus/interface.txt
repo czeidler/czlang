@@ -2,7 +2,7 @@
 Struct impl
 ==================
 
-fun (s &MyStruct)member() {
+fun (s &MyStruct).member() {
 
 }
 
@@ -28,24 +28,57 @@ Interface impl
 
 MyStruct implements MyInterface
 
-fun (s &MyStruct)MyInterface.test() {
+fun (s &MyStruct).MyInterface.test() {
+
+}
+
+fun (s &pkg1.MyStruct).(pkg2.MyInterface).test() {
+
+}
+
+fun (&pkg1.MyStruct).(pkg2.MyInterface).test() {
 
 }
 
 ---
 
 (source_file
-    (struct_impl_interface
-    (identifier)
-    (identifier))
-    (method_definition
+      (struct_impl_interface
+        (identifier)
+        (identifier))
+      (method_definition
         (receiver
-            (identifier)
-            (reference_type
-                (identifier)))
+          (identifier)
+          (reference_type
+            (identifier)))
         (identifier)
         (identifier)
         (parameter_list)
+        (block))
+      (method_definition
+        (receiver
+          (identifier)
+          (reference_type
+            (qualified_type
+              (identifier)
+              (identifier))))
+        (qualified_type
+          (identifier)
+          (identifier))
+        (identifier)
+        (parameter_list)
+        (block))
+      (method_definition
+        (receiver
+          (reference_type
+            (qualified_type
+              (identifier)
+              (identifier))))
+        (qualified_type
+          (identifier)
+          (identifier))
+        (identifier)
+        (parameter_list)
         (block)
-    )
+      )
 )

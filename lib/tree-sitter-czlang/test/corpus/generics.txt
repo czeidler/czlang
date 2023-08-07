@@ -103,7 +103,7 @@ interface MyInterface<T> {
 
 MyStruct<u8> implements MyInterface<bool>
 
-fun (s &MyStruct<u8>)MyInterface<bool>.test() {
+fun (s &MyStruct<u8>).MyInterface<bool>.test() {
 
 }
 
