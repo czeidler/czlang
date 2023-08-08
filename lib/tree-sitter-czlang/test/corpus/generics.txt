@@ -101,55 +101,46 @@ interface MyInterface<T> {
   fun test() T
 }
 
-MyStruct<u8> implements MyInterface<bool>
+MyStruct<u8> impl MyInterface<bool>
 
-fun (s &MyStruct<u8>).MyInterface<bool>.test() {
+fun (s &MyStruct<u8> impl MyInterface<bool>).test() {
 
 }
 
 ---
 
 (source_file
-    (interface_declaration
+  (interface_declaration
+    (identifier)
+    (type_params
+      (identifier))
+    (method_spec
+      (identifier)
+      (self_parameter_list)
+      (identifier)))
+  (struct_impl_interface
+    (generic_type
+      (identifier)
+      (type_arguments
+        (primitive_type)))
+    (generic_type
+      (identifier)
+      (type_arguments
+        (primitive_type))))
+  (method_definition
+    (receiver
+      (identifier)
+      (reference_type
+        (generic_type
+          (identifier)
+          (type_arguments
+            (primitive_type))))
+      (generic_type
         (identifier)
-        (type_params
-          (identifier))
-        (method_spec
-          (identifier)
-          (self_parameter_list)
-          (identifier)
-        )
-    )
-    (struct_impl_interface
-        (generic_type
-          (identifier)
-          (type_arguments
-            (primitive_type)))
-        (generic_type
-          (identifier)
-          (type_arguments
-            (primitive_type)
-          )
-        )
-    )
-    (method_definition
-        (receiver
-          (identifier)
-          (reference_type
-            (generic_type
-              (identifier)
-              (type_arguments
-                (primitive_type)
-              )
-            )
-          )
-        )
-        (generic_type
-          (identifier)
-          (type_arguments
-            (primitive_type)))
-        (identifier)
-        (parameter_list)
-        (block)
-    )
+        (type_arguments
+          (primitive_type))))
+    (identifier)
+    (parameter_list)
+    (block)
+  )
 )
