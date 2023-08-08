@@ -378,11 +378,11 @@ struct Test {
     a bool
 }
 
-fun (m &Test)test1() {
+fun (m &Test).test1() {
 
 }
 
-fun (m &Test)test2() {
+fun (m &Test).test2() {
 
 }
 
