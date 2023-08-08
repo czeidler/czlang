@@ -683,6 +683,20 @@
             "named": true
           }
         ]
+      },
+      "context": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "&",
+            "named": false
+          },
+          {
+            "type": "&mut",
+            "named": false
+          }
+        ]
       }
     }
   },
@@ -691,15 +705,15 @@
     "named": true,
     "fields": {
       "context": {
-        "multiple": true,
+        "multiple": false,
         "required": false,
         "types": [
           {
-            "type": "{",
+            "type": "&",
             "named": false
           },
           {
-            "type": "}",
+            "type": "&mut",
             "named": false
           }
         ]
@@ -711,20 +725,6 @@
           {
             "type": "parameter_list",
             "named": true
-          }
-        ]
-      },
-      "reference": {
-        "multiple": false,
-        "required": false,
-        "types": [
-          {
-            "type": "&",
-            "named": false
-          },
-          {
-            "type": "&mut",
-            "named": false
           }
         ]
       },
@@ -783,7 +783,47 @@
         "required": false,
         "types": [
           {
+            "type": "array_type",
+            "named": true
+          },
+          {
+            "type": "closure_type",
+            "named": true
+          },
+          {
+            "type": "error_type",
+            "named": true
+          },
+          {
             "type": "generic_type",
+            "named": true
+          },
+          {
+            "type": "identifier",
+            "named": true
+          },
+          {
+            "type": "parenthesized_type",
+            "named": true
+          },
+          {
+            "type": "primitive_type",
+            "named": true
+          },
+          {
+            "type": "qualified_type",
+            "named": true
+          },
+          {
+            "type": "reference_type",
+            "named": true
+          },
+          {
+            "type": "slice_type",
+            "named": true
+          },
+          {
+            "type": "sum_type",
             "named": true
           }
         ]

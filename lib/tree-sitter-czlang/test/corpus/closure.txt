@@ -2,51 +2,50 @@
 Closure type
 ==================
 
-fun f1(arg fun {}.(a i32) bool | u32) {
+fun f1(arg fun ().(a i32) bool | u32) {
 
 }
 
-fun f2(arg fun &{}.(a i32) bool | u32) {
+fun f2(arg fun (&).(a i32) bool | u32) {
 
 }
 
-fun f2<T>(arg fun &MyType<T>.(a i32) bool | u32) {
+fun f2<T>(arg fun (&MyType<T>).(a i32) bool | u32) {
 
 }
 
 ---
 
 (source_file
-    (function_definition
-    (identifier)
-    (parameter_list
-        (parameter
-        (identifier)
-        (closure_type
-            (parameter_list
-            (parameter
-                (identifier)
-                (primitive_type)))
-            (sum_type
-            (primitive_type)
-            (primitive_type)))))
-    (block))
-    (function_definition
+      (function_definition
         (identifier)
         (parameter_list
-            (parameter
+          (parameter
             (identifier)
             (closure_type
-                (parameter_list
+              (parameter_list
                 (parameter
-                    (identifier)
-                    (primitive_type)))
-                (sum_type
+                  (identifier)
+                  (primitive_type)))
+              (sum_type
                 (primitive_type)
                 (primitive_type)))))
-        (block)
-    )
-    (function_definition
+        (block))
+      (function_definition
+        (identifier)
+        (parameter_list
+          (parameter
+            (identifier)
+            (closure_type
+              (parameter_list
+                (parameter
+                  (identifier)
+                  (primitive_type)))
+              (sum_type
+                (primitive_type)
+                (primitive_type)))))
+        (block))
+      (function_definition
         (identifier)
         (type_params
           (identifier))
@@ -54,36 +53,33 @@ fun f2<T>(arg fun &MyType<T>.(a i32) bool | u32) {
           (parameter
             (identifier)
             (closure_type
-              (generic_type
-                (identifier)
-                (type_arguments
-                  (identifier)))
+              (reference_type
+                (generic_type
+                  (identifier)
+                  (type_arguments
+                    (identifier))))
               (parameter_list
                 (parameter
                   (identifier)
                   (primitive_type)))
               (sum_type
                 (primitive_type)
-                (primitive_type)
-              )
-            )
-          )
-        )
+                (primitive_type)))))
         (block)
-    )
+      )
 )
+
 
 ==================
 Closure call
 ==================
 
-fun f1(arg fun &mut{}.(a i32) bool | u32) {
+fun f1(arg fun (&mut).(a i32) bool | u32) {
 
 }
 
 fun main() {
-    f1(fun (a) { a + 2})
-    f1(fun {}(a) { a + 2})
+    f1(fun ()(a) { a + 2})
 }
 
 ---
@@ -118,26 +114,65 @@ fun main() {
                 (expression_statement
                     (binary_expression
                     (identifier)
-                    (int_literal))))))))
-        (expression_statement
-        (function_call
+                    (int_literal)))))))
+
+      )
+    )
+  )
+)
+
+==================
+Function pointer
+==================
+
+fun f1(arg fun (a i32) bool | u32) {
+
+}
+
+fun main() {
+    f1(fun (a) { a + 2})
+}
+
+---
+
+(source_file
+      (function_definition
+        (identifier)
+        (parameter_list
+          (parameter
             (identifier)
-            (argument_list
-            (closure_expression
-                (argument_list
-                (identifier))
-                (block
-                (expression_statement
-                    (binary_expression
-                    (identifier)
-                    (int_literal)
+            (closure_type
+              (parameter_list
+                (parameter
+                  (identifier)
+                  (primitive_type)))
+              (sum_type
+                (primitive_type)
+                (primitive_type)))))
+        (block))
+      (function_definition
+        (identifier)
+        (parameter_list)
+        (block
+          (expression_statement
+            (function_call
+              (identifier)
+              (argument_list
+                (closure_expression
+                  (argument_list
+                    (identifier))
+                  (block
+                    (expression_statement
+                      (binary_expression
+                        (identifier)
+                        (int_literal)
+                      )
                     )
+                  )
                 )
               )
             )
           )
         )
       )
-    )
-  )
 )
