@@ -5,10 +5,10 @@ use std::path::{Path, PathBuf};
 use crate::ast::{
     print_err, Array, ArrayExpression, BinaryOperator, Block, BlockTrait, Expression,
     ExpressionType, Field, FileContext, Function, FunctionCall, FunctionSignature, FunctionTrait,
-    IfAlternative, IfExpression, Parameter, PipeExpression, RefType, ReturnErrorPipeExpression,
-    SelectorExpression, SelectorFieldType, Slice, SliceExpression, Statement, StringTemplatePart,
-    Struct, StructFieldInitialization, StructInitialization, Type, TypeParam, TypeParamType,
-    UnaryOperator, VarDeclaration,
+    IfAlternative, IfExpression, Parameter, PipeExpression, Receiver, RefType,
+    ReturnErrorPipeExpression, SelectorExpression, SelectorFieldType, Slice, SliceExpression,
+    Statement, StringTemplatePart, Struct, StructFieldInitialization, StructInitialization, Type,
+    TypeParam, TypeParamType, UnaryOperator, VarDeclaration,
 };
 use crate::buildin::Buildins;
 use crate::semantics::{FileSemanticAnalyzer, TypeNarrowing};
@@ -200,7 +200,7 @@ impl RustTranspiler {
 
     fn transpile_parameters(
         &self,
-        receiver: &Option<Parameter>,
+        receiver: &Option<Receiver>,
         parameters: &Vec<Parameter>,
         writer: &mut Writer,
     ) {

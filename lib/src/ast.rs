@@ -266,11 +266,18 @@ pub struct ReturnType {
 }
 
 #[derive(Debug, Clone)]
+pub struct Receiver {
+    pub node: NodeData,
+    pub types: Vec<RefType>,
+    pub interface: Option<TypeParamType>,
+}
+
+#[derive(Debug, Clone)]
 pub struct FunctionSignature {
     pub node: NodeData,
 
     /// If a method, the named receiver struct, e.g. (m &MyStruct)
-    pub receiver: Option<Parameter>,
+    pub receiver: Option<Receiver>,
 
     pub name: String,
     pub name_node: NodeData,
@@ -638,6 +645,12 @@ pub struct Expression {
 }
 
 #[derive(Debug, Clone)]
+pub struct FunPointerTypeExpression {}
+
+#[derive(Debug, Clone)]
+pub struct ClosureTypeExpression {}
+
+#[derive(Debug, Clone)]
 pub enum ExpressionType {
     String(StringTemplate),
     Identifier(String),
@@ -759,11 +772,27 @@ impl FileContext {
     }
 }
 
+fn parse_receiver<'a>(file: &Ptr<FileContext>, node: &Node<'a>) -> Option<Receiver> {
+    let type_node = child_by_field(&node, "type")?;
+    let types = parse_types(file, &type_node)?;
+    let interface_node = child_by_field(&node, "interface");
+    let interface = if let Some(interface_node) = interface_node {
+        parse_type_param(file, &interface_node)
+    } else {
+        None
+    };
+    Some(Receiver {
+        node: NodeData::from_node(node),
+        types,
+        interface,
+    })
+}
+
 fn parse_method<'a>(file: &Ptr<FileContext>, node: &Node<'a>) -> Option<Ptr<Function>> {
     let name = child_by_field(&node, "name")?;
     let receiver_node = child_by_field(&node, "receiver")?;
     // parse the receiver as a parameter
-    let receiver = parse_parameter(file, receiver_node)?;
+    let receiver = parse_receiver(file, &receiver_node)?;
     let parameter_list = child_by_field(&node, "parameters")?;
     let return_type = match node.child_by_field_name("result".as_bytes()) {
         Some(return_node) => Some(ReturnType {
@@ -1436,10 +1465,12 @@ fn parse_types<'a>(context: &Ptr<FileContext>, node: &Node<'a>) -> Option<Vec<Re
         }
         "reference_type" => {
             let type_node = child_by_field(&node, "type")?;
+            let reference_node = child_by_field(&node, "reference")?;
+            let reference_str = node_text(&reference_node, context)?;
             vec![RefType {
                 node: NodeData::from_node(&type_node),
                 is_reference: true,
-                is_mut: false,
+                is_mut: reference_str == "&mut",
                 r#type: parse_type(context, &type_node)?,
             }]
         }

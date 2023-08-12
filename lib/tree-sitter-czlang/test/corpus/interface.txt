@@ -2,7 +2,7 @@
 Struct impl
 ==================
 
-fun (s &MyStruct).member() {
+fun (&MyStruct).member() {
 
 }
 
@@ -11,7 +11,6 @@ fun (s &MyStruct).member() {
 (source_file
     (method_definition
         (receiver
-          (identifier)
           (reference_type
             (identifier)
           )
@@ -28,15 +27,15 @@ Interface impl
 
 MyStruct impl MyInterface
 
-fun (s &MyStruct impl MyInterface).test() {
+fun (&MyStruct impl MyInterface).test() {
 
 }
 
-fun (s &pkg1.MyStruct impl pkg2.MyInterface).test() {
+fun (pkg1.MyStruct impl pkg2.MyInterface).test() {
 
 }
 
-fun (&pkg1.MyStruct impl pkg2.MyInterface).test() {
+fun (&mut pkg1.MyStruct impl pkg2.MyInterface).test() {
 
 }
 
@@ -48,7 +47,6 @@ fun (&pkg1.MyStruct impl pkg2.MyInterface).test() {
         (identifier))
       (method_definition
         (receiver
-          (identifier)
           (reference_type
             (identifier))
           (identifier))
@@ -57,11 +55,9 @@ fun (&pkg1.MyStruct impl pkg2.MyInterface).test() {
         (block))
       (method_definition
         (receiver
-          (identifier)
-          (reference_type
-            (qualified_type
-              (identifier)
-              (identifier)))
+          (qualified_type
+            (identifier)
+            (identifier))
           (qualified_type
             (identifier)
             (identifier)))

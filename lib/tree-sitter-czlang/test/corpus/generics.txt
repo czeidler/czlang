@@ -103,7 +103,7 @@ interface MyInterface<T> {
 
 MyStruct<u8> impl MyInterface<bool>
 
-fun (s &MyStruct<u8> impl MyInterface<bool>).test() {
+fun (&MyStruct<u8> impl MyInterface<bool>).test() {
 
 }
 
@@ -129,7 +129,6 @@ fun (s &MyStruct<u8> impl MyInterface<bool>).test() {
         (primitive_type))))
   (method_definition
     (receiver
-      (identifier)
       (reference_type
         (generic_type
           (identifier)

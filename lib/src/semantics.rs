@@ -5,7 +5,7 @@ use crate::{
         Array, BinaryExpression, BinaryOperator, Block, BlockParent, BlockTrait,
         EitherCheckExpression, Expression, ExpressionType, Field, FileContext, FileTrait, Function,
         FunctionCall, FunctionSignature, FunctionTrait, IfAlternative, IfExpression, LangError,
-        NodeData, Parameter, PipeExpression, RefType, ReturnStatement, RootSymbol,
+        NodeData, Parameter, PipeExpression, Receiver, RefType, ReturnStatement, RootSymbol,
         SelectorExpression, SelectorField, SelectorFieldType, Slice, Statement, Struct,
         StructFieldInitialization, StructInitialization, Type, TypeParam, TypeParamType,
         UnaryOperator, VarDeclaration,
@@ -919,19 +919,19 @@ impl FileSemanticAnalyzer {
         assert!(existing.is_none());
     }
 
-    fn validate_struct_receiver(&mut self, param: &Parameter) -> Option<Ptr<Struct>> {
-        if param.types.len() != 1 {
+    fn validate_struct_receiver(&mut self, receiver: &Receiver) -> Option<Ptr<Struct>> {
+        if receiver.types.len() != 1 {
             self.errors.push(LangError::type_error(
-                &param.node,
+                &receiver.node,
                 "Receiver type must point to a struct".to_string(),
             ));
             return None;
         }
-        let t = param.types.get(0).unwrap();
+        let t = receiver.types.get(0).unwrap();
 
         let Some(binding) = self.query_type(TypeQueryContext::StructMethodReceiver, t).and_then(|b| b.binding) else {
             self.errors.push(LangError::type_error(
-                &param.node,
+                &receiver.node,
                 format!("Invalid receiver type: {:?}", t.r#type),
             ));
             return None;
@@ -940,7 +940,7 @@ impl FileSemanticAnalyzer {
             TypeBinding::Struct(st) => st,
             TypeBinding::StructTypeArgument(_) => {
                 self.errors.push(LangError::type_error(
-                    &param.node,
+                    &receiver.node,
                     "Receiver type must point to a struct".to_string(),
                 ));
                 return None;
@@ -979,13 +979,13 @@ impl FileSemanticAnalyzer {
         }
         self.query_return_type(&fun.signature);
 
-        if let Some(param) = &fun.signature.receiver {
-            if param.types.len() != 1 {
+        if let Some(receiver) = &fun.signature.receiver {
+            if receiver.types.len() != 1 {
                 self.errors.push(LangError::type_error(
-                    &param.node,
+                    &receiver.node,
                     "Receiver type must point to a struct".to_string(),
                 ));
-            } else if let Some(st) = self.validate_struct_receiver(&param) {
+            } else if let Some(st) = self.validate_struct_receiver(&receiver) {
                 self.bind_method_to_struct(fun, st);
             }
         }
