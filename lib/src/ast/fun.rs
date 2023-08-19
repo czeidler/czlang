@@ -4,7 +4,7 @@ use crate::{tree_sitter::find_node, types::Ptr};
 
 use super::{
     child_by_field, node_text, parse_block, parse_type_param, parse_types, Block, BlockParent,
-    FileContext, NodeData, Parameter, RefType, SourceSpan, TypeParamType,
+    FileContext, NodeData, RefType, SourceSpan, TypeParamType,
 };
 
 #[derive(Debug, Clone)]
@@ -18,6 +18,17 @@ pub struct Receiver {
     pub node: NodeData,
     pub types: Vec<RefType>,
     pub interface: Option<TypeParamType>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Parameter {
+    pub node: NodeData,
+    pub name_node: NodeData,
+    pub name: String,
+    pub is_mutable: bool,
+    pub types: Vec<RefType>,
+
+    pub origin: Option<SourceSpan>,
 }
 
 #[derive(Debug, Clone)]

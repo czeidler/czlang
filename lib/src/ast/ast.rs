@@ -6,7 +6,6 @@ use crate::types::Ptr;
 
 use super::{
     child, child_by_field, node_text, parse_usize, Block, BlockParent, FileContext, NodeData,
-    SourceSpan,
 };
 
 #[derive(Debug, Clone)]
@@ -16,17 +15,6 @@ pub enum StringTemplatePart {
 }
 
 pub type StringTemplate = Vec<StringTemplatePart>;
-
-#[derive(Debug, Clone)]
-pub struct Parameter {
-    pub node: NodeData,
-    pub name_node: NodeData,
-    pub name: String,
-    pub is_mutable: bool,
-    pub types: Vec<RefType>,
-
-    pub origin: Option<SourceSpan>,
-}
 
 /*
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
