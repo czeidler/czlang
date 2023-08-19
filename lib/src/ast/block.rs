@@ -140,6 +140,18 @@ impl<'a> Iterator for StatementIterator<'a> {
     }
 }
 
+pub(crate) fn parse_block<'a>(
+    file: &Ptr<FileContext>,
+    node: &Node<'a>,
+    parent: BlockParent,
+) -> Ptr<Block> {
+    Ptr::new(Block {
+        context: file.clone(),
+        parent,
+        node: NodeData::from_node(node),
+    })
+}
+
 fn parse_var_declaration<'a>(
     context: &Ptr<FileContext>,
     node: Node<'a>,

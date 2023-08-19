@@ -5,7 +5,8 @@ use tree_sitter::Node;
 use crate::types::Ptr;
 
 use super::{
-    child, child_by_field, node_text, parse_usize, Block, BlockParent, FileContext, NodeData,
+    child, child_by_field, node_text, parse_block, parse_usize, Block, BlockParent, FileContext,
+    NodeData,
 };
 
 #[derive(Debug, Clone)]
@@ -334,18 +335,6 @@ pub(crate) fn parse_type_params<'a>(context: &Ptr<FileContext>, node: &Node<'a>)
         }
     }
     output
-}
-
-pub(crate) fn parse_block<'a>(
-    file: &Ptr<FileContext>,
-    node: &Node<'a>,
-    parent: BlockParent,
-) -> Ptr<Block> {
-    Ptr::new(Block {
-        context: file.clone(),
-        parent,
-        node: NodeData::from_node(node),
-    })
 }
 
 fn parse_function_call(
