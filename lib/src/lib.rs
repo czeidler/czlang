@@ -10,7 +10,6 @@ pub mod format;
 pub mod project;
 pub mod query;
 pub mod semantics;
-pub mod semantics_types;
 
 #[cfg(test)]
 mod test_utils;

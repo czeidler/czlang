@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use super::types::{intersection, types_to_string, SArray, SRefType, SSlice, SumType, Type};
 use crate::{
     ast::{
         self, BinaryExpression, BinaryOperator, Block, BlockParent, BlockTrait,
@@ -11,7 +12,6 @@ use crate::{
         VarDeclaration,
     },
     buildin::Buildins,
-    semantics_types::{intersection, types_to_string, SArray, SRefType, SSlice, SumType, Type},
     types::Ptr,
 };
 

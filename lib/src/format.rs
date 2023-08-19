@@ -1,7 +1,9 @@
 use crate::{
     ast::{FunctionSignature, Parameter, Receiver, TypeParamType, VarDeclaration},
-    semantics::{FileSemanticAnalyzer, TypeQueryContext},
-    semantics_types::{types_to_string, SumType},
+    semantics::{
+        types::{types_to_string, SumType},
+        FileSemanticAnalyzer, TypeQueryContext,
+    },
 };
 
 pub fn format_var_declaration(var: &VarDeclaration, types: &SumType) -> String {

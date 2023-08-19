@@ -631,7 +631,7 @@ mod tests {
     use std::vec;
 
     use crate::{
-        semantics_types::{intersection, types_to_string, SArray, SumType},
+        semantics::types::{intersection, types_to_string, SArray, SumType},
         types::Ptr,
     };
 

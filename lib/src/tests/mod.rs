@@ -3,8 +3,7 @@ use crate::{
         BlockTrait, FileContext, FileTrait, Function, FunctionTrait, RootSymbol, Statement,
         VarDeclaration,
     },
-    semantics::{FileSemanticAnalyzer, TypeQueryContext},
-    semantics_types::SumType,
+    semantics::{types::SumType, FileSemanticAnalyzer, TypeQueryContext},
     types::Ptr,
 };
 

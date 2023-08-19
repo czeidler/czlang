@@ -11,8 +11,10 @@ use crate::ast::{
     VarDeclaration,
 };
 use crate::buildin::Buildins;
-use crate::semantics::{FileSemanticAnalyzer, TypeNarrowing, TypeQueryContext};
-use crate::semantics_types::{SArray, SSlice, SumType, Type};
+use crate::semantics::{
+    types::{SArray, SSlice, SumType, Type},
+    FileSemanticAnalyzer, TypeNarrowing, TypeQueryContext,
+};
 
 use crate::types::Ptr;
 

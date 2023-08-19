@@ -3,8 +3,10 @@ use czlanglib::{
     format::format_fun_signature,
     project::ProjectFile,
     query::{find_completions, find_in_file, QueryResult},
-    semantics::{IdentifierBinding, SelectorFieldBinding, TypeQueryContext},
-    semantics_types::{types_to_string, Type},
+    semantics::{
+        types::{types_to_string, Type},
+        IdentifierBinding, SelectorFieldBinding, TypeQueryContext,
+    },
     types::Ptr,
 };
 use lsp_types::{CompletionItem, CompletionItemKind};

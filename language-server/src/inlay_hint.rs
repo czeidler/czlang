@@ -4,8 +4,7 @@ use czlanglib::{
         IfExpression, RootSymbol, SourceSpan, Statement,
     },
     project::ProjectFile,
-    semantics::TypeQueryContext,
-    semantics_types::types_to_string,
+    semantics::{types::types_to_string, TypeQueryContext},
     types::Ptr,
 };
 use lsp_types::{InlayHint, InlayHintKind, InlayHintLabel, Position};

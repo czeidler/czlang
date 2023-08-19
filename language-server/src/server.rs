@@ -11,8 +11,7 @@ use czlanglib::{
     init,
     project::{FileChange, Project},
     query::{find_in_file, QueryResult},
-    semantics::{IdentifierBinding, TypeQueryContext},
-    semantics_types::types_to_string,
+    semantics::{types::types_to_string, IdentifierBinding, TypeQueryContext},
 };
 use lsp_server::{Connection, Message, Notification, RequestId};
 use lsp_types::{notification::*, request::*, *};

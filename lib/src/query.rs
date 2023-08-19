@@ -5,10 +5,9 @@ use crate::{
         VarDeclaration,
     },
     semantics::{
-        ExpressionSemantics, FileSemanticAnalyzer, FileSemantics, FunctionCallSemantics,
-        SelectorFieldSemantics, TypeBinding, TypeQueryContext,
+        types::SumType, ExpressionSemantics, FileSemanticAnalyzer, FileSemantics,
+        FunctionCallSemantics, SelectorFieldSemantics, TypeBinding, TypeQueryContext,
     },
-    semantics_types::SumType,
     types::Ptr,
 };
 
