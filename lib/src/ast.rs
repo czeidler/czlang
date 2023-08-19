@@ -458,7 +458,6 @@ pub enum Type {
     Identifier(String),
     Array(Array),
     Slice(Slice),
-    Unresolved(Vec<RefType>),
     /// For example, for nullable or error types
     Either(Vec<RefType>, Vec<RefType>),
 }

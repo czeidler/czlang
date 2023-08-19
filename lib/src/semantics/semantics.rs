@@ -565,7 +565,6 @@ impl FileSemanticAnalyzer {
                         .collect(),
                 ),
             }),
-            ast::Type::Unresolved(_) => todo!(),
             ast::Type::Either(value, err) => Type::Either(
                 SumType::from_types(
                     &value
