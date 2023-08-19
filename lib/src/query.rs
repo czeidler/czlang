@@ -8,7 +8,7 @@ use crate::{
         ExpressionSemantics, FileSemanticAnalyzer, FileSemantics, FunctionCallSemantics,
         SelectorFieldSemantics, TypeBinding, TypeQueryContext,
     },
-    sum_type::SumType,
+    semantics_types::SumType,
     types::Ptr,
 };
 
@@ -17,13 +17,13 @@ pub enum QueryResult {
     Literal(SumType),
     Function(Ptr<Function>),
     FunctionCall(FunctionCallSemantics),
-    Parameter(Parameter),
+    Parameter(Ptr<Function>, Parameter),
     Identifier(usize, Ptr<Block>, ExpressionSemantics),
     StructIdentifier(Ptr<Struct>),
-    VarDeclaration(Ptr<VarDeclaration>),
+    VarDeclaration(Ptr<Block>, Ptr<VarDeclaration>),
     StructDeclaration(Ptr<Struct>),
-    StructFieldDeclaration(Field),
-    StructFieldInitialization(Field),
+    StructFieldDeclaration(Ptr<Struct>, Field),
+    StructFieldInitialization(Ptr<Struct>, Field),
     /// the found SelectorField and the SelectorFieldSemantics
     SelectorField((SelectorField, SelectorFieldSemantics)),
 }
@@ -58,7 +58,10 @@ fn find_in_structs(file: &FileSemantics, position: SourcePosition) -> Option<Que
         }
         for field in &struct_def.fields {
             if field.node.contains(position) {
-                return Some(QueryResult::StructFieldDeclaration(field.clone()));
+                return Some(QueryResult::StructFieldDeclaration(
+                    struct_def.clone(),
+                    field.clone(),
+                ));
             }
         }
     }
@@ -75,7 +78,10 @@ fn find_in_block(
         match statement {
             Statement::VarDeclaration(var) => {
                 if var.name_node.contains(position) {
-                    return Some(QueryResult::VarDeclaration(var.clone()));
+                    return Some(QueryResult::VarDeclaration(
+                        block.block.clone(),
+                        var.clone(),
+                    ));
                 }
                 if var.value.node.contains(position) {
                     return find_in_expression(analyzer, &block, &var.value, position);
@@ -112,7 +118,7 @@ fn find_in_function(
             continue;
         }
         //return Some(types_to_string(&param.types));
-        return Some(QueryResult::Parameter(param.clone()));
+        return Some(QueryResult::Parameter(fun.clone(), param.clone()));
     }
 
     let body = fun.body();
@@ -187,9 +193,24 @@ fn find_in_expression(
                     });
             }
             for field in &struct_init.fields {
+                let Some(struct_dec) = analyzer
+                    .query_struct_initialization(
+                        TypeQueryContext::Function(block.block.fun().signature.clone()),
+                        &struct_init,
+                        &struct_init.name,
+                    )
+                    .and_then(|r| r.binding)
+                    .and_then(|binding| match binding {
+                        TypeBinding::Struct(struct_dec) => {
+                            Some(struct_dec)
+                        }
+                        _ => None,
+                    }) else {
+                    continue;
+                };
                 if field.name_node.contains(position) {
                     if let Some(f) = analyzer.query_struct_field_initializer(block.block, &field) {
-                        return Some(QueryResult::StructFieldInitialization(f));
+                        return Some(QueryResult::StructFieldInitialization(struct_dec, f));
                     }
                 }
 

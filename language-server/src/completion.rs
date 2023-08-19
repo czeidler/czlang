@@ -3,8 +3,9 @@ use czlanglib::{
     format::format_fun_signature,
     project::ProjectFile,
     query::{find_completions, find_in_file, QueryResult},
-    semantics::{IdentifierBinding, SelectorFieldBinding, TypeBinding, TypeQueryContext},
-    types::{types_to_string, Ptr},
+    semantics::{IdentifierBinding, SelectorFieldBinding, TypeQueryContext},
+    semantics_types::{types_to_string, Type},
+    types::Ptr,
 };
 use lsp_types::{CompletionItem, CompletionItemKind};
 
@@ -37,22 +38,17 @@ pub fn dot_completion(
             };
             match binding {
                 IdentifierBinding::VarDeclaration(var) => {
-                    let var_type = file.file_analyzer.query_var_types(&var);
+                    let query_context = TypeQueryContext::from_block(&block);
+                    let var_type = file.file_analyzer.query_var_types(&query_context, &var);
                     if var_type.len() != 1 {
                         return Some(vec![]);
                     }
                     let t = &var_type.types()[0];
-                    let type_semantics = file
-                        .file_analyzer
-                        .query_type(TypeQueryContext::Function(block.fun().signature.clone()), t);
-                    let Some(bindings) = type_semantics.and_then(|s| s.binding) else {
-                    return Some(vec![]);
-                };
-                    match bindings {
-                        TypeBinding::Struct(struct_dec) => {
+                    match t {
+                        Type::Struct(struct_dec) => {
                             return Some(struct_doc_completions(file, &struct_dec))
                         }
-                        TypeBinding::StructTypeArgument(_) => return None,
+                        _ => return None,
                     }
                 }
                 IdentifierBinding::Parameter(_) => {}
@@ -86,7 +82,7 @@ fn struct_doc_completions(file: &mut ProjectFile, struct_dec: &Ptr<Struct>) -> V
                     .map(|f| {
                         let mut item = CompletionItem::new_simple(
                             f.signature.name.clone(),
-                            format_fun_signature(&f.signature),
+                            format_fun_signature(&mut file.file_analyzer, f.signature.clone()),
                         );
                         item.kind = Some(CompletionItemKind::METHOD);
                         item
@@ -99,7 +95,11 @@ fn struct_doc_completions(file: &mut ProjectFile, struct_dec: &Ptr<Struct>) -> V
         .fields
         .iter()
         .map(|f| {
-            let mut item = CompletionItem::new_simple(f.name.clone(), types_to_string(&f.types));
+            let types = file
+                .file_analyzer
+                .query_types(&TypeQueryContext::Struct(struct_dec.clone()), &f.types);
+            let mut item =
+                CompletionItem::new_simple(f.name.clone(), types_to_string(types.types()));
             item.kind = Some(CompletionItemKind::FIELD);
             item
         })

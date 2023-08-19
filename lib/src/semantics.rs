@@ -2,17 +2,17 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     ast::{
-        Array, BinaryExpression, BinaryOperator, Block, BlockParent, BlockTrait,
+        self, BinaryExpression, BinaryOperator, Block, BlockParent, BlockTrait,
         EitherCheckExpression, Expression, ExpressionType, Field, FileContext, FileTrait, Function,
         FunctionCall, FunctionSignature, FunctionTrait, IfAlternative, IfExpression, LangError,
         NodeData, Parameter, PipeExpression, Receiver, RefType, ReturnStatement, RootSymbol,
-        SelectorExpression, SelectorField, SelectorFieldType, Slice, Statement, Struct,
-        StructFieldInitialization, StructInitialization, Type, TypeParam, TypeParamType,
-        UnaryOperator, VarDeclaration,
+        SelectorExpression, SelectorField, SelectorFieldType, Statement, Struct,
+        StructFieldInitialization, StructInitialization, TypeParam, TypeParamType, UnaryOperator,
+        VarDeclaration,
     },
     buildin::Buildins,
-    sum_type::SumType,
-    types::{intersection, types_to_string, Ptr},
+    semantics_types::{intersection, types_to_string, SArray, SRefType, SSlice, SumType, Type},
+    types::Ptr,
 };
 
 pub struct ExpContext {
@@ -46,6 +46,16 @@ pub enum TypeQueryContext {
     Function(FunctionSignature),
     /// Context of the receiver of a struct method definition, e.g. (self &MyStruct)method()
     StructMethodReceiver,
+}
+
+impl TypeQueryContext {
+    pub fn from_fun(fun: &Function) -> Self {
+        TypeQueryContext::Function(fun.signature.clone())
+    }
+
+    pub fn from_block(block: &Block) -> Self {
+        TypeQueryContext::Function(block.fun().signature.clone())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -247,18 +257,12 @@ fn apply_narrowing(flow: &Ptr<FlowContainer>, narrowing: &TypeNarrowing) -> Ptr<
         returned: None,
     };
     if let Some((value, err)) = narrowing.original_types.as_either() {
-        let original_either = narrowing.original_types.types().get(0).unwrap();
-        let narrowed_type = SumType::from_type(RefType {
-            node: original_either.node.clone(),
-            is_reference: original_either.is_reference,
-            is_mut: original_either.is_mut,
-            r#type: if narrowing.reduction {
-                // != ?
-                Type::Either(value.types().clone(), vec![])
-            } else {
-                // == ?
-                Type::Either(vec![], err.types().clone())
-            },
+        let narrowed_type = SumType::from_type(if narrowing.reduction {
+            // != ?
+            Type::Either(value, SumType::empty())
+        } else {
+            // == ?
+            Type::Either(SumType::empty(), err)
         });
         new_flow
             .vars
@@ -331,18 +335,12 @@ fn apply_inverse_narrowing(
         returned: None,
     };
     if let Some((value, err)) = narrowing.original_types.as_either() {
-        let original_either = narrowing.original_types.types().get(0).unwrap();
-        let narrowed_type = SumType::from_type(RefType {
-            node: original_either.node.clone(),
-            is_reference: original_either.is_reference,
-            is_mut: original_either.is_mut,
-            r#type: if narrowing.reduction {
-                // != ?
-                Type::Either(vec![], err.types().clone())
-            } else {
-                // == ?
-                Type::Either(value.types().clone(), vec![])
-            },
+        let narrowed_type = SumType::from_type(if narrowing.reduction {
+            // != ?
+            Type::Either(SumType::empty(), err)
+        } else {
+            // == ?
+            Type::Either(value, SumType::empty())
         });
         new_flow
             .vars
@@ -524,33 +522,112 @@ impl FileSemanticAnalyzer {
             return Some(s.clone());
         }
 
-        self.bind_type_identifier(context, &struct_init.node, identifier);
+        self.bind_type_identifier(&context, &struct_init.node, identifier);
 
         self.type_identifiers
             .get(&struct_init.node.id)
             .map(|s| s.clone())
     }
 
-    /// Query type information for a specific type, e.g. for the resolved identifier
-    pub fn query_type(
+    fn query_type(
         &mut self,
-        context: TypeQueryContext,
-        r#type: &RefType,
-    ) -> Option<TypeIdentifierSemantics> {
-        if let Some(s) = self.type_identifiers.get(&r#type.node.id) {
-            return Some(s.clone());
-        }
+        context: &TypeQueryContext,
+        node: &NodeData,
+        r#type: &ast::Type,
+    ) -> Option<Type> {
+        let t = match r#type {
+            ast::Type::Null => Type::Null,
+            ast::Type::Str => Type::Str,
+            ast::Type::String => Type::String,
+            ast::Type::Bool => Type::Bool,
+            ast::Type::U8 => Type::U8,
+            ast::Type::I8 => Type::I8,
+            ast::Type::U32 => Type::U32,
+            ast::Type::I32 => Type::I32,
+            ast::Type::Array(array) => Type::Array(SArray {
+                types: Ptr::new(
+                    array
+                        .types
+                        .iter()
+                        .map(|it| self.query_ref_type(context, it))
+                        .filter_map(|it| it)
+                        .collect(),
+                ),
+                length: array.length,
+            }),
+            ast::Type::Slice(slice) => Type::Slice(SSlice {
+                types: Ptr::new(
+                    slice
+                        .types
+                        .iter()
+                        .map(|it| self.query_ref_type(context, it))
+                        .filter_map(|it| it)
+                        .collect(),
+                ),
+            }),
+            ast::Type::Unresolved(_) => todo!(),
+            ast::Type::Either(value, err) => Type::Either(
+                SumType::from_types(
+                    &value
+                        .iter()
+                        .map(|it| self.query_ref_type(context, it))
+                        .filter_map(|it| it)
+                        .collect(),
+                ),
+                SumType::from_types(
+                    &err.iter()
+                        .map(|it| self.query_ref_type(context, it))
+                        .filter_map(|it| it)
+                        .collect(),
+                ),
+            ),
+            ast::Type::Identifier(ident) => {
+                if let Some(s) = self.type_identifiers.get(&node.id) {
+                    return s.binding.as_ref().map(|b| match b {
+                        TypeBinding::Struct(st) => Type::Struct(st.clone()),
+                        TypeBinding::StructTypeArgument(arg) => {
+                            Type::StructTypeArgument(arg.clone())
+                        }
+                    });
+                }
 
-        let type_identifier = match &r#type.r#type {
-            Type::Identifier(identifier) => identifier,
-            _ => return None,
+                self.bind_type_identifier(context, &node, ident);
+
+                return self.type_identifiers.get(&node.id).and_then(|s| {
+                    s.binding.as_ref().map(|b| match b {
+                        TypeBinding::Struct(st) => Type::Struct(st.clone()),
+                        TypeBinding::StructTypeArgument(arg) => {
+                            Type::StructTypeArgument(arg.clone())
+                        }
+                    })
+                });
+            }
         };
+        Some(t)
+    }
 
-        self.bind_type_identifier(context, &r#type.node, type_identifier);
+    /// Query the matching Type.
+    /// Binds and caches identifier if needed.
+    pub fn query_ref_type(&mut self, context: &TypeQueryContext, r#type: &RefType) -> Option<Type> {
+        if r#type.is_reference {
+            let main_type = self.query_type(context, &r#type.node, &r#type.r#type)?;
+            Some(Type::RefType(SRefType {
+                is_mut: r#type.is_mut,
+                r#type: Ptr::new(main_type),
+            }))
+        } else {
+            self.query_type(context, &r#type.node, &r#type.r#type)
+        }
+    }
 
-        self.type_identifiers
-            .get(&r#type.node.id)
-            .map(|s| s.clone())
+    pub fn query_types(&mut self, context: &TypeQueryContext, types: &Vec<RefType>) -> SumType {
+        SumType::from_types(
+            &types
+                .iter()
+                .map(|it| self.query_ref_type(context, it))
+                .filter_map(|it| it)
+                .collect(),
+        )
     }
 
     pub fn query_parameter_type(
@@ -715,7 +792,11 @@ impl FileSemanticAnalyzer {
     }
 
     /// Either the resolved types or the declared type
-    pub fn query_var_types(&self, var_declaration: &Ptr<VarDeclaration>) -> SumType {
+    pub fn query_var_types(
+        &mut self,
+        context: &TypeQueryContext,
+        var_declaration: &Ptr<VarDeclaration>,
+    ) -> SumType {
         match self
             .variable_declarations
             .get(&var_declaration.node.id)
@@ -726,8 +807,8 @@ impl FileSemanticAnalyzer {
             None => var_declaration
                 .types
                 .as_ref()
-                .map(|t| SumType::from_types(&t))
-                .unwrap_or(SumType::from_types(&vec![])),
+                .map(|types| self.query_types(context, types))
+                .unwrap_or(SumType::empty()),
         }
     }
 
@@ -817,14 +898,15 @@ impl FileSemanticAnalyzer {
         types: &Vec<RefType>,
     ) -> SumType {
         let mut result_types = vec![];
-        for t in types {
-            if result_types.iter().find(|v| *v == t).is_none() {
+        for ast_type in types {
+            let Some(t) = self.query_ref_type(&context, ast_type) else {
+                continue;
+            };
+            if result_types.iter().find(|v| *v == &t).is_none() {
                 result_types.push(t.clone());
-                // query type to bind the type
-                self.query_type(context.clone(), t);
             } else {
                 self.errors.push(LangError::type_error(
-                    &t.node,
+                    &ast_type.node,
                     format!("Duplicated type: {:?}", t),
                 ))
             }
@@ -855,7 +937,7 @@ impl FileSemanticAnalyzer {
 
     fn bind_type_identifier(
         &mut self,
-        context: TypeQueryContext,
+        context: &TypeQueryContext,
         node: &NodeData,
         identifier: &String,
     ) -> Option<TypeBinding> {
@@ -929,16 +1011,20 @@ impl FileSemanticAnalyzer {
         }
         let t = receiver.types.get(0).unwrap();
 
-        let Some(binding) = self.query_type(TypeQueryContext::StructMethodReceiver, t).and_then(|b| b.binding) else {
+        let Some(receiver_type) = self.query_ref_type(&TypeQueryContext::StructMethodReceiver, t) else {
             self.errors.push(LangError::type_error(
                 &receiver.node,
                 format!("Invalid receiver type: {:?}", t.r#type),
             ));
             return None;
         };
-        let st = match binding {
-            TypeBinding::Struct(st) => st,
-            TypeBinding::StructTypeArgument(_) => {
+        let base_receiver_type = match receiver_type {
+            Type::RefType(ref_type) => ref_type.r#type.as_ref().clone(),
+            _ => receiver_type,
+        };
+        let st = match base_receiver_type {
+            Type::Struct(st) => st,
+            _ => {
                 self.errors.push(LangError::type_error(
                     &receiver.node,
                     "Receiver type must point to a struct".to_string(),
@@ -1126,11 +1212,7 @@ impl FileSemanticAnalyzer {
                     .unwrap_or(fun.signature.node.clone()),
                 format!(
                     "Incompatible return type: fun == {:?}, expr == {:?}",
-                    fun.signature
-                        .return_type
-                        .as_ref()
-                        .map(|types| types_to_string(&types.types))
-                        .unwrap_or("void".to_string()),
+                    types_to_string(fun_ret_type.types()),
                     types_to_string(ret_types.types()),
                 ),
             ));
@@ -1255,7 +1337,10 @@ impl FileSemanticAnalyzer {
                         self.narrow_expression_type(block, expression, types);
 
                         // find identifier and continue there
-                        let var_types = self.query_var_types(&var_declaration);
+                        let var_types = self.query_var_types(
+                            &TypeQueryContext::from_block(block),
+                            &var_declaration,
+                        );
                         let Some(inter) = intersection(types, &var_types) else {
                             return;
                         };
@@ -1460,23 +1545,29 @@ impl FileSemanticAnalyzer {
             return None;
         };
         for method in &methods {
+            if method.signature.name != call.name {
+                continue;
+            }
             let Some(method_receiver) = &method.signature.receiver else {
                 // should not happen!
                 continue;
             };
-            let Some(receiver_type) = self.query_type(TypeQueryContext::StructMethodReceiver, &method_receiver.types[0]) else {
+            let Some(receiver_type) = self.query_ref_type(&TypeQueryContext::StructMethodReceiver, &method_receiver.types[0]) else {
                 continue;
             };
-            let Some(binding) = receiver_type.binding else {
-                continue;
+
+            let base_receiver_type = match receiver_type {
+                Type::RefType(ref_type) => ref_type.r#type.as_ref().clone(),
+                _ => receiver_type,
             };
-            match binding {
-                TypeBinding::Struct(current) => {
-                    if current.name == receiver.name && method.signature.name == call.name {
+
+            match base_receiver_type {
+                Type::Struct(current) => {
+                    if current.name == receiver.name {
                         return Some(method.clone());
                     }
                 }
-                TypeBinding::StructTypeArgument(_) => continue,
+                _ => continue,
             }
         }
         return None;
@@ -1491,9 +1582,9 @@ impl FileSemanticAnalyzer {
         is_assignment: bool,
     ) -> Result<Option<ExpressionSemantics>, LangError> {
         let expression_semantics = match &expression.r#type {
-            ExpressionType::String(_) => ExpressionSemantics::resolved_types(Some(
-                SumType::from_type(RefType::value(expression.node.clone(), Type::String)),
-            )),
+            ExpressionType::String(_) => {
+                ExpressionSemantics::resolved_types(Some(SumType::from_type(Type::String)))
+            }
 
             ExpressionType::Identifier(identifier) => {
                 let binding = match self.lookup_identifier(context, identifier) {
@@ -1506,9 +1597,14 @@ impl FileSemanticAnalyzer {
                     }
                 };
 
+                let query_context = TypeQueryContext::from_block(&context.block);
                 let resolved_types = match &binding {
-                    IdentifierBinding::VarDeclaration(var) => Some(self.query_var_types(&var)),
-                    IdentifierBinding::Parameter(param) => Some(SumType::from_types(&param.types)),
+                    IdentifierBinding::VarDeclaration(var) => {
+                        Some(self.query_var_types(&query_context, &var))
+                    }
+                    IdentifierBinding::Parameter(param) => {
+                        Some(self.query_types(&query_context, &param.types))
+                    }
                     IdentifierBinding::PipeArg(arg) => Some(arg.clone()),
                 };
                 ExpressionSemantics {
@@ -1517,32 +1613,20 @@ impl FileSemanticAnalyzer {
                     binding: Some(binding),
                 }
             }
-            ExpressionType::IntLiteral(_) => {
-                ExpressionSemantics::resolved_types(Some(SumType::from_type(RefType::value(
-                    expression.node.clone(),
-                    Type::Unresolved(vec![
-                        RefType::value(expression.node.clone(), Type::I32),
-                        RefType::value(expression.node.clone(), Type::U32),
-                    ]),
-                ))))
-            }
-            ExpressionType::Null => ExpressionSemantics::resolved_types(Some(SumType::from_type(
-                RefType::value(expression.node.clone(), Type::Null),
-            ))),
-            ExpressionType::Bool(_) => ExpressionSemantics::resolved_types(Some(
-                SumType::from_type(RefType::value(expression.node.clone(), Type::Bool)),
+            ExpressionType::IntLiteral(_) => ExpressionSemantics::resolved_types(Some(
+                SumType::from_type(Type::Unresolved(vec![Type::I32, Type::U32])),
             )),
+            ExpressionType::Null => {
+                ExpressionSemantics::resolved_types(Some(SumType::from_type(Type::Null)))
+            }
+            ExpressionType::Bool(_) => {
+                ExpressionSemantics::resolved_types(Some(SumType::from_type(Type::Bool)))
+            }
 
             ExpressionType::UnaryExpression(unary) => match unary.operator {
                 UnaryOperator::Minus => match unary.operand.r#type {
                     ExpressionType::IntLiteral(_) => ExpressionSemantics::resolved_types(Some(
-                        SumType::from_type(RefType::value(
-                            unary.operand.node.clone(),
-                            Type::Unresolved(vec![RefType::value(
-                                unary.operand.node.clone(),
-                                Type::I32,
-                            )]),
-                        )),
+                        SumType::from_type(Type::Unresolved(vec![Type::I32])),
                     )),
                     _ => {
                         return Err(LangError::type_error(
@@ -1619,31 +1703,25 @@ impl FileSemanticAnalyzer {
             }
             ExpressionType::ParenthesizedExpression(_) => todo!(),
             ExpressionType::ArrayExpression(array) => {
-                ExpressionSemantics::resolved_types(Some(SumType::from_type(RefType::value(
-                    expression.node.clone(),
-                    Type::Array(Array {
-                        types: Ptr::new(self.validate_expression_list(
-                            flow,
-                            context,
-                            &array.expressions,
-                            is_assignment,
-                        )),
-                        length: array.expressions.len(),
-                    }),
-                ))))
+                ExpressionSemantics::resolved_types(Some(SumType::from_type(Type::Array(SArray {
+                    types: Ptr::new(self.validate_expression_list(
+                        flow,
+                        context,
+                        &array.expressions,
+                        is_assignment,
+                    )),
+                    length: array.expressions.len(),
+                }))))
             }
             ExpressionType::SliceExpression(slice) => {
-                ExpressionSemantics::resolved_types(Some(SumType::from_type(RefType::value(
-                    expression.node.clone(),
-                    Type::Slice(Slice {
-                        types: Ptr::new(self.validate_expression_list(
-                            flow,
-                            context,
-                            &vec![slice.operand.as_ref().clone()],
-                            is_assignment,
-                        )),
-                    }),
-                ))))
+                ExpressionSemantics::resolved_types(Some(SumType::from_type(Type::Slice(SSlice {
+                    types: Ptr::new(self.validate_expression_list(
+                        flow,
+                        context,
+                        &vec![slice.operand.as_ref().clone()],
+                        is_assignment,
+                    )),
+                }))))
             }
             ExpressionType::FunctionCall(fun_call) => {
                 let fun_declaration =
@@ -1694,7 +1772,7 @@ impl FileSemanticAnalyzer {
                 ExpressionSemantics::resolved_types(self.query_return_type(&fun_signature))
             }
             ExpressionType::StructInitialization(struct_init) => {
-                let Some(binding) = self.bind_type_identifier(TypeQueryContext::Function(context.block.fun().signature.clone()), &struct_init.name_node, &struct_init.name) else {
+                let Some(binding) = self.bind_type_identifier(&TypeQueryContext::from_block(&context.block), &struct_init.name_node, &struct_init.name) else {
                     // Error belongs to the type identifier, just return None here
                     return Ok(None);
                 };
@@ -1736,7 +1814,7 @@ impl FileSemanticAnalyzer {
                             &field.node,
                             format!(
                                 "Incompatible field types: field == {:?}, expr == {:?}",
-                                types_to_string(&struct_field.types),
+                                types_to_string(struct_field_type.types()),
                                 types_to_string(field_type.types()),
                             ),
                         ));
@@ -1750,9 +1828,8 @@ impl FileSemanticAnalyzer {
                     ));
                 };
 
-                ExpressionSemantics::resolved_types(Some(SumType::from_type(RefType::value(
-                    expression.node.clone(),
-                    Type::Identifier(struct_init.name.clone()),
+                ExpressionSemantics::resolved_types(Some(SumType::from_type(Type::Struct(
+                    struct_dec,
                 ))))
             }
             ExpressionType::SelectorExpression(select) => ExpressionSemantics::resolved_types(
@@ -1774,15 +1851,9 @@ impl FileSemanticAnalyzer {
             )),
             ExpressionType::ErrorExpression(error) => {
                 let err_types = self.validate_expression(flow, context, &error, is_assignment);
-                ExpressionSemantics::resolved_types(Some(SumType::from_type(RefType::value(
-                    expression.node.clone(),
-                    Type::Either(
-                        vec![],
-                        err_types
-                            .types()
-                            .map(|s| s.types().clone())
-                            .unwrap_or(vec![]),
-                    ),
+                ExpressionSemantics::resolved_types(Some(SumType::from_type(Type::Either(
+                    SumType::empty(),
+                    err_types.types().unwrap_or(SumType::empty()),
                 ))))
             }
             ExpressionType::EitherCheck(check) => {
@@ -1809,13 +1880,16 @@ impl FileSemanticAnalyzer {
                         ),
                     ));
                 };
-                let return_types = context
-                    .block
-                    .fun()
-                    .signature
+                let fun_signature = context.block.fun().signature.clone();
+                let return_types = &fun_signature
                     .return_type
                     .as_ref()
-                    .map(|t| SumType::from_types(&t.types))
+                    .map(|t| {
+                        self.query_types(
+                            &TypeQueryContext::Function(fun_signature.clone()),
+                            &t.types,
+                        )
+                    })
                     .unwrap_or(SumType::empty());
                 let Some((_, ret_err)) = return_types.as_either() else {
                     return Err(LangError::type_error(
@@ -1964,7 +2038,6 @@ impl FileSemanticAnalyzer {
         let (mut left_value, mut left_error) = left_exp_types.as_either().unwrap();
         let right_types = right.types();
 
-        let left = left_exp_types.types()[0].clone();
         if let Some((right_value, right_err)) = right_types
             .as_ref()
             .map(|it| it.as_either())
@@ -1972,15 +2045,7 @@ impl FileSemanticAnalyzer {
         {
             left_value.union(right_value);
             left_error.union(right_err);
-            return Some(SumType::from_type(RefType {
-                node: left.node.clone(),
-                is_reference: left.is_reference,
-                is_mut: left.is_mut,
-                r#type: Type::Either(
-                    left_value.into_iter().collect(),
-                    left_error.into_iter().collect(),
-                ),
-            }));
+            return Some(SumType::from_type(Type::Either(left_value, left_error)));
         } else {
             left_value.union(right_types.unwrap_or(SumType::empty()));
             return Some(left_value);
@@ -1998,7 +2063,7 @@ impl FileSemanticAnalyzer {
         context: &ExpContext,
         expressions: &Vec<Expression>,
         is_assignment: bool,
-    ) -> Vec<RefType> {
+    ) -> Vec<Type> {
         let mut output = Vec::new();
         for expression in expressions {
             if let Some(types) = self
@@ -2028,13 +2093,8 @@ impl FileSemanticAnalyzer {
         let root_types = self
             .validate_expression(flow, context, &select.root, is_assignment)
             .into_types()?;
-        let semantics = self.bind_selector_field_to_struct(
-            TypeQueryContext::Function(context.block.fun().signature.clone()),
-            &select.root.node,
-            &root_types.types(),
-            None,
-            None,
-        );
+        let semantics =
+            self.bind_selector_field_to_struct(&select.root.node, &root_types, None, None);
         let Some(root_struct) = semantics.binding.map(|b| match &b {
             SelectorFieldBinding::Struct(s) => s.clone(),
             SelectorFieldBinding::Method(_) => {todo!()},
@@ -2102,9 +2162,10 @@ impl FileSemanticAnalyzer {
                         .unwrap_or(vec![])
                 }
             };
+            let field_types =
+                self.query_types(&TypeQueryContext::from_block(&context.block), &field_types);
 
             let semantics = self.bind_selector_field_to_struct(
-                TypeQueryContext::Struct(current_struct.clone()),
                 &field.node,
                 &field_types,
                 Some(current_struct.clone()),
@@ -2125,24 +2186,14 @@ impl FileSemanticAnalyzer {
                         self.sum_types.insert(err.sum_type_name(), err.clone());
                     }
 
-                    if let Some((value, _)) = SumType::from_types(&field_types).as_either() {
+                    if let Some((value, _)) = field_types.as_either() {
                         // only take value part from the either, the error part is already included in err
-                        return Some(SumType::from_type(RefType {
-                            node: field.node.clone(),
-                            is_reference: false,
-                            is_mut: false,
-                            r#type: Type::Either(value.types().clone(), err.types().clone()),
-                        }));
+                        return Some(SumType::from_type(Type::Either(value, err)));
                     } else {
-                        return Some(SumType::from_type(RefType {
-                            node: field.node.clone(),
-                            is_reference: false,
-                            is_mut: false,
-                            r#type: Type::Either(field_types, err.types().clone()),
-                        }));
+                        return Some(SumType::from_type(Type::Either(field_types, err)));
                     }
                 } else {
-                    return Some(SumType::from_types(&field_types));
+                    return Some(field_types);
                 }
             } else {
                 // all but the last field must be structs
@@ -2163,29 +2214,25 @@ impl FileSemanticAnalyzer {
     /// 4) the current error, if any
     fn bind_selector_field_to_struct(
         &mut self,
-        context: TypeQueryContext,
         field_node: &NodeData,
-        field_types: &Vec<RefType>,
+        field_types: &SumType,
         parent: Option<Ptr<Struct>>,
         parent_error: Option<SumType>,
     ) -> SelectorFieldSemantics {
         let single_type = if field_types.len() == 1 {
-            let first = field_types.get(0).unwrap();
+            let first = field_types.types().get(0).unwrap();
             Some(first.clone())
         } else {
             None
         };
-        let either_type = single_type.as_ref().and_then(|t| match &t.r#type {
-            Type::Either(value, err) => {
-                Some((SumType::from_types(value), SumType::from_types(err)))
-            }
+        let either_type = single_type.as_ref().and_then(|t| match t {
+            Type::Either(value, err) => Some((value.clone(), err.clone())),
             _ => None,
         });
-        let field_type = SumType::from_types(field_types);
         let (value, value_error) = match (parent_error, either_type) {
-            (None, None) => (field_type, None),
+            (None, None) => (field_types.clone(), None),
             (None, Some(either_type)) => (either_type.0, Some(either_type.1)),
-            (Some(parent_error), None) => (field_type, Some(parent_error)),
+            (Some(parent_error), None) => (field_types.clone(), Some(parent_error)),
             (Some(parent_error), Some(either_type)) => {
                 let mut error = parent_error.clone();
                 error.union(either_type.1);
@@ -2193,23 +2240,18 @@ impl FileSemanticAnalyzer {
             }
         };
         let full_type = match value_error {
-            Some(value_error) => SumType::from_type(RefType {
-                node: field_node.clone(),
-                is_reference: false,
-                is_mut: false,
-                r#type: Type::Either(value.types().clone(), value_error.types().clone()),
-            }),
+            Some(value_error) => SumType::from_type(Type::Either(value, value_error)),
             None => value,
         };
-        let single_identifier = single_type.and_then(|t| match t.r#type {
-            Type::Identifier(_) => Some(t.clone()),
+        let single_identifier = single_type.and_then(|t| match t {
+            Type::Struct(_) => Some(t.clone()),
             Type::Either(value, _) => {
                 if value.len() != 1 {
                     None
                 } else {
-                    let first = value.get(0).unwrap();
-                    match first.r#type {
-                        Type::Identifier(_) => Some(first.clone()),
+                    let first = value.types().get(0).unwrap();
+                    match first {
+                        Type::Struct(_) => Some(first.clone()),
                         _ => None,
                     }
                 }
@@ -2218,17 +2260,14 @@ impl FileSemanticAnalyzer {
         });
 
         let found_struct = if let Some(identifier) = single_identifier {
-            let found_struct = self
-                .query_type(context, &identifier)
-                .and_then(|s| s.binding)
-                .and_then(|b| match b {
-                    TypeBinding::Struct(struct_def) => Some(struct_def),
-                    TypeBinding::StructTypeArgument(_) => None,
-                });
+            let found_struct = match identifier.clone() {
+                Type::Struct(struct_def) => Some(struct_def),
+                _ => None,
+            };
             if found_struct.is_none() {
                 self.errors.push(LangError::type_error(
                     field_node,
-                    format!("{} not found or not a struct", identifier),
+                    format!("{:?} not found or not a struct", identifier),
                 ));
             };
             found_struct
@@ -2237,7 +2276,7 @@ impl FileSemanticAnalyzer {
         };
 
         let semantics = SelectorFieldSemantics {
-            field_types: SumType::from_types(field_types),
+            field_types: field_types.clone(),
             r#type: full_type,
             binding: found_struct.map(|s| (SelectorFieldBinding::Struct(s))),
             parent,
@@ -2397,16 +2436,10 @@ impl FileSemanticAnalyzer {
         let left_types = left.types();
         if let Some((value, err)) = left_types.clone().and_then(|types| types.as_either()) {
             let original_types = left_types.unwrap();
-            let original_either = original_types.types().get(0).unwrap();
-            let narrowed_type = SumType::from_type(RefType {
-                node: original_either.node.clone(),
-                is_reference: original_either.is_reference,
-                is_mut: original_either.is_mut,
-                r#type: if check.is_equal {
-                    Type::Either(vec![], err.types().clone())
-                } else {
-                    Type::Either(value.types().clone(), vec![])
-                },
+            let narrowed_type = SumType::from_type(if check.is_equal {
+                Type::Either(SumType::empty(), err)
+            } else {
+                Type::Either(value, SumType::empty())
             });
             let result = TypeNarrowing {
                 original_types,
@@ -2518,7 +2551,7 @@ impl FileSemanticAnalyzer {
             .into_types()
             .unwrap_or(SumType::new(vec![]));
         for t in original_types.types() {
-            if let Type::Unresolved(_) = &t.r#type {
+            if let Type::Unresolved(_) = &t {
                 self.errors.push(LangError::type_error(
                     &unary.operand.node,
                     format!("Can't narrow unresolved type: {:?}", &t),
@@ -2536,24 +2569,12 @@ impl FileSemanticAnalyzer {
         match &expression.right.r#type {
             // TODO handle unary & case
             ExpressionType::Identifier(identifier) => match identifier.as_str() {
-                "string" => result
-                    .types
-                    .push(RefType::value(expression.right.node.clone(), Type::String)),
-                "bool" => result
-                    .types
-                    .push(RefType::value(expression.right.node.clone(), Type::Bool)),
-                "u8" => result
-                    .types
-                    .push(RefType::value(expression.right.node.clone(), Type::U8)),
-                "i8" => result
-                    .types
-                    .push(RefType::value(expression.right.node.clone(), Type::I8)),
-                "u32" => result
-                    .types
-                    .push(RefType::value(expression.right.node.clone(), Type::U32)),
-                "i32" => result
-                    .types
-                    .push(RefType::value(expression.right.node.clone(), Type::I32)),
+                "string" => result.types.push(Type::String),
+                "bool" => result.types.push(Type::Bool),
+                "u8" => result.types.push(Type::U8),
+                "i8" => result.types.push(Type::I8),
+                "u32" => result.types.push(Type::U32),
+                "i32" => result.types.push(Type::I32),
                 _ => {
                     self.errors.push(LangError::type_error(
                         &expression.right.node,
@@ -2562,9 +2583,7 @@ impl FileSemanticAnalyzer {
                     return None;
                 }
             },
-            ExpressionType::Null => result
-                .types
-                .push(RefType::value(expression.right.node.clone(), Type::Null)),
+            ExpressionType::Null => result.types.push(Type::Null),
             _ => {
                 self.errors.push(LangError::type_error(
                     &expression.right.node,

@@ -3,16 +3,17 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 use crate::ast::{
-    print_err, Array, ArrayExpression, BinaryOperator, Block, BlockTrait, Expression,
-    ExpressionType, Field, FileContext, Function, FunctionCall, FunctionSignature, FunctionTrait,
-    IfAlternative, IfExpression, Parameter, PipeExpression, Receiver, RefType,
-    ReturnErrorPipeExpression, SelectorExpression, SelectorFieldType, Slice, SliceExpression,
-    Statement, StringTemplatePart, Struct, StructFieldInitialization, StructInitialization, Type,
-    TypeParam, TypeParamType, UnaryOperator, VarDeclaration,
+    print_err, ArrayExpression, BinaryOperator, Block, BlockTrait, Expression, ExpressionType,
+    Field, FileContext, Function, FunctionCall, FunctionSignature, FunctionTrait, IfAlternative,
+    IfExpression, Parameter, PipeExpression, Receiver, ReturnErrorPipeExpression,
+    SelectorExpression, SelectorFieldType, SliceExpression, Statement, StringTemplatePart, Struct,
+    StructFieldInitialization, StructInitialization, TypeParam, TypeParamType, UnaryOperator,
+    VarDeclaration,
 };
 use crate::buildin::Buildins;
-use crate::semantics::{FileSemanticAnalyzer, TypeNarrowing};
-use crate::sum_type::SumType;
+use crate::semantics::{FileSemanticAnalyzer, TypeNarrowing, TypeQueryContext};
+use crate::semantics_types::{SArray, SSlice, SumType, Type};
+
 use crate::types::Ptr;
 
 struct Writer<'a> {
@@ -73,26 +74,27 @@ fn type_to_enum_variant(t: &Type) -> String {
         Type::I8 => "I8".to_string(),
         Type::U32 => "U32".to_string(),
         Type::I32 => "I32".to_string(),
-        Type::Identifier(identifier) => {
-            format!("{}", &identifier)
-        }
         Type::Array(_) => todo!(),
         Type::Slice(_) => todo!(),
         Type::Either(_, _) => panic!("Validation should have failed"),
         Type::Unresolved(_) => panic!("Validation should have failed"),
-    }
-}
-
-fn ref_type_to_enum_variant(t: &RefType) -> String {
-    if t.is_reference {
-        format!("Ref{}", type_to_enum_variant(&t.r#type))
-    } else {
-        type_to_enum_variant(&t.r#type)
+        Type::RefType(ref_type) => {
+            if ref_type.is_mut {
+                format!("RefM{}", type_to_enum_variant(&ref_type.r#type))
+            } else {
+                format!("Ref{}", type_to_enum_variant(&ref_type.r#type))
+            }
+        }
+        Type::Struct(str) => {
+            // TODO include type args
+            str.name.clone()
+        }
+        Type::StructTypeArgument(_) => todo!(),
     }
 }
 
 impl RustTranspiler {
-    fn transpile_types(&self, types: &Vec<RefType>, writer: &mut Writer) {
+    fn transpile_types(&self, types: &Vec<Type>, writer: &mut Writer) {
         if types.len() > 1 {
             let name = SumType::from_types(types).sum_type_name();
             writer.write(&name);
@@ -106,11 +108,27 @@ impl RustTranspiler {
         self.transpile_type(t, writer)
     }
 
-    fn transpile_type(&self, t: &RefType, writer: &mut Writer) {
-        if t.is_reference {
-            writer.write("&");
+    fn transpile_type_arg(&self, type_arg: &TypeParam, writer: &mut Writer) {
+        match &type_arg.r#type {
+            TypeParamType::Identifier(ident) => {
+                writer.write(&ident);
+            }
+            TypeParamType::GenericTypeParam(ident, args) => {
+                writer.write(&ident);
+                writer.write("<");
+                for (i, arg) in args.iter().enumerate() {
+                    if i != 0 {
+                        writer.write(", ");
+                    }
+                    self.transpile_type_arg(arg, writer);
+                }
+                writer.write(">");
+            }
         }
-        let text = match &t.r#type {
+    }
+
+    fn transpile_type(&self, t: &Type, writer: &mut Writer) {
+        let text = match &t {
             Type::Str => "str",
             Type::String => "String",
             Type::Bool => "bool",
@@ -118,21 +136,63 @@ impl RustTranspiler {
             Type::U8 => "u8",
             Type::I32 => "i32",
             Type::U32 => "u32",
-            Type::Identifier(identifier) => identifier.as_str(),
             Type::Array(array) => return self.transpile_array(&array, writer),
             Type::Slice(slice) => return self.transpile_slice(&slice, writer),
             Type::Null => "()",
             Type::Either(value, err) => {
                 writer.write("Result<");
-                self.transpile_types(value, writer);
+                self.transpile_types(value.types(), writer);
                 writer.write(", ");
-                self.transpile_types(err, writer);
+                self.transpile_types(err.types(), writer);
                 writer.write(">");
+                return;
+            }
+            Type::RefType(ref_type) => {
+                writer.write("&");
+                if ref_type.is_mut {
+                    writer.write("mut ");
+                }
+                self.transpile_type(&ref_type.r#type, writer);
+                return;
+            }
+            Type::StructTypeArgument(type_arg) => {
+                self.transpile_type_arg(type_arg, writer);
+                return;
+            }
+            Type::Struct(str) => {
+                writer.write(&str.name);
                 return;
             }
             Type::Unresolved(_) => panic!(),
         };
         writer.write(text);
+    }
+
+    fn rust_type(t: &Type) -> String {
+        let t = match t {
+            Type::Null => "",
+            Type::Str => todo!(),
+            Type::String => "String",
+            Type::Bool => "bool",
+            Type::U8 => "u8",
+            Type::I8 => "i8",
+            Type::U32 => "u32",
+            Type::I32 => "i32",
+            Type::Array(_) => todo!("array"),
+            Type::Slice(_) => todo!("slice"),
+            Type::Either(_, _) => panic!("Validation should have failed"),
+            Type::Unresolved(_) => panic!("Validation should have failed"),
+            Type::RefType(ref_type) => {
+                if ref_type.is_mut {
+                    return format!("&'a mut {}", Self::rust_type(&ref_type.r#type));
+                } else {
+                    return format!("&'a {}", Self::rust_type(&ref_type.r#type));
+                }
+            }
+            Type::Struct(st) => return st.name.clone(),
+            Type::StructTypeArgument(_) => todo!(),
+        };
+        t.to_string()
     }
 
     fn transpile_sum_type_def(&self, name: &str, types: &SumType, writer: &mut Writer) {
@@ -145,30 +205,12 @@ impl RustTranspiler {
         writer.new_line();
         writer.indented(|writer| {
             for t in types.types() {
-                let variant = ref_type_to_enum_variant(t);
-                let rust_type = match &t.r#type {
-                    Type::Null => "".to_string(),
-                    Type::Str => todo!(),
-                    Type::String => "String".to_string(),
-                    Type::Bool => "bool".to_string(),
-                    Type::U8 => "u8".to_string(),
-                    Type::I8 => "i8".to_string(),
-                    Type::U32 => "u32".to_string(),
-                    Type::I32 => "i32".to_string(),
-                    Type::Identifier(identifier) => identifier.clone(),
-                    Type::Array(_) => "todoarray".to_string(),
-                    Type::Slice(_) => "todoslice".to_string(),
-                    Type::Either(_, _) => panic!("Validation should have failed"),
-                    Type::Unresolved(_) => panic!("Validation should have failed"),
-                };
+                let variant = type_to_enum_variant(t);
+                let rust_type = Self::rust_type(&t);
                 if rust_type == "" {
                     writer.write(&variant);
                 } else {
-                    if t.is_reference {
-                        writer.write(&format!("{}(&'a {})", variant, rust_type))
-                    } else {
-                        writer.write(&format!("{}({})", variant, rust_type))
-                    };
+                    writer.write(&format!("{}({})", variant, rust_type));
                 }
 
                 writer.write(",");
@@ -178,7 +220,7 @@ impl RustTranspiler {
         writer.write("}");
     }
 
-    fn transpile_array(&self, array: &Array, writer: &mut Writer) {
+    fn transpile_array(&self, array: &SArray, writer: &mut Writer) {
         writer.write("[");
         self.transpile_types(&array.types, writer);
         writer.write("; ");
@@ -186,20 +228,29 @@ impl RustTranspiler {
         writer.write("]");
     }
 
-    fn transpile_slice(&self, slice: &Slice, writer: &mut Writer) {
+    fn transpile_slice(&self, slice: &SSlice, writer: &mut Writer) {
         writer.write("&[");
         self.transpile_types(&slice.types, writer);
         writer.write("]");
     }
 
-    fn transpile_parameter(&self, parameter: &Parameter, writer: &mut Writer) {
+    fn transpile_parameter(
+        &self,
+        analyzer: &mut FileSemanticAnalyzer,
+        fun: &Function,
+        parameter: &Parameter,
+        writer: &mut Writer,
+    ) {
+        let types = analyzer.query_types(&TypeQueryContext::from_fun(fun), &parameter.types);
         writer.write(&parameter.name);
         writer.write(": ");
-        self.transpile_types(&parameter.types, writer);
+        self.transpile_types(&types.types(), writer);
     }
 
     fn transpile_parameters(
         &self,
+        analyzer: &mut FileSemanticAnalyzer,
+        fun: &Function,
         receiver: &Option<Receiver>,
         parameters: &Vec<Parameter>,
         writer: &mut Writer,
@@ -220,7 +271,7 @@ impl RustTranspiler {
         }
         let mut iter = parameters.iter().peekable();
         while let Some(parameter) = iter.next() {
-            self.transpile_parameter(parameter, writer);
+            self.transpile_parameter(analyzer, fun, parameter, writer);
             if iter.peek().is_some() {
                 writer.write(", ");
             }
@@ -435,7 +486,7 @@ impl RustTranspiler {
             .unwrap()
             .types()[0]
             .clone();
-        let expression_err = match expression_type.r#type {
+        let expression_err = match expression_type {
             Type::Either(_, err) => err,
             _ => {
                 panic!("Should be an either type")
@@ -449,18 +500,18 @@ impl RustTranspiler {
             .unwrap()
             .types
             .clone();
-        let return_err = match &return_type[0].r#type {
+        let return_type = analyzer.query_types(&TypeQueryContext::from_block(block), &return_type);
+        let return_err = match &return_type.types()[0] {
             Type::Either(_, err) => err.clone(),
             _ => {
                 panic!("Should be an either type")
             }
         };
         if expression_err != return_err {
-            let expression_err = SumType::from_types(&expression_err);
             writer.write(".map_err(|err| ");
             self.transpile_type_mapping(
                 "err",
-                &SumType::from_types(&return_err),
+                &return_err,
                 &expression_err,
                 &expression_err,
                 writer,
@@ -722,13 +773,17 @@ impl RustTranspiler {
                         .find(|it| it == &target_type)
                         .is_some();
                     let variant = if exact_match {
-                        ref_type_to_enum_variant(target_type)
+                        type_to_enum_variant(target_type)
                     } else {
                         // if not an exact match it must be `&` expression, thus use the base type
-                        type_to_enum_variant(&target_type.r#type)
+                        let target_type = match target_type {
+                            Type::RefType(ref_type) => ref_type.r#type.as_ref().clone(),
+                            _ => target_type.clone(),
+                        };
+                        type_to_enum_variant(&target_type)
                     };
 
-                    let full_variant = match target_type.r#type {
+                    let full_variant = match target_type {
                         Type::Null => variant,
                         _ => format!("{}(e)", variant),
                     };
@@ -773,7 +828,7 @@ impl RustTranspiler {
 
                 writer.write(&target_name);
                 writer.write("::");
-                let variant = ref_type_to_enum_variant(&resolved_type.types()[0]);
+                let variant = type_to_enum_variant(&resolved_type.types()[0]);
                 writer.write(&variant);
                 writer.write("(");
                 writer.write(expression);
@@ -787,8 +842,8 @@ impl RustTranspiler {
                     for resolved in narrowed_type.types() {
                         writer.write(&resolved_name);
                         writer.write("::");
-                        let variant = ref_type_to_enum_variant(resolved);
-                        let full_variant = match resolved.r#type {
+                        let variant = type_to_enum_variant(resolved);
+                        let full_variant = match resolved {
                             Type::Null => variant,
                             _ => format!("{}(e)", variant),
                         };
@@ -925,13 +980,15 @@ impl RustTranspiler {
         writer.write(&var_declaration.name);
         match &var_declaration.types {
             Some(t) => {
+                let types = analyzer.query_types(&TypeQueryContext::from_block(block), t);
                 writer.write(": ");
-                self.transpile_types(t, writer);
+                self.transpile_types(types.types(), writer);
             }
             None => {}
         }
         writer.write(" = ");
-        let var_types = analyzer.query_var_types(var_declaration);
+        let var_types =
+            analyzer.query_var_types(&TypeQueryContext::from_block(block), var_declaration);
 
         self.transpile_expression_with_mapping(
             analyzer,
@@ -1009,13 +1066,10 @@ impl RustTranspiler {
                     if type_narrowing.types.len() > 1 {
                         writer.write(&format!(
                             "{}::{:?}(v) => Some({}::{:?}(v)),",
-                            condition_type, t.r#type, target_type_name, t.r#type,
+                            condition_type, t, target_type_name, t,
                         ));
                     } else {
-                        writer.write(&format!(
-                            "{}::{:?}(v) => Some(v),",
-                            condition_type, t.r#type
-                        ));
+                        writer.write(&format!("{}::{:?}(v) => Some(v),", condition_type, t));
                     }
                 }
                 writer.new_line();
@@ -1123,10 +1177,17 @@ impl RustTranspiler {
     ) {
         writer.write(&format!("fn {}", fun.signature.name));
 
-        self.transpile_parameters(&fun.signature.receiver, &fun.signature.parameters, writer);
+        self.transpile_parameters(
+            analyzer,
+            &fun,
+            &fun.signature.receiver,
+            &fun.signature.parameters,
+            writer,
+        );
         if let Some(return_type) = &fun.signature.return_type {
             writer.write(" -> ");
-            self.transpile_types(&return_type.types, writer);
+            let types = analyzer.query_types(&TypeQueryContext::from_fun(&fun), &return_type.types);
+            self.transpile_types(types.types(), writer);
         }
         writer.write(" {");
         writer.new_line();
@@ -1136,20 +1197,33 @@ impl RustTranspiler {
         writer.write("}");
     }
 
-    fn transpile_struct_field(&self, field: &Field, writer: &mut Writer) {
+    fn transpile_struct_field(
+        &self,
+        analyzer: &mut FileSemanticAnalyzer,
+        st: &Ptr<Struct>,
+        field: &Field,
+        writer: &mut Writer,
+    ) {
         writer.write(&field.name);
         writer.write(": ");
         if field.has_reference() {
             writer.write("&'a ");
         }
-        self.transpile_types(&field.types, writer);
+        let types = analyzer.query_types(&TypeQueryContext::Struct(st.clone()), &field.types);
+        self.transpile_types(types.types(), writer);
 
         writer.write(",");
     }
 
-    fn transpile_struct_fields(&self, fields: &Vec<Field>, writer: &mut Writer) {
+    fn transpile_struct_fields(
+        &self,
+        analyzer: &mut FileSemanticAnalyzer,
+        st: &Ptr<Struct>,
+        fields: &Vec<Field>,
+        writer: &mut Writer,
+    ) {
         for field in fields {
-            self.transpile_struct_field(field, writer);
+            self.transpile_struct_field(analyzer, st, field, writer);
             writer.new_line();
         }
     }
@@ -1168,7 +1242,12 @@ impl RustTranspiler {
         }
     }
 
-    fn transpile_struct(&self, struct_def: &Struct, writer: &mut Writer) {
+    fn transpile_struct(
+        &self,
+        analyzer: &mut FileSemanticAnalyzer,
+        struct_def: &Ptr<Struct>,
+        writer: &mut Writer,
+    ) {
         writer.write(&format!("struct {}", struct_def.name));
         let has_ref = struct_def.has_reference();
         if has_ref || struct_def.type_params.is_some() {
@@ -1184,7 +1263,7 @@ impl RustTranspiler {
         writer.write(" {");
         writer.new_line();
         writer.indented(|writer| {
-            self.transpile_struct_fields(&struct_def.fields, writer);
+            self.transpile_struct_fields(analyzer, struct_def, &struct_def.fields, writer);
         });
         writer.write("}");
     }
@@ -1247,7 +1326,7 @@ impl RustTranspiler {
         }
 
         for (_, struct_def) in &file.structs {
-            self.transpile_struct(struct_def, writer);
+            self.transpile_struct(analyzer, struct_def, writer);
             writer.new_line();
             writer.new_line();
 

@@ -11,8 +11,8 @@ use czlanglib::{
     init,
     project::{FileChange, Project},
     query::{find_in_file, QueryResult},
-    semantics::IdentifierBinding,
-    types::types_to_string,
+    semantics::{IdentifierBinding, TypeQueryContext},
+    semantics_types::types_to_string,
 };
 use lsp_server::{Connection, Message, Notification, RequestId};
 use lsp_types::{notification::*, request::*, *};
@@ -338,11 +338,16 @@ impl Server {
             let Some(result) = find_in_file(&mut file.file_analyzer, position) else { return None };
 
             let result = match result {
-                QueryResult::Function(fun) => format_fun_signature(&fun.signature),
-                QueryResult::Parameter(parameter) => {
-                    format!("(parameter) {}", format_param(&parameter))
+                QueryResult::Function(fun) => {
+                    format_fun_signature(&mut file.file_analyzer, fun.signature.clone())
                 }
-                QueryResult::Identifier(_, _, expression_semantics) => {
+                QueryResult::Parameter(fun, parameter) => {
+                    format!(
+                        "(parameter) {}",
+                        format_param(&mut file.file_analyzer, fun.signature.clone(), &parameter)
+                    )
+                }
+                QueryResult::Identifier(_, block, expression_semantics) => {
                     let Some(binding) = expression_semantics.binding.as_ref() else {
                         return None;
                     };
@@ -353,14 +358,20 @@ impl Server {
                                     "{}\n(narrowed variable): {}",
                                     format_var_declaration(
                                         &var,
-                                        &file.file_analyzer.query_var_types(&var),
+                                        &file.file_analyzer.query_var_types(
+                                            &TypeQueryContext::from_block(&block),
+                                            &var
+                                        ),
                                     ),
                                     format_var_declaration(&var, &narrowed_types)
                                 )
                             } else {
                                 format_var_declaration(
                                     &var,
-                                    &file.file_analyzer.query_var_types(&var),
+                                    &file.file_analyzer.query_var_types(
+                                        &TypeQueryContext::from_block(&block),
+                                        &var,
+                                    ),
                                 )
                             }
                         }
@@ -368,11 +379,22 @@ impl Server {
                             if let Some(narrowed_types) = expression_semantics.narrowed_types {
                                 format!(
                                     "{}\n(narrowed parameter) {}",
-                                    format_param(&param),
+                                    format_param(
+                                        &mut file.file_analyzer,
+                                        block.fun().signature.clone(),
+                                        &param
+                                    ),
                                     narrowed_types.to_string()
                                 )
                             } else {
-                                format!("(parameter) {}", format_param(&param))
+                                format!(
+                                    "(parameter) {}",
+                                    format_param(
+                                        &mut file.file_analyzer,
+                                        block.fun().signature.clone(),
+                                        &param
+                                    )
+                                )
                             }
                         }
                         IdentifierBinding::PipeArg(arg) => {
@@ -380,12 +402,18 @@ impl Server {
                         }
                     }
                 }
-                QueryResult::VarDeclaration(var) => {
-                    format_var_declaration(&var, &file.file_analyzer.query_var_types(&var))
-                }
+                QueryResult::VarDeclaration(block, var) => format_var_declaration(
+                    &var,
+                    &file
+                        .file_analyzer
+                        .query_var_types(&TypeQueryContext::from_block(&block), &var),
+                ),
                 QueryResult::FunctionCall(fun) => {
                     if let Some(fun) = fun.binding {
-                        format_fun_signature(fun.as_function_signature())
+                        format_fun_signature(
+                            &mut file.file_analyzer,
+                            fun.as_function_signature().clone(),
+                        )
                     } else {
                         return None;
                     }
@@ -393,8 +421,11 @@ impl Server {
                 QueryResult::StructDeclaration(struct_dec) => {
                     format!("struct {}", struct_dec.name)
                 }
-                QueryResult::StructFieldDeclaration(field) => {
-                    format!("{} {}", field.name, types_to_string(&field.types))
+                QueryResult::StructFieldDeclaration(str, field) => {
+                    let types = file
+                        .file_analyzer
+                        .query_types(&TypeQueryContext::Struct(str), &field.types);
+                    format!("{} {}", field.name, types_to_string(types.types()))
                 }
                 QueryResult::SelectorField(result) => {
                     format!("field {}", types_to_string(result.1.r#type.types()))
@@ -402,8 +433,11 @@ impl Server {
                 QueryResult::StructIdentifier(struct_dec) => {
                     format!("struct {}", struct_dec.name)
                 }
-                QueryResult::StructFieldInitialization(field) => {
-                    format!("field {}", types_to_string(&field.types))
+                QueryResult::StructFieldInitialization(str, field) => {
+                    let types = file
+                        .file_analyzer
+                        .query_types(&TypeQueryContext::Struct(str), &field.types);
+                    format!("field {}", types_to_string(types.types()))
                 }
                 QueryResult::Literal(types) => {
                     format!("literal {}", types_to_string(&types.types()))
@@ -475,9 +509,9 @@ impl Server {
                         SelectorFieldType::Call(_) => return None, // TODO
                     }
                 }
-                QueryResult::StructFieldInitialization(field) => field.name_node.span,
-                QueryResult::VarDeclaration(var) => var.name_node.span.clone(),
-                QueryResult::Parameter(param) => param.name_node.span,
+                QueryResult::StructFieldInitialization(_, field) => field.name_node.span,
+                QueryResult::VarDeclaration(_, var) => var.name_node.span.clone(),
+                QueryResult::Parameter(_, param) => param.name_node.span,
                 _ => return None,
             };
             let target = Range::new(
@@ -509,10 +543,10 @@ impl Server {
                 QueryResult::Function(fun) => {
                     file.file_analyzer.query_usage(fun.signature.name_node.id)
                 }
-                QueryResult::VarDeclaration(var) => {
+                QueryResult::VarDeclaration(_, var) => {
                     file.file_analyzer.query_usage(var.name_node.id)
                 }
-                QueryResult::Parameter(par) => file.file_analyzer.query_usage(par.name_node.id),
+                QueryResult::Parameter(_, par) => file.file_analyzer.query_usage(par.name_node.id),
 
                 _ => return None,
             };

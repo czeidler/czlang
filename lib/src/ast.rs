@@ -228,7 +228,7 @@ impl Iterator for FileSymbolIterator {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Struct {
     pub node: NodeData,
 
@@ -244,7 +244,7 @@ impl Struct {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Field {
     pub node: NodeData,
 
@@ -426,6 +426,25 @@ pub struct Parameter {
     pub origin: Option<SourceSpan>,
 }
 
+/*
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum ClosureContext {
+    Owned,
+    MutRef,
+    Ref,
+    Type(Vec<RefType>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ClosureType {
+    pub node: NodeData,
+    /// If not set its just a function pointer
+    pub context: Option<ClosureContext>,
+    pub parameters: Vec<Parameter>,
+    pub return_type: Option<ReturnType>,
+}
+*/
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Type {
     Null,
@@ -504,13 +523,15 @@ impl RefType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum TypeParamType {
+    /// Simple type parameter
     Identifier(String),
+    /// identifier + type params, e.g. IdentType<string, bool>
     GenericTypeParam(String, Vec<TypeParam>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TypeParam {
     pub node: NodeData,
     pub r#type: TypeParamType,
@@ -643,12 +664,6 @@ pub struct Expression {
     pub node: NodeData,
     pub r#type: ExpressionType,
 }
-
-#[derive(Debug, Clone)]
-pub struct FunPointerTypeExpression {}
-
-#[derive(Debug, Clone)]
-pub struct ClosureTypeExpression {}
 
 #[derive(Debug, Clone)]
 pub enum ExpressionType {

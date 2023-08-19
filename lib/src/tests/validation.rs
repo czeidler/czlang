@@ -319,7 +319,7 @@ fun main() { test() }
 
     #[test]
     fn pipe_types() {
-        let analysis = validate_project(
+        let mut analysis = validate_project(
             "test_projects/pipe_types",
             r#"
             fun value() i32 {
@@ -345,15 +345,15 @@ fun main() { test() }
         )
         .unwrap();
 
-        let value = find_var_in_fun(&analysis, "main", "value0").unwrap();
+        let value = find_var_in_fun(&mut analysis, "main", "value0").unwrap();
         assert_eq!(value.to_string(), "bool");
-        let value = find_var_in_fun(&analysis, "main", "value1").unwrap();
+        let value = find_var_in_fun(&mut analysis, "main", "value1").unwrap();
         assert_eq!(value.to_string(), "_ ? bool");
-        let value = find_var_in_fun(&analysis, "main", "value2").unwrap();
+        let value = find_var_in_fun(&mut analysis, "main", "value2").unwrap();
         assert_eq!(value.to_string(), "bool");
-        let value = find_var_in_fun(&analysis, "main", "value3").unwrap();
+        let value = find_var_in_fun(&mut analysis, "main", "value3").unwrap();
         assert_eq!(value.to_string(), "bool | i32");
-        let value = find_var_in_fun(&analysis, "main", "value4").unwrap();
+        let value = find_var_in_fun(&mut analysis, "main", "value4").unwrap();
         assert_eq!(value.to_string(), "bool | i32 ? null | i32");
     }
 }

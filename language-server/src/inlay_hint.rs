@@ -4,7 +4,9 @@ use czlanglib::{
         IfExpression, RootSymbol, SourceSpan, Statement,
     },
     project::ProjectFile,
-    types::{types_to_string, Ptr},
+    semantics::TypeQueryContext,
+    semantics_types::types_to_string,
+    types::Ptr,
 };
 use lsp_types::{InlayHint, InlayHintKind, InlayHintLabel, Position};
 
@@ -35,7 +37,9 @@ fn inlay_hint_from_block(
             }
             Statement::VarDeclaration(var) => {
                 if var.types.is_none() {
-                    let var_type = file.file_analyzer.query_var_types(&var);
+                    let var_type = file
+                        .file_analyzer
+                        .query_var_types(&TypeQueryContext::from_block(block), &var);
                     hints.push(InlayHint {
                         position: Position {
                             line: var.name_node.span.end.row as u32,

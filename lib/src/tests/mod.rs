@@ -3,8 +3,8 @@ use crate::{
         BlockTrait, FileContext, FileTrait, Function, FunctionTrait, RootSymbol, Statement,
         VarDeclaration,
     },
-    semantics::FileSemanticAnalyzer,
-    sum_type::SumType,
+    semantics::{FileSemanticAnalyzer, TypeQueryContext},
+    semantics_types::SumType,
     types::Ptr,
 };
 
@@ -35,10 +35,11 @@ fn find_var(fun: &Ptr<Function>, name: &str) -> Option<Ptr<VarDeclaration>> {
 }
 
 pub(crate) fn find_var_in_fun(
-    analysis: &FileSemanticAnalyzer,
+    analysis: &mut FileSemanticAnalyzer,
     fun: &str,
     var: &str,
 ) -> Option<SumType> {
-    let var = find_function(&analysis.file, fun).and_then(|fun| find_var(&fun, var))?;
-    Some(analysis.query_var_types(&var))
+    let fun = find_function(&analysis.file, fun)?;
+    let var = find_var(&fun, var)?;
+    Some(analysis.query_var_types(&TypeQueryContext::from_fun(&fun), &var))
 }
