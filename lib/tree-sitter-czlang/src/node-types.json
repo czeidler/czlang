@@ -704,7 +704,7 @@
     "type": "closure_type",
     "named": true,
     "fields": {
-      "context": {
+      "anonymous": {
         "multiple": false,
         "required": false,
         "types": [
@@ -714,6 +714,24 @@
           },
           {
             "type": "&mut",
+            "named": false
+          }
+        ]
+      },
+      "context": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "(",
+            "named": false
+          },
+          {
+            "type": ")",
+            "named": false
+          },
+          {
+            "type": ".",
             "named": false
           }
         ]
@@ -778,7 +796,7 @@
           }
         ]
       },
-      "type_context": {
+      "type": {
         "multiple": false,
         "required": false,
         "types": [
