@@ -7,7 +7,7 @@ use super::{
     FileContext, NodeData, RefType, SourceSpan, TypeParamType,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ReturnType {
     pub node: NodeData,
     pub types: Vec<RefType>,
@@ -20,7 +20,7 @@ pub struct Receiver {
     pub interface: Option<TypeParamType>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Parameter {
     pub node: NodeData,
     pub name_node: NodeData,
@@ -93,6 +93,13 @@ fn parse_receiver<'a>(file: &Ptr<FileContext>, node: &Node<'a>) -> Option<Receiv
     })
 }
 
+pub(crate) fn parse_return_type<'a>(file: &Ptr<FileContext>, node: &Node<'a>) -> ReturnType {
+    ReturnType {
+        node: NodeData::from_node(node),
+        types: parse_types(file, node).unwrap_or(vec![]),
+    }
+}
+
 pub(crate) fn parse_method<'a>(file: &Ptr<FileContext>, node: &Node<'a>) -> Option<Ptr<Function>> {
     let name = child_by_field(&node, "name")?;
     let receiver_node = child_by_field(&node, "receiver")?;
@@ -100,10 +107,7 @@ pub(crate) fn parse_method<'a>(file: &Ptr<FileContext>, node: &Node<'a>) -> Opti
     let receiver = parse_receiver(file, &receiver_node)?;
     let parameter_list = child_by_field(&node, "parameters")?;
     let return_type = match node.child_by_field_name("result".as_bytes()) {
-        Some(return_node) => Some(ReturnType {
-            node: NodeData::from_node(&return_node),
-            types: parse_types(file, &return_node).unwrap_or(vec![]),
-        }),
+        Some(return_node) => Some(parse_return_type(file, &return_node)),
         None => None,
     };
     let body_node: Node = child_by_field(&node, "body")?;
@@ -150,7 +154,10 @@ pub(crate) fn parse_fun<'a>(file: &Ptr<FileContext>, node: &Node<'a>) -> Option<
     Some(fun)
 }
 
-fn parse_parameters<'a>(context: &Ptr<FileContext>, node: Node<'a>) -> Option<Vec<Parameter>> {
+pub(crate) fn parse_parameters<'a>(
+    context: &Ptr<FileContext>,
+    node: Node<'a>,
+) -> Option<Vec<Parameter>> {
     let mut parameters = Vec::new();
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {

@@ -42,6 +42,8 @@ pub enum Type {
     Struct(Ptr<Struct>),
     /// For example, an identifier pointing to a struct type parameter
     StructTypeArgument(TypeParam),
+
+    Closure(Ptr<ClosureType>),
 }
 
 impl Type {
@@ -54,6 +56,22 @@ impl Type {
             }),
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum ClosureContext {
+    Owned,
+    MutRef,
+    Ref,
+    Type(Type),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ClosureType {
+    /// If not set its just a function pointer
+    pub context: Option<ClosureContext>,
+    pub parameters: Vec<(String, SumType)>,
+    pub return_type: Option<SumType>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -208,6 +226,29 @@ impl SumType {
                     continue;
                 }
                 Type::StructTypeArgument(_) => todo!(),
+                Type::Closure(closure) => {
+                    name += "C";
+                    if let Some(ctx) = &closure.context {
+                        match ctx {
+                            ClosureContext::Owned => name += "o",
+                            ClosureContext::MutRef => name += "m",
+                            ClosureContext::Ref => name += "r",
+                            ClosureContext::Type(t) => {
+                                name += "t";
+                                name += &SumType::from_type(t.clone()).sum_type_name();
+                            }
+                        }
+                    };
+                    name += "p";
+                    for (_, t) in &closure.parameters {
+                        name += &t.sum_type_name();
+                    }
+                    name += "p";
+                    if let Some(ret) = &closure.return_type {
+                        name += &ret.sum_type_name();
+                    };
+                    continue;
+                }
             };
             name += part;
         }
@@ -255,6 +296,7 @@ fn is_number(types: &Type) -> bool {
         Type::RefType(_) => false,
         Type::Struct(_) => false,
         Type::StructTypeArgument(_) => false,
+        Type::Closure(_) => false,
     }
 }
 
@@ -366,6 +408,33 @@ impl fmt::Display for Type {
             }
             Type::Struct(s) => write!(f, "{}", s.name),
             Type::StructTypeArgument(type_param) => type_param.fmt(f),
+            Type::Closure(closure) => {
+                write!(f, "fun ")?;
+                if let Some(ctx) = &closure.context {
+                    match ctx {
+                        ClosureContext::Owned => write!(f, "().")?,
+                        ClosureContext::MutRef => write!(f, "(&mut).")?,
+                        ClosureContext::Ref => write!(f, "(&).")?,
+                        ClosureContext::Type(t) => {
+                            write!(f, "(")?;
+                            t.fmt(f)?;
+                            write!(f, ").")?;
+                        }
+                    }
+                };
+                write!(f, "(")?;
+                for (i, (name, t)) in closure.parameters.iter().enumerate() {
+                    if i != 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{} {}", name, t.to_string())?;
+                }
+                write!(f, ")")?;
+                if let Some(ret) = &closure.return_type {
+                    write!(f, " {}", ret.to_string())?;
+                };
+                Ok(())
+            }
         }
     }
 }

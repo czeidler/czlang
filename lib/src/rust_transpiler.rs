@@ -11,6 +11,7 @@ use crate::ast::{
     VarDeclaration,
 };
 use crate::buildin::Buildins;
+use crate::semantics::ClosureContext;
 use crate::semantics::{
     types::{SArray, SSlice, SumType, Type},
     FileSemanticAnalyzer, TypeNarrowing, TypeQueryContext,
@@ -92,6 +93,29 @@ fn type_to_enum_variant(t: &Type) -> String {
             str.name.clone()
         }
         Type::StructTypeArgument(_) => todo!(),
+        Type::Closure(closure) => {
+            let mut name = "C".to_string();
+            if let Some(ctx) = &closure.context {
+                match ctx {
+                    ClosureContext::Owned => name += "o",
+                    ClosureContext::MutRef => name += "m",
+                    ClosureContext::Ref => name += "r",
+                    ClosureContext::Type(t) => {
+                        name += "t";
+                        name += &SumType::from_type(t.clone()).sum_type_name();
+                    }
+                }
+            };
+            name += "p";
+            for (_, t) in &closure.parameters {
+                name += &t.sum_type_name();
+            }
+            name += "p";
+            if let Some(ret) = &closure.return_type {
+                name += &ret.sum_type_name();
+            };
+            name
+        }
     }
 }
 
@@ -166,6 +190,27 @@ impl RustTranspiler {
                 return;
             }
             Type::Unresolved(_) => panic!(),
+            Type::Closure(closure) => {
+                if let Some(ctx) = &closure.context {
+                    match ctx {
+                        ClosureContext::Owned => writer.write("FnOnce("),
+                        ClosureContext::MutRef => writer.write("FnMut("),
+                        ClosureContext::Ref => writer.write("Fn("),
+                        ClosureContext::Type(_) => todo!(),
+                    };
+                } else {
+                    writer.write("fn (");
+                }
+                for (_, t) in &closure.parameters {
+                    self.transpile_types(t.types(), writer);
+                }
+                writer.write(")");
+                if let Some(ret) = &closure.return_type {
+                    writer.write(" -> ");
+                    self.transpile_types(ret.types(), writer);
+                };
+                return;
+            }
         };
         writer.write(text);
     }
@@ -193,6 +238,7 @@ impl RustTranspiler {
             }
             Type::Struct(st) => return st.name.clone(),
             Type::StructTypeArgument(_) => todo!(),
+            Type::Closure(_) => todo!(),
         };
         t.to_string()
     }

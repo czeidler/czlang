@@ -1,6 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
-use super::types::{intersection, types_to_string, SArray, SRefType, SSlice, SumType, Type};
+use super::{
+    types::{intersection, types_to_string, SArray, SRefType, SSlice, SumType, Type},
+    ClosureContext, ClosureType,
+};
 use crate::{
     ast::{
         self, BinaryExpression, BinaryOperator, Block, BlockParent, BlockTrait,
@@ -601,6 +604,34 @@ impl FileSemanticAnalyzer {
                     })
                 });
             }
+            ast::Type::Closure(closure) => Type::Closure(Ptr::new(ClosureType {
+                context: closure.context.as_ref().and_then(|c| {
+                    Some(match c {
+                        ast::ClosureContext::Owned => ClosureContext::Owned,
+                        ast::ClosureContext::MutRef => ClosureContext::MutRef,
+                        ast::ClosureContext::Ref => ClosureContext::Ref,
+                        ast::ClosureContext::Type(types) => {
+                            if types.len() > 1 {
+                                self.errors.push(LangError::type_error(
+                                    &node,
+                                    format!("Sum types in closure context is not supported"),
+                                ));
+                            }
+                            let t = &types[0];
+                            ClosureContext::Type(self.query_type(context, &t.node, &t.r#type)?)
+                        }
+                    })
+                }),
+                parameters: closure
+                    .parameters
+                    .iter()
+                    .map(|p| (p.name.clone(), self.query_types(context, &p.types)))
+                    .collect(),
+                return_type: closure
+                    .return_type
+                    .as_ref()
+                    .map(|t| self.query_types(context, &t.types)),
+            })),
         };
         Some(t)
     }

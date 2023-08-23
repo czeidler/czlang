@@ -15,25 +15,6 @@ pub enum StringTemplatePart {
 
 pub type StringTemplate = Vec<StringTemplatePart>;
 
-/*
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum ClosureContext {
-    Owned,
-    MutRef,
-    Ref,
-    Type(Vec<RefType>),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct ClosureType {
-    pub node: NodeData,
-    /// If not set its just a function pointer
-    pub context: Option<ClosureContext>,
-    pub parameters: Vec<Parameter>,
-    pub return_type: Option<ReturnType>,
-}
-*/
-
 #[derive(Debug, Clone)]
 pub struct ArrayExpression {
     pub expressions: Vec<Expression>,

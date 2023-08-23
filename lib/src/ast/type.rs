@@ -4,7 +4,10 @@ use tree_sitter::Node;
 
 use crate::{ast::child_by_field, types::Ptr};
 
-use super::{node_text, parse_usize, FileContext, NodeData};
+use super::{
+    node_text, parse_parameters, parse_return_type, parse_usize, FileContext, NodeData, Parameter,
+    ReturnType,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Type {
@@ -21,6 +24,7 @@ pub enum Type {
     Slice(Slice),
     /// For example, for nullable or error types
     Either(Vec<RefType>, Vec<RefType>),
+    Closure(ClosureType),
 }
 
 #[derive(Debug, Clone, Eq, Hash)]
@@ -108,6 +112,23 @@ pub struct Slice {
     pub types: Ptr<Vec<RefType>>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum ClosureContext {
+    Owned,
+    MutRef,
+    Ref,
+    Type(Vec<RefType>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ClosureType {
+    pub node: NodeData,
+    /// If not set its just a function pointer
+    pub context: Option<ClosureContext>,
+    pub parameters: Vec<Parameter>,
+    pub return_type: Option<ReturnType>,
+}
+
 fn parse_type<'a>(context: &Ptr<FileContext>, node: &Node<'a>) -> Option<Type> {
     let t = match node.kind() {
         "primitive_type" => {
@@ -181,6 +202,14 @@ pub(crate) fn parse_types<'a>(context: &Ptr<FileContext>, node: &Node<'a>) -> Op
                 r#type: Type::Either(data, error),
             }]
         }
+        "closure_type" => {
+            vec![RefType {
+                node: NodeData::from_node(&node),
+                is_reference: false,
+                is_mut: false,
+                r#type: Type::Closure(parse_closure_type(context, &node)?),
+            }]
+        }
         _ => vec![RefType {
             node: NodeData::from_node(&node),
             is_reference: false,
@@ -246,5 +275,43 @@ fn parse_slice<'a>(context: &Ptr<FileContext>, node: &Node<'a>) -> Option<Slice>
     let types = parse_types(context, &element)?;
     Some(Slice {
         types: Ptr::new(types),
+    })
+}
+
+fn parse_closure_context<'a>(
+    context: &Ptr<FileContext>,
+    node: &Node<'a>,
+) -> Option<ClosureContext> {
+    if let Some(anonymous_node) = child_by_field(&node, "anonymous") {
+        return Some(match node_text(&anonymous_node, context)?.as_str() {
+            "&" => ClosureContext::Ref,
+            "&mut" => ClosureContext::MutRef,
+            _ => ClosureContext::Owned,
+        });
+    }
+    if let Some(type_node) = child_by_field(&node, "type") {
+        return Some(ClosureContext::Type(parse_types(context, &type_node)?));
+    }
+    None
+}
+
+pub(crate) fn parse_closure_type<'a>(
+    context: &Ptr<FileContext>,
+    node: &Node<'a>,
+) -> Option<ClosureType> {
+    let context_node = child_by_field(&node, "context");
+    let closure_context =
+        context_node.and_then(|context_node| parse_closure_context(context, &context_node));
+
+    let parameters_node = child_by_field(&node, "parameters")?;
+    let parameters = parse_parameters(context, parameters_node)?;
+    let result_node = child_by_field(&node, "result");
+    let return_type = result_node.map(|n| parse_return_type(context, &n));
+
+    Some(ClosureType {
+        node: NodeData::from_node(node),
+        context: closure_context,
+        parameters,
+        return_type,
     })
 }
