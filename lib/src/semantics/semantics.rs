@@ -2032,6 +2032,7 @@ impl FileSemanticAnalyzer {
             ));
             return None;
         }
+        // either the left value or error depending on the pipe type
         let left_types = if pipe.is_err_pipe {
             if let Some(left_err) = left_exp_types.err() {
                 left_err
@@ -2060,25 +2061,29 @@ impl FileSemanticAnalyzer {
         );
 
         let right_types = right.types();
-        if !pipe.is_err_pipe {
+        let Some((mut left_value, mut left_error)) = left_exp_types.as_either() else {
             return right_types;
-        }
+        };
 
-        // left must be an error either
-        let (mut left_value, mut left_error) = left_exp_types.as_either().unwrap();
-        let right_types = right.types();
-
-        if let Some((right_value, right_err)) = right_types
+        if let Some((right_value, right_error)) = right_types
             .as_ref()
             .map(|it| it.as_either())
             .unwrap_or(None)
         {
-            left_value.union(right_value);
-            left_error.union(right_err);
-            return Some(SumType::from_type(Type::Either(left_value, left_error)));
+            if !pipe.is_err_pipe {
+                left_error.union(right_error);
+                return Some(SumType::from_type(Type::Either(right_value, left_error)));
+            } else {
+                left_value.union(right_value);
+                return Some(SumType::from_type(Type::Either(left_value, right_error)));
+            }
         } else {
-            left_value.union(right_types.unwrap_or(SumType::empty()));
-            return Some(left_value);
+            let right_type = right_types.unwrap_or(SumType::empty());
+            if !pipe.is_err_pipe {
+                return Some(SumType::from_type(Type::Either(right_type, left_error)));
+            } else {
+                return Some(SumType::from_type(Type::Either(left_value, right_type)));
+            }
         }
     }
 

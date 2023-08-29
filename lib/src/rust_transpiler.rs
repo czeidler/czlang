@@ -444,7 +444,9 @@ impl RustTranspiler {
                     .and_then(|s| s.resolved_types);
                 self.transpile_if_expression(analyzer, if_expression, block, &target, writer)
             }
-            ExpressionType::Pipe(pipe) => self.transpile_pipe_expr(analyzer, pipe, block, writer),
+            ExpressionType::Pipe(pipe) => {
+                self.transpile_pipe_expr(analyzer, expression, pipe, block, writer)
+            }
             ExpressionType::ReturnErrorPipe(pipe) => {
                 self.transpile_ret_err_pipe_expr(analyzer, pipe, block, writer)
             }
@@ -479,10 +481,15 @@ impl RustTranspiler {
     fn transpile_pipe_expr(
         &self,
         analyzer: &mut FileSemanticAnalyzer,
+        expression: &Expression,
         pipe: &PipeExpression,
         block: &Block,
         writer: &mut Writer,
     ) {
+        let pipe_type = analyzer
+            .query_expression(block, expression)
+            .unwrap()
+            .types();
         let left_semantics = analyzer.query_expression(block, &pipe.left).unwrap();
         let left_types = left_semantics.types().unwrap();
 
@@ -501,17 +508,40 @@ impl RustTranspiler {
         writer.new_line();
         writer.indented(|writer| {
             if !pipe.is_err_pipe {
+                // |>
                 writer.write("Ok(___pipe_arg) => ");
-                self.transpile_expression(analyzer, &pipe.right, block, writer);
+                self.transpile_expression_with_mapping(
+                    analyzer,
+                    &pipe.right,
+                    &pipe_type,
+                    block,
+                    writer,
+                );
                 writer.write(",");
                 writer.new_line();
                 writer.write("Err(_) => panic!(\"Impossible\"),");
             } else {
+                // |?>
                 writer.write("Err(___pipe_arg) => ");
-                self.transpile_expression(analyzer, &pipe.right, block, writer);
+                self.transpile_expression_with_mapping(
+                    analyzer,
+                    &pipe.right,
+                    &pipe_type,
+                    block,
+                    writer,
+                );
                 writer.write(",");
                 writer.new_line();
-                writer.write("Ok(value) => value,");
+                let (left_value, _) = left_types.as_either().unwrap();
+                writer.write("Ok(___value) => ");
+                self.transpile_type_mapping(
+                    "___value",
+                    &pipe_type.unwrap(),
+                    &left_value,
+                    &left_value,
+                    writer,
+                );
+                writer.write(",");
             }
             writer.new_line();
         });
@@ -789,8 +819,17 @@ impl RustTranspiler {
                         writer,
                     );
                 } else {
-                    if let Some((value, _)) = target.as_either() {
-                        writer.write("Ok(");
+                    if let Some((value, err)) = target.as_either() {
+                        writer.write("Result::<");
+                        self.transpile_types(value.types(), writer);
+                        writer.write(", ");
+                        if err.is_empty() {
+                            writer.write("()");
+                        } else {
+                            self.transpile_types(err.types(), writer);
+                        }
+                        writer.write(">::Ok(");
+
                         self.transpile_type_mapping(
                             expression,
                             &value,
@@ -942,10 +981,13 @@ impl RustTranspiler {
             },
             _ => expression,
         };
-        let (resolved_type, narrowed_type) = analyzer
+        let Some((resolved_type, narrowed_type)) = analyzer
             .query_expression(block, expr)
-            .map(|s| (s.resolved_types.clone().unwrap(), s.types().unwrap()))
-            .unwrap();
+            .map(|s| (s.resolved_types.clone().unwrap(), s.types().unwrap())) else {
+            // e.g. a block that returned doesn't has an expression type
+            self.transpile_expression(analyzer, &expression, block, writer);
+            return;
+        };
 
         self.transpile_type_mapping(
             &transpiled_expression,

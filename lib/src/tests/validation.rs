@@ -340,6 +340,7 @@ fun main() { test() }
                 var value2 = either() |> false
                 var value3 = either() |?> true
                 var value4 = either() |?> either2()
+                var value5 = either() |> either2()
             }
         "#,
         )
@@ -350,10 +351,12 @@ fun main() { test() }
         let value = find_var_in_fun(&mut analysis, "main", "value1").unwrap();
         assert_eq!(value.to_string(), "_ ? bool");
         let value = find_var_in_fun(&mut analysis, "main", "value2").unwrap();
-        assert_eq!(value.to_string(), "bool");
+        assert_eq!(value.to_string(), "bool ? null");
         let value = find_var_in_fun(&mut analysis, "main", "value3").unwrap();
-        assert_eq!(value.to_string(), "bool | i32");
+        assert_eq!(value.to_string(), "i32 ? bool");
         let value = find_var_in_fun(&mut analysis, "main", "value4").unwrap();
-        assert_eq!(value.to_string(), "bool | i32 ? null | i32");
+        assert_eq!(value.to_string(), "bool | i32 ? i32");
+        let value = find_var_in_fun(&mut analysis, "main", "value5").unwrap();
+        assert_eq!(value.to_string(), "bool ? null | i32");
     }
 }

@@ -451,7 +451,7 @@ fun main() {
             }
 
             fun main() {
-                var result i32 | bool ? i32 | bool = test() |> test2($)
+                var result bool ? i32 | bool = test() |> test2($)
             }
         "#,
         )
