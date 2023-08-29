@@ -98,29 +98,6 @@ fn inlay_hints_from_expr(
         return;
     }
     match &expr.r#type {
-        ExpressionType::Identifier(_) => {
-            let Some(semantics) = file.file_analyzer.query_identifier(block, expr.node.id) else {
-                return;
-            };
-            if let Some(narrowed_types) = semantics.narrowed_types {
-                hints.push(InlayHint {
-                    position: Position {
-                        line: expr.node.span.end.row as u32,
-                        character: expr.node.span.end.column as u32,
-                    },
-                    label: InlayHintLabel::String(format!(
-                        "({})",
-                        types_to_string(narrowed_types.types())
-                    )),
-                    kind: Some(InlayHintKind::TYPE),
-                    text_edits: None,
-                    tooltip: None,
-                    padding_left: Some(true),
-                    padding_right: None,
-                    data: None,
-                })
-            }
-        }
         ExpressionType::If(if_expr) => inlay_hint_from_if_expr(file, block, range, &if_expr, hints),
         ExpressionType::EitherCheck(either_check) => {
             inlay_hints_from_expr(file, &block, range, &either_check.left, hints);
