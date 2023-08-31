@@ -12,36 +12,39 @@ fun x(arg i32 ? null) i32 ? bool {
 ---
 
 (source_file
-      (function_definition
+  (function_definition
+    (identifier)
+    (parameter_list
+      (parameter
         (identifier)
-        (parameter_list
-          (parameter
-            (identifier)
-            (error_type
-              (primitive_type)
-              (error_op)
-              (primitive_type))))
         (error_type
           (primitive_type)
           (error_op)
-          (primitive_type))
-        (block
-          (expression_statement
+          (primitive_type))))
+    (error_type
+      (primitive_type)
+      (error_op)
+      (primitive_type))
+    (block
+      (expression_statement
+        (err_pipe_expression
+          (pipe_expression
             (pipe_expression
               (identifier)
-              (pipe_expression
-                (identifier)
-                (err_pipe_expression
-                  (int_literal)
-                  (error_expression
-                    (error_op)
-                    (false))))))
-          (return_statement
-            (pipe_expression
-              (identifier)
-              (int_literal)
-            )
+              (identifier))
+            (int_literal))
+          (error_expression
+            (error_op)
+            (false)
           )
         )
+      )
+      (return_statement
+        (pipe_expression
+          (identifier)
+          (int_literal)
+        )
+      )
     )
+  )
 )
