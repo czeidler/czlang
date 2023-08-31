@@ -2017,7 +2017,9 @@ impl FileSemanticAnalyzer {
     ) -> Option<SumType> {
         self.bind_pipe(&expression.node, &context.pipe_arg);
 
+        let org_flow = flow.flow.clone();
         let left = self.validate_expression(flow, context, &pipe.left, false);
+        flow.flow = org_flow;
         let Some(left_exp_types) = left.types() else {
             self.errors.push(LangError::type_error(
                 &pipe.left.node,
@@ -2025,13 +2027,23 @@ impl FileSemanticAnalyzer {
             ));
             return None;
         };
-        if flow.flow.returned.is_some() {
+        if left_exp_types.is_empty() {
             self.errors.push(LangError::type_error(
                 &pipe.left.node,
-                "Invalid return from left side of the pipe".to_string(),
+                "Left side of the pipe must produce a type".to_string(),
             ));
             return None;
         }
+        if let Some((left_value, left_error)) = left_exp_types.as_either() {
+            if left_value.is_empty() && left_error.is_empty() {
+                self.errors.push(LangError::type_error(
+                    &pipe.left.node,
+                    "Invalid return from left side of the pipe".to_string(),
+                ));
+                return None;
+            }
+        };
+
         // either the left value or error depending on the pipe type
         let left_types = if pipe.is_err_pipe {
             if let Some(left_err) = left_exp_types.err() {
@@ -2050,6 +2062,7 @@ impl FileSemanticAnalyzer {
                 left_exp_types.clone()
             }
         };
+        let org_flow = flow.flow.clone();
         let right = self.validate_expression(
             flow,
             &ExpContext {
@@ -2059,6 +2072,7 @@ impl FileSemanticAnalyzer {
             &pipe.right,
             is_assignment,
         );
+        flow.flow = org_flow;
 
         let right_types = right.types();
         let Some((mut left_value, mut left_error)) = left_exp_types.as_either() else {
