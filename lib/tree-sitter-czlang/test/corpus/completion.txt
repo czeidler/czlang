@@ -32,22 +32,21 @@ fun x() {
 ---
 
 (source_file
-      (function_definition
-        (identifier)
-        (parameter_list)
-        (block
-          (expression_statement
-            (selector_expression
-              (identifier)
-              (selector_field
-                (ERROR
-                  (identifier))
-                (identifier))))
-          (ERROR
-            (true)
-          )
-        )
+  (function_definition
+    (identifier)
+    (parameter_list)
+    (block
+      (assignment_statement
+        (selector_expression
+          (identifier)
+          (selector_field
+            (ERROR
+              (identifier))
+            (identifier)))
+        (true)
+      )
     )
+  )
 )
 
 ==================

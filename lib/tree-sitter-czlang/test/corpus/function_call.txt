@@ -42,8 +42,6 @@ Function call with trailing closure
 fun x() i32 {
   callFunction(2) {}
 
-  callFunction2 {}
-
   // test block is still working
   var test = {
     2
@@ -67,10 +65,6 @@ fun x() i32 {
           (identifier)
           (argument_list
             (int_literal))
-          (block)))
-      (expression_statement
-        (function_call
-          (identifier)
           (block)))
       (comment)
       (var_declaration

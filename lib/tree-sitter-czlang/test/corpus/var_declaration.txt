@@ -59,3 +59,41 @@ fun x() i32 {
     )
   )
 )
+
+==================
+Variable assignment
+==================
+
+fun x() i32 {
+  var test mut = 5
+  test = 6
+  str.some = funCall()
+}
+
+---
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameter_list)
+    (primitive_type)
+    (block
+      (var_declaration
+        (identifier)
+        (int_literal))
+      (assignment_statement
+        (identifier)
+        (int_literal))
+      (assignment_statement
+        (selector_expression
+          (identifier)
+          (selector_field
+            (identifier)))
+        (function_call
+          (identifier)
+          (argument_list)
+        )
+      )
+    )
+  )
+)

@@ -1,0 +1,56 @@
+==================
+For loop 1
+==================
+
+
+fun main() {
+    for {
+        break
+    }
+}
+
+---
+
+(source_file
+    (function_definition
+        (identifier)
+        (parameter_list)
+        (block
+          (for_statement
+            (block
+              (break_statement)
+            )
+          )
+        )
+    )
+)
+
+==================
+For loop 2
+==================
+
+
+fun main() {
+    for a in 1..<10 {
+        continue
+    }
+}
+
+---
+
+(source_file
+    (function_definition
+        (identifier)
+        (parameter_list)
+        (block
+            (for_statement
+                (identifier)
+                (int_literal)
+                (int_literal)
+                (block
+                    (continue_statement)
+                )
+            )
+        )
+    )
+)
