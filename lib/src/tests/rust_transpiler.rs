@@ -509,4 +509,26 @@ fun main() {
         "#,
         )
     }
+
+    #[test]
+    fn for_loop() {
+        transpile_and_validate_project(
+            "test_projects/for_loop",
+            r#"
+            fun main() {
+                for {
+                    break
+                }
+
+                for i in 1..<10 {
+
+                }
+
+                for i in 1..=10 {
+                    continue
+                }
+            }
+        "#,
+        )
+    }
 }

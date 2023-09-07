@@ -255,19 +255,44 @@ impl SumType {
         name
     }
 
-    pub fn is_number(&self) -> bool {
+    fn extract_first(&self) -> Option<&Type> {
         if self.types.len() != 1 {
-            false
+            return None;
+        }
+        let t = &self.types[0];
+        match t {
+            Type::Either(value, err) => {
+                if err.is_empty() {
+                    value.extract_first()
+                } else {
+                    return None;
+                }
+            }
+            _ => Some(t),
+        }
+    }
+
+    pub fn is_number(&self) -> bool {
+        if let Some(first) = self.extract_first() {
+            is_number(first)
         } else {
-            is_number(&self.types[0])
+            false
+        }
+    }
+
+    pub fn is_integer(&self) -> bool {
+        if let Some(first) = self.extract_first() {
+            is_integer(first)
+        } else {
+            false
         }
     }
 
     pub fn is_bool(&self) -> bool {
-        if self.types.len() != 1 {
-            false
+        if let Some(first) = self.extract_first() {
+            first == &Type::Bool
         } else {
-            self.types[0] == Type::Bool
+            false
         }
     }
 
@@ -280,6 +305,27 @@ impl SumType {
 }
 
 fn is_number(types: &Type) -> bool {
+    match &types {
+        Type::Null => false,
+        Type::Str => false,
+        Type::String => false,
+        Type::Bool => false,
+        Type::U8 => true,
+        Type::I8 => true,
+        Type::U32 => true,
+        Type::I32 => true,
+        Type::Array(_) => false,
+        Type::Slice(_) => false,
+        Type::Unresolved(unresolved) => unresolved.iter().all(|t| is_number(t)),
+        Type::Either(_, _) => false,
+        Type::RefType(_) => false,
+        Type::Struct(_) => false,
+        Type::StructTypeArgument(_) => false,
+        Type::Closure(_) => false,
+    }
+}
+
+fn is_integer(types: &Type) -> bool {
     match &types {
         Type::Null => false,
         Type::Str => false,

@@ -99,6 +99,28 @@ fn find_in_block(
                     return find_in_expression(analyzer, &block, &statement.expression, position);
                 }
             }
+            Statement::Loop(loop_statement) => {
+                if let Some(range) = loop_statement.range {
+                    if range.variable_node.contains(position) {
+                        let Some(identifier_semantics) = analyzer
+                            .query_identifier(block.block, range.variable_node.id) else { return None };
+                        return Some(QueryResult::Identifier(
+                            range.variable_node.id,
+                            loop_statement.body.clone(),
+                            identifier_semantics,
+                        ));
+                    }
+                    if range.from.node.contains(position) {
+                        return find_in_expression(analyzer, &block, &range.from, position);
+                    }
+                    if range.to.node.contains(position) {
+                        return find_in_expression(analyzer, &block, &range.to, position);
+                    }
+                }
+                if loop_statement.body.node.contains(position) {
+                    return find_in_block(analyzer, &loop_statement.body, position);
+                }
+            }
         }
     }
     None

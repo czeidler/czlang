@@ -117,6 +117,22 @@ pub enum ExpressionType {
     EitherCheck(EitherCheckExpression),
 }
 
+impl ExpressionType {
+    /// Try to extract a signed integer from a IntLiteral or a UnaryExpression(IntLiteral)
+    pub fn as_integer_literal(&self) -> Option<i64> {
+        if let ExpressionType::IntLiteral(i) = self {
+            return Some(*i as i64);
+        }
+        if let ExpressionType::UnaryExpression(unary) = self {
+            if let UnaryOperator::Minus = unary.operator {
+                return unary.operand.r#type.as_integer_literal().map(|i| -i);
+            }
+        }
+
+        None
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum UnaryOperator {
     /// -

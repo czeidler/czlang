@@ -9,10 +9,9 @@ use crate::{
         self, BinaryExpression, BinaryOperator, Block, BlockParent, BlockTrait,
         EitherCheckExpression, Expression, ExpressionType, Field, FileContext, FileTrait, Function,
         FunctionCall, FunctionSignature, FunctionTrait, IfAlternative, IfExpression, LangError,
-        NodeData, Parameter, PipeExpression, Receiver, RefType, ReturnStatement, RootSymbol,
-        SelectorExpression, SelectorField, SelectorFieldType, Statement, Struct,
-        StructFieldInitialization, StructInitialization, TypeParam, TypeParamType, UnaryOperator,
-        VarDeclaration,
+        NodeData, Parameter, PipeExpression, Receiver, RefType, RootSymbol, SelectorExpression,
+        SelectorField, SelectorFieldType, Statement, Struct, StructFieldInitialization,
+        StructInitialization, TypeParam, TypeParamType, UnaryOperator, VarDeclaration,
     },
     buildin::Buildins,
     types::Ptr,
@@ -243,6 +242,18 @@ pub struct CurrentFlowContainer {
     pub flow: Ptr<FlowContainer>,
 }
 
+impl CurrentFlowContainer {
+    pub fn fork(&self) -> Self {
+        CurrentFlowContainer {
+            flow: Ptr::new(FlowContainer {
+                parent: Some(self.flow.clone()),
+                vars: HashMap::new(),
+                returned: None,
+            }),
+        }
+    }
+}
+
 impl FlowContainer {
     pub fn start_flow() -> Ptr<Self> {
         Ptr::new(FlowContainer {
@@ -390,10 +401,10 @@ pub struct FileSemanticAnalyzer {
     pipe_expressions: HashMap<usize, PipeSemantics>,
     /// Various details about the selector field, e.g. if nullable or which the parent struct is
     selector_fields: HashMap<usize, SelectorFieldSemantics>,
-    variable_declarations: HashMap<usize, VarDeclarationSemantics>,
+    pub(crate) variable_declarations: HashMap<usize, VarDeclarationSemantics>,
     function_calls: HashMap<usize, FunctionCallSemantics>,
     method_calls: HashMap<usize, MethodCallSemantics>,
-    blocks: HashMap<usize, BlockSemantics>,
+    pub(crate) blocks: HashMap<usize, BlockSemantics>,
 
     /// Binding for a struct field initialization to the matching Field in of the target struct
     struct_field_inits: HashMap<usize, Field>,
@@ -1130,7 +1141,7 @@ impl FileSemanticAnalyzer {
     }
 
     /// Returns the ExpressionSemantics of the last statement (if it was an expression)
-    fn validate_block(
+    pub(crate) fn validate_block(
         &mut self,
         flow: &mut CurrentFlowContainer,
         block: &Ptr<Block>,
@@ -1176,188 +1187,13 @@ impl FileSemanticAnalyzer {
         last_statement_type
     }
 
-    fn validate_return_statement(
-        &mut self,
-        flow: &mut CurrentFlowContainer,
-        block: &Ptr<Block>,
-        ret: &ReturnStatement,
-    ) -> ExpressionSemantics {
-        let fun = block.fun();
-        let (ret_types, expression) = if let Some(expression) = &ret.expression {
-            let was_already_returned = flow.flow.returned.is_some();
-            let ret_semantics =
-                self.validate_expression(flow, &ExpContext::new(block, None), expression, false);
-            if flow.flow.returned.is_some() && !was_already_returned {
-                self.errors.push(LangError::type_error(
-                    &expression.node,
-                    format!("Return in return expression is not allowed"),
-                ));
-            }
-
-            let Some(ret_types) = ret_semantics.into_types() else {
-                // error validating the return expression
-                return ExpressionSemantics::empty();
-            };
-            (ret_types, Some(expression))
-        } else {
-            (SumType::new(vec![]), None)
-        };
-
-        let fun_ret_type = self.query_return_type(&fun.signature);
-        let fun_ret_type = match fun_ret_type {
-            Some(fun_ret_type) => {
-                if ret_types.is_empty() {
-                    self.errors.push(LangError::type_error(
-                        &expression
-                            .map(|e| e.node.clone())
-                            .unwrap_or(fun.signature.node.clone()),
-                        format!("Expected return type {:?}", fun.signature.return_type),
-                    ));
-                    return ExpressionSemantics::empty();
-                }
-                fun_ret_type
-            }
-            None => {
-                if ret_types.is_empty() {
-                    return ExpressionSemantics::empty();
-                }
-                self.errors.push(LangError::type_error(
-                    &expression
-                        .map(|e| e.node.clone())
-                        .unwrap_or(fun.signature.node.clone()),
-                    format!(
-                        "Return type expected: fun == {:?}, expr == {:?}",
-                        fun.signature.return_type, ret_types,
-                    ),
-                ));
-                return ExpressionSemantics::empty();
-            }
-        };
-
-        let overlap = intersection(&ret_types, &fun_ret_type);
-        let Some(overlap) = overlap else {
-            self.errors.push(LangError::type_error(
-                &expression
-                    .map(|e| e.node.clone())
-                    .unwrap_or(fun.signature.node.clone()),
-                format!(
-                    "Incompatible return type: fun == {:?}, expr == {:?}",
-                    types_to_string(fun_ret_type.types()),
-                    types_to_string(ret_types.types()),
-                ),
-            ));
-            return ExpressionSemantics::empty();
-        };
-        if let Some(ret_value_expression) = &ret.expression {
-            self.back_propagate_types(block, ret_value_expression, &overlap);
-        }
-        ExpressionSemantics::resolved_types(Some(overlap))
-    }
-
-    /// If statement is an expression this method returns the ExpressionSemantics None.
-    fn validate_statement(
-        &mut self,
-        flow: &mut CurrentFlowContainer,
-        block: &Ptr<Block>,
-        statement: &Statement,
-        is_assignment: bool,
-    ) -> Option<ExpressionSemantics> {
-        match statement {
-            Statement::Expression(statement) => {
-                let semantics = self.validate_expression(
-                    flow,
-                    &ExpContext::new(block, None),
-                    &statement.expression,
-                    is_assignment,
-                );
-                return Some(semantics);
-            }
-            Statement::VarDeclaration(var_declaration) => {
-                self.validate_var_declaration(flow, block, var_declaration.clone());
-            }
-            Statement::Return(ret) => {
-                let return_type = self.validate_return_statement(flow, block, ret);
-                flow.flow = Ptr::new(FlowContainer {
-                    parent: Some(flow.flow.clone()),
-                    vars: HashMap::new(),
-                    returned: Some(return_type.into_types().unwrap_or(SumType::empty())),
-                });
-            }
-        };
-        None
-    }
-
-    fn validate_var_declaration(
-        &mut self,
-        flow: &mut CurrentFlowContainer,
-        block: &Ptr<Block>,
-        var_declaration: Ptr<VarDeclaration>,
-    ) {
-        let mut var_types = self
-            .query_variable_type(&block.fun(), &var_declaration)
-            .unwrap_or(SumType::empty());
-
-        let expr = self
-            .validate_expression(
-                flow,
-                &ExpContext::new(block, None),
-                &var_declaration.value,
-                true,
-            )
-            .into_types()
-            .unwrap_or(SumType::new(vec![]));
-        if var_types.types().is_empty() {
-            var_types = expr
-        } else {
-            let Some(overlap) = intersection(&expr, &var_types ) else {
-                self.errors.push(LangError::type_error(
-                    &var_declaration.node,
-                    format!(
-                        "Incompatible type in var assignment: var: {}, expr: {}",
-                        types_to_string(&var_types.types()),
-                        types_to_string(&expr.types()),
-                    ),
-                ));
-                return;
-            };
-            self.back_propagate_types(block, &var_declaration.value, &overlap);
-            if var_types.types().is_empty() {
-                var_types = overlap;
-            }
-        }
-
-        let existing = self.variable_declarations.insert(
-            var_declaration.node.id,
-            VarDeclarationSemantics {
-                inferred_types: Some(var_types),
-            },
-        );
-        assert!(existing.is_none());
-
-        if !self.bind_block_var(block, &var_declaration) {
-            self.errors.push(LangError::type_error(
-                &var_declaration.node,
-                format!("Variable already declared: {:?}", var_declaration.name),
-            ));
-            return;
-        }
-    }
-
-    /// Return false if var was already bound
-    fn bind_block_var(&mut self, block: &Block, var_declaration: &Ptr<VarDeclaration>) -> bool {
-        self.blocks
-            .entry(block.node.id)
-            .or_insert(BlockSemantics {
-                vars: HashMap::new(),
-                block_return: None,
-            })
-            .vars
-            .insert(var_declaration.name.clone(), var_declaration.clone())
-            .is_none()
-    }
-
     /// If a variable type narrowed down the type of an expression, back propagated this up to previous usage.
-    fn back_propagate_types(&mut self, block: &Block, expression: &Expression, types: &SumType) {
+    pub(crate) fn back_propagate_types(
+        &mut self,
+        block: &Block,
+        expression: &Expression,
+        types: &SumType,
+    ) {
         match &expression.r#type {
             ExpressionType::Identifier(_) => {
                 let Some(id) = self.expressions.get(&expression.node.id).map(|s|s.binding.clone()).flatten()  else {return};
@@ -1865,10 +1701,13 @@ impl FileSemanticAnalyzer {
             ExpressionType::SelectorExpression(select) => ExpressionSemantics::resolved_types(
                 self.validate_selector_expression(flow, context, select, is_assignment),
             ),
-            ExpressionType::Block(block) => match self.validate_block(flow, block, is_assignment) {
-                Some(s) => s,
-                None => return Ok(None),
-            },
+            ExpressionType::Block(block) => {
+                let mut flow = flow.fork();
+                match self.validate_block(&mut flow, block, is_assignment) {
+                    Some(s) => s,
+                    None => return Ok(None),
+                }
+            }
             ExpressionType::If(if_expression) => ExpressionSemantics::resolved_types(
                 self.validate_if_expression(flow, context, if_expression, is_assignment),
             ),
@@ -1948,7 +1787,7 @@ impl FileSemanticAnalyzer {
     ///
     /// # Arguments
     /// * is_assignment: If the expression is expected to return a value, e.g. from a block
-    fn validate_expression(
+    pub(crate) fn validate_expression(
         &mut self,
         flow: &mut CurrentFlowContainer,
         context: &ExpContext,

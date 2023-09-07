@@ -3,8 +3,8 @@ use tree_sitter::Node;
 use crate::{tree_sitter::find_node, types::Ptr};
 
 use super::{
-    child, child_by_field, node_text, parse_expression, parse_types, Expression, FileContext,
-    Function, NodeData, RefType,
+    child, child_by_field, node_text, parse_expression, parse_loop, parse_types, Expression,
+    FileContext, Function, Loop, NodeData, RefType,
 };
 
 #[derive(Debug, Clone)]
@@ -79,6 +79,7 @@ pub enum Statement {
     Expression(ExpressionStatement),
     VarDeclaration(Ptr<VarDeclaration>),
     Return(ReturnStatement),
+    Loop(Loop),
 }
 
 impl Statement {
@@ -87,6 +88,7 @@ impl Statement {
             Statement::Expression(expr) => &expr.expression.node,
             Statement::VarDeclaration(var) => &var.node,
             Statement::Return(ret) => &ret.node,
+            Statement::Loop(l) => &l.node,
         }
     }
 }
@@ -129,6 +131,9 @@ impl<'a> Iterator for StatementIterator<'a> {
                     parse_return_statement(&self.file, &statement_node, &self.block)
                         .map(|statement| Statement::Return(statement))
                 }
+                "for_statement" => parse_loop(&self.file, &statement_node, &self.block)
+                    .map(|statement| Statement::Loop(statement)),
+
                 _ => None,
             };
 

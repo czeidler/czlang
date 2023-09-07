@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use crate::ast::{
     print_err, ArrayExpression, BinaryOperator, Block, BlockTrait, Expression, ExpressionType,
     Field, FileContext, Function, FunctionCall, FunctionSignature, FunctionTrait, IfAlternative,
-    IfExpression, Parameter, PipeExpression, Receiver, ReturnErrorPipeExpression,
+    IfExpression, Loop, Parameter, PipeExpression, Receiver, ReturnErrorPipeExpression,
     SelectorExpression, SelectorFieldType, SliceExpression, Statement, StringTemplatePart, Struct,
     StructFieldInitialization, StructInitialization, TypeParam, TypeParamType, UnaryOperator,
     VarDeclaration,
@@ -1255,8 +1255,38 @@ impl RustTranspiler {
                     self.transpile_return_statement(analyzer, &ret.expression, block, writer);
                     writer.new_line();
                 }
+                Statement::Loop(loop_statement) => {
+                    self.transpile_loop_statement(analyzer, &loop_statement, block, writer);
+                    writer.new_line();
+                }
             }
         }
+    }
+
+    fn transpile_loop_statement(
+        &self,
+        analyzer: &mut FileSemanticAnalyzer,
+        loop_statement: &Loop,
+        block: &Ptr<Block>,
+        writer: &mut Writer,
+    ) {
+        if let Some(range) = &loop_statement.range {
+            writer.write(&format!("for {} in ", range.variable));
+            self.transpile_expression(analyzer, &range.from, block, writer);
+            writer.write("..");
+            if range.to_inclusive {
+                writer.write("=");
+            }
+            self.transpile_expression(analyzer, &range.from, block, writer);
+            writer.write(" {");
+        } else {
+            writer.write("loop {");
+        }
+        writer.new_line();
+        writer.indented(|writer| {
+            self.transpile_block(analyzer, &loop_statement.body, &None, writer);
+        });
+        writer.write("}");
     }
 
     fn transpile_function(

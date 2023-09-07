@@ -63,6 +63,9 @@ fn inlay_hint_from_block(
                     inlay_hints_from_expr(file, &block, range, expr, hints);
                 }
             }
+            Statement::Loop(loop_statement) => {
+                inlay_hint_from_block(file, &loop_statement.body, range, hints);
+            }
         }
     }
 }
