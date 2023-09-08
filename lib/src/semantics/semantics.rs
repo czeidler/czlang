@@ -1150,8 +1150,11 @@ impl FileSemanticAnalyzer {
         let mut last_statement: Option<Statement> = None;
         let mut last_statement_type: Option<ExpressionSemantics> = None;
         let mut returned = false;
-        for statement in block.statements() {
-            last_statement_type = self.validate_statement(flow, block, &statement, is_assignment);
+        let mut iter = block.statements().peekable();
+        while let Some(statement) = iter.next() {
+            let is_last = iter.peek().is_none();
+            let statement_type =
+                self.validate_statement(flow, block, &statement, is_last && is_assignment);
             if flow.flow.returned.is_some() && returned {
                 self.errors.push(LangError::type_error(
                     statement.node(),
@@ -1164,7 +1167,10 @@ impl FileSemanticAnalyzer {
                 false
             };
 
-            last_statement = Some(statement);
+            if is_last {
+                last_statement_type = statement_type;
+                last_statement = Some(statement);
+            }
         }
         if is_assignment {
             if let Some(last_statement) = &last_statement {
@@ -1529,11 +1535,11 @@ impl FileSemanticAnalyzer {
             },
             ExpressionType::BinaryExpression(binary) => {
                 let left = self
-                    .validate_expression(flow, context, &binary.left, is_assignment)
+                    .validate_expression(flow, context, &binary.left, false)
                     .into_types()
                     .unwrap_or(SumType::new(vec![]));
                 let right = self
-                    .validate_expression(flow, context, &binary.right, is_assignment)
+                    .validate_expression(flow, context, &binary.right, false)
                     .into_types()
                     .unwrap_or(SumType::new(vec![]));
                 let Some(overlap) = intersection(&left, &right) else {
@@ -1574,7 +1580,6 @@ impl FileSemanticAnalyzer {
                         flow,
                         context,
                         &array.expressions,
-                        is_assignment,
                     )),
                     length: array.expressions.len(),
                 }))))
@@ -1585,7 +1590,6 @@ impl FileSemanticAnalyzer {
                         flow,
                         context,
                         &vec![slice.operand.as_ref().clone()],
-                        is_assignment,
                     )),
                 }))))
             }
@@ -1616,7 +1620,7 @@ impl FileSemanticAnalyzer {
                 for (i, parameter) in fun_signature.parameters.iter().enumerate() {
                     let arg = fun_call.arguments.get(i).unwrap();
                     let arg_types = self
-                        .validate_expression(flow, context, arg, is_assignment)
+                        .validate_expression(flow, context, arg, true)
                         .into_types()
                         .unwrap_or(SumType::empty());
                     let parameter_type = self
@@ -1950,12 +1954,11 @@ impl FileSemanticAnalyzer {
         flow: &mut CurrentFlowContainer,
         context: &ExpContext,
         expressions: &Vec<Expression>,
-        is_assignment: bool,
     ) -> Vec<Type> {
         let mut output = Vec::new();
         for expression in expressions {
             if let Some(types) = self
-                .validate_expression(flow, context, &expression, is_assignment)
+                .validate_expression(flow, context, &expression, true)
                 .into_types()
             {
                 for t in types {
@@ -2202,13 +2205,13 @@ impl FileSemanticAnalyzer {
 
         let narrowing =
             if let ExpressionType::BinaryExpression(binary) = &if_expression.condition.r#type {
-                self.validate_typeof_expression(flow, context, &binary, is_assignment)
+                self.validate_typeof_expression(flow, context, &binary)
                     .map(|narrowing| {
                         self.bind_if_type_narrowing(if_expression, narrowing.clone());
                         narrowing
                     })
             } else if let ExpressionType::EitherCheck(check) = &if_expression.condition.r#type {
-                self.validate_either_check_expression(flow, context, check, is_assignment)
+                self.validate_either_check_expression(flow, context, check)
                     .map(|narrowing| {
                         self.bind_if_type_narrowing(if_expression, narrowing.clone());
                         narrowing
@@ -2307,7 +2310,6 @@ impl FileSemanticAnalyzer {
         flow: &mut CurrentFlowContainer,
         context: &ExpContext,
         check: &EitherCheckExpression,
-        is_assignment: bool,
     ) -> Option<TypeNarrowing> {
         let identifier = match &check.left.r#type {
             ExpressionType::Identifier(identifier) => identifier,
@@ -2320,7 +2322,7 @@ impl FileSemanticAnalyzer {
             }
         };
 
-        let left = self.validate_expression(flow, context, &check.left, is_assignment);
+        let left = self.validate_expression(flow, context, &check.left, false);
         let left_types = left.types();
         if let Some((value, err)) = left_types.clone().and_then(|types| types.as_either()) {
             let original_types = left_types.unwrap();
@@ -2351,7 +2353,6 @@ impl FileSemanticAnalyzer {
         flow: &mut CurrentFlowContainer,
         context: &ExpContext,
         expression: &BinaryExpression,
-        is_assignment: bool,
     ) -> Option<TypeNarrowing> {
         let is_and_or = match expression.operator {
             BinaryOperator::And => true,
@@ -2367,8 +2368,8 @@ impl FileSemanticAnalyzer {
                 _ => return None,
             };
             let (mut left, right) = match (
-                self.validate_typeof_expression(flow, context, left, is_assignment),
-                self.validate_typeof_expression(flow, context, right, is_assignment),
+                self.validate_typeof_expression(flow, context, left),
+                self.validate_typeof_expression(flow, context, right),
             ) {
                 (None, None) => return None,
                 (Some(left), Some(right)) => (left, right),
@@ -2435,7 +2436,7 @@ impl FileSemanticAnalyzer {
         };
 
         let original_types = self
-            .validate_expression(flow, context, &unary.operand, is_assignment)
+            .validate_expression(flow, context, &unary.operand, false)
             .into_types()
             .unwrap_or(SumType::new(vec![]));
         for t in original_types.types() {
