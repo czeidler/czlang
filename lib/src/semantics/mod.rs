@@ -1,7 +1,11 @@
-pub mod expression;
-pub mod flow_container;
+mod block;
+mod expression;
+mod file;
+mod flow_container;
+mod fun;
 pub mod semantics;
-pub mod statement;
+mod statement;
+mod r#struct;
 pub mod types;
 
 pub use semantics::*;

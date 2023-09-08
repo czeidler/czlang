@@ -1,16 +1,14 @@
 use std::collections::{HashMap, HashSet};
 
 use super::{
-    flow_container::{CurrentFlowContainer, FlowContainer},
     types::{intersection, SArray, SRefType, SSlice, SumType, Type},
     ClosureContext, ClosureType,
 };
 use crate::{
     ast::{
-        self, Block, BlockParent, BlockTrait, Expression, ExpressionType, Field, FileContext,
-        FileTrait, Function, FunctionCall, FunctionSignature, FunctionTrait, IfAlternative,
-        IfExpression, LangError, NodeData, Parameter, Receiver, RefType, RootSymbol,
-        SelectorExpression, SelectorField, Statement, Struct, StructFieldInitialization,
+        self, Block, BlockParent, Expression, ExpressionType, Field, FileContext, Function,
+        FunctionCall, FunctionSignature, IfAlternative, IfExpression, LangError, NodeData,
+        Parameter, RefType, SelectorExpression, SelectorField, Struct, StructFieldInitialization,
         StructInitialization, TypeParam, TypeParamType, VarDeclaration,
     },
     buildin::Buildins,
@@ -585,9 +583,6 @@ impl FileSemanticAnalyzer {
         }
 
         let binding = self.lookup_function_declaration(call);
-        if let Some(binding) = &binding {
-            self.bind_fun_call_usage(&call.name_node, binding);
-        }
 
         let existing = self
             .function_calls
@@ -760,60 +755,6 @@ impl FileSemanticAnalyzer {
         binding
     }
 
-    fn validate_file(&mut self) -> FileSemantics {
-        let mut functions = HashMap::new();
-        let mut structs = HashMap::new();
-        let mut methods = Vec::new();
-        for child in self.file.children() {
-            match child {
-                RootSymbol::Function(fun) => {
-                    if fun.signature.receiver.is_none() {
-                        let existed = functions.insert(fun.signature.name.clone(), fun.clone());
-                        if existed.is_some() {
-                            self.errors.push(LangError::type_error(
-                                &fun.signature.name_node,
-                                format!("Duplicated function definition: {:?}", fun.signature.name),
-                            ))
-                        }
-                    } else {
-                        methods.push(fun);
-                    }
-                }
-                RootSymbol::Struct(struct_def) => {
-                    let existed = structs.insert(struct_def.name.clone(), struct_def.clone());
-                    if existed.is_some() {
-                        self.errors.push(LangError::type_error(
-                            &struct_def.name_node,
-                            format!("Duplicated struct definition: {:?}", struct_def.name),
-                        ))
-                    }
-                }
-            }
-        }
-
-        FileSemantics {
-            functions,
-            structs,
-            methods,
-        }
-    }
-
-    fn validate_struct_def(&mut self, struct_def: &Ptr<Struct>) {
-        // TODO: struct name clash with other declarations?
-
-        let new_entry = self.structs.insert(
-            struct_def.node.id,
-            StructSemantics {
-                specializations: HashMap::new(),
-            },
-        );
-        assert!(new_entry.is_none());
-
-        for field in &struct_def.fields {
-            self.query_field_type(struct_def, &field);
-        }
-    }
-
     fn bind_types(
         &mut self,
         context: TypeQueryContext,
@@ -856,157 +797,6 @@ impl FileSemanticAnalyzer {
         }
 
         result_types
-    }
-
-    fn validate_struct_receiver(&mut self, receiver: &Receiver) -> Option<Ptr<Struct>> {
-        if receiver.types.len() != 1 {
-            self.errors.push(LangError::type_error(
-                &receiver.node,
-                "Receiver type must point to a struct".to_string(),
-            ));
-            return None;
-        }
-        let t = receiver.types.get(0).unwrap();
-
-        let Some(receiver_type) = self.query_ref_type(&TypeQueryContext::StructMethodReceiver, t) else {
-            self.errors.push(LangError::type_error(
-                &receiver.node,
-                format!("Invalid receiver type: {:?}", t.r#type),
-            ));
-            return None;
-        };
-        let base_receiver_type = match receiver_type {
-            Type::RefType(ref_type) => ref_type.r#type.as_ref().clone(),
-            _ => receiver_type,
-        };
-        let st = match base_receiver_type {
-            Type::Struct(st) => st,
-            _ => {
-                self.errors.push(LangError::type_error(
-                    &receiver.node,
-                    "Receiver type must point to a struct".to_string(),
-                ));
-                return None;
-            }
-        };
-        return Some(st);
-    }
-
-    fn bind_method_to_struct(&mut self, fun: &Ptr<Function>, st: Ptr<Struct>) {
-        // struct most have in validated before hand, i.e. it must exist:
-        let entry = self.structs.get_mut(&st.node.id).unwrap();
-        let implementation = entry
-            .specializations
-            .entry("".to_string())
-            .or_insert(StructImplementation { methods: vec![] });
-        if implementation
-            .methods
-            .iter()
-            .find(|m| m.signature.name == fun.signature.name)
-            .is_some()
-        {
-            self.errors.push(LangError::type_error(
-                &fun.signature.name_node,
-                format!("Duplicated method: {}", fun.signature.name),
-            ));
-            return;
-        }
-        implementation.methods.push(fun.clone());
-    }
-
-    fn validate_fun(&mut self, fun: &Ptr<Function>) {
-        // TODO: fun name clash with other definitions?
-
-        for par_ref in &fun.signature.parameters {
-            self.query_parameter_type(&fun.signature, &par_ref);
-        }
-        self.query_return_type(&fun.signature);
-
-        if let Some(receiver) = &fun.signature.receiver {
-            if receiver.types.len() != 1 {
-                self.errors.push(LangError::type_error(
-                    &receiver.node,
-                    "Receiver type must point to a struct".to_string(),
-                ));
-            } else if let Some(st) = self.validate_struct_receiver(&receiver) {
-                self.bind_method_to_struct(fun, st);
-            }
-        }
-
-        let mut flow_container = CurrentFlowContainer {
-            flow: FlowContainer::start_flow(),
-        };
-        self.validate_block(&mut flow_container, &fun.body(), false);
-
-        if let Some(ret) = &fun.signature.return_type {
-            if flow_container.flow.returned.is_none() {
-                self.errors.push(LangError::type_error(
-                    &ret.node,
-                    "Block must return a value".to_string(),
-                ));
-            }
-        }
-    }
-
-    fn bind_block_return(&mut self, block: &Ptr<Block>, last_expression: &Expression) {
-        let mut entry = self.blocks.entry(block.node.id).or_insert(BlockSemantics {
-            vars: HashMap::new(),
-            block_return: None,
-        });
-        entry.block_return = Some(last_expression.clone());
-    }
-
-    /// Returns the ExpressionSemantics of the last statement (if it was an expression)
-    pub(crate) fn validate_block(
-        &mut self,
-        flow: &mut CurrentFlowContainer,
-        block: &Ptr<Block>,
-        is_assignment: bool,
-    ) -> Option<ExpressionSemantics> {
-        let mut last_statement: Option<Statement> = None;
-        let mut last_statement_type: Option<ExpressionSemantics> = None;
-        let mut returned = false;
-        let mut iter = block.statements().peekable();
-        while let Some(statement) = iter.next() {
-            let is_last = iter.peek().is_none();
-            let statement_type =
-                self.validate_statement(flow, block, &statement, is_last && is_assignment);
-            if flow.flow.returned.is_some() && returned {
-                self.errors.push(LangError::type_error(
-                    statement.node(),
-                    "No statements allowed after return statement".to_string(),
-                ));
-            }
-            returned = if !returned {
-                flow.flow.returned.is_some()
-            } else {
-                false
-            };
-
-            if is_last {
-                last_statement_type = statement_type;
-                last_statement = Some(statement);
-            }
-        }
-        if is_assignment {
-            if let Some(last_statement) = &last_statement {
-                match last_statement {
-                    Statement::Expression(statement) => {
-                        self.bind_block_return(block, &statement.expression)
-                    }
-                    _ => {}
-                }
-            } else {
-                self.errors.push(LangError::type_error(
-                    last_statement
-                        .as_ref()
-                        .map(|s| s.node())
-                        .unwrap_or(&block.node),
-                    "Block return expected".to_string(),
-                ));
-            }
-        }
-        last_statement_type
     }
 
     /// If a variable type narrowed down the type of an expression, back propagated this up to previous usage.
@@ -1259,15 +1049,5 @@ impl FileSemanticAnalyzer {
             }
         }
         return None;
-    }
-
-    fn bind_fun_call_usage(&mut self, reference: &NodeData, binding: &FunctionCallBinding) {
-        let id = match binding {
-            FunctionCallBinding::Function(fun) => fun.signature.name_node.id,
-            FunctionCallBinding::Buildin(_) => return,
-        };
-        let references = self.usages.entry(id).or_default();
-        assert!(!references.contains(reference));
-        references.push(reference.clone());
     }
 }
