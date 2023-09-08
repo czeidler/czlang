@@ -13,10 +13,21 @@ pub enum BlockParent {
     Block(Ptr<Block>),
 }
 
+#[derive(Debug, Clone)]
+pub enum BlockType {
+    Function,
+    Expression,
+    If,
+    /// if or if/else block
+    IfAlternative,
+    Loop,
+}
+
 #[derive(Debug)]
 pub struct Block {
     pub context: Ptr<FileContext>,
     pub parent: BlockParent,
+    pub r#type: BlockType,
 
     pub node: NodeData,
 }
@@ -26,6 +37,16 @@ impl Block {
         match &self.parent {
             BlockParent::Function(fun) => fun.clone(),
             BlockParent::Block(block) => block.fun(),
+        }
+    }
+
+    pub fn in_loop(&self) -> bool {
+        if let BlockType::Loop = &self.r#type {
+            return true;
+        }
+        match &self.parent {
+            BlockParent::Function(_) => false,
+            BlockParent::Block(block) => block.in_loop(),
         }
     }
 }
@@ -80,6 +101,8 @@ pub enum Statement {
     VarDeclaration(Ptr<VarDeclaration>),
     Return(ReturnStatement),
     Loop(Loop),
+    Break(NodeData),
+    Continue(NodeData),
 }
 
 impl Statement {
@@ -89,6 +112,8 @@ impl Statement {
             Statement::VarDeclaration(var) => &var.node,
             Statement::Return(ret) => &ret.node,
             Statement::Loop(l) => &l.node,
+            Statement::Break(node) => &node,
+            Statement::Continue(node) => &node,
         }
     }
 }
@@ -133,7 +158,10 @@ impl<'a> Iterator for StatementIterator<'a> {
                 }
                 "for_statement" => parse_loop(&self.file, &statement_node, &self.block)
                     .map(|statement| Statement::Loop(statement)),
-
+                "break_statement" => Some(Statement::Break(NodeData::from_node(&statement_node))),
+                "continue_statement" => {
+                    Some(Statement::Continue(NodeData::from_node(&statement_node)))
+                }
                 _ => None,
             };
 
@@ -148,11 +176,13 @@ impl<'a> Iterator for StatementIterator<'a> {
 pub(crate) fn parse_block<'a>(
     file: &Ptr<FileContext>,
     node: &Node<'a>,
+    r#type: BlockType,
     parent: BlockParent,
 ) -> Ptr<Block> {
     Ptr::new(Block {
         context: file.clone(),
         parent,
+        r#type,
         node: NodeData::from_node(node),
     })
 }

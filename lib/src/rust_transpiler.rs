@@ -1259,6 +1259,14 @@ impl RustTranspiler {
                     self.transpile_loop_statement(analyzer, &loop_statement, block, writer);
                     writer.new_line();
                 }
+                Statement::Break(_) => {
+                    writer.write("break;");
+                    writer.new_line();
+                }
+                Statement::Continue(_) => {
+                    writer.write("continue;");
+                    writer.new_line();
+                }
             }
         }
     }

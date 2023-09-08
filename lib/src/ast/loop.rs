@@ -3,8 +3,8 @@ use tree_sitter::Node;
 use crate::types::Ptr;
 
 use super::{
-    child_by_field, node_text, parse_block, parse_expression, Block, BlockParent, Expression,
-    FileContext, NodeData,
+    child_by_field, node_text, parse_block, parse_expression, Block, BlockParent, BlockType,
+    Expression, FileContext, NodeData,
 };
 
 #[derive(Debug, Clone)]
@@ -40,7 +40,12 @@ pub(crate) fn parse_loop<'a>(
     Some(Loop {
         node: NodeData::from_node(&node),
         range,
-        body: parse_block(context, &block_node, BlockParent::Block(block.clone())),
+        body: parse_block(
+            context,
+            &block_node,
+            BlockType::Loop,
+            BlockParent::Block(block.clone()),
+        ),
     })
 }
 

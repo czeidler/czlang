@@ -121,6 +121,8 @@ fn find_in_block(
                     return find_in_block(analyzer, &loop_statement.body, position);
                 }
             }
+            Statement::Break(_) => {}
+            Statement::Continue(_) => {}
         }
     }
     None

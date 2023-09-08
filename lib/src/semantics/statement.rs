@@ -42,6 +42,22 @@ impl FileSemanticAnalyzer {
                 });
             }
             Statement::Loop(loop_statement) => self.validate_loop(flow, block, loop_statement),
+            Statement::Break(_) => {
+                if !block.in_loop() {
+                    self.errors.push(LangError::type_error(
+                        statement.node(),
+                        format!("Break statement must be in loop block"),
+                    ));
+                }
+            }
+            Statement::Continue(_) => {
+                if !block.in_loop() {
+                    self.errors.push(LangError::type_error(
+                        statement.node(),
+                        format!("Continue statement must be in loop block"),
+                    ));
+                }
+            }
         };
         None
     }

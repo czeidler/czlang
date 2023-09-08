@@ -3,8 +3,8 @@ use tree_sitter::Node;
 use crate::types::Ptr;
 
 use super::{
-    child, child_by_field, node_text, parse_block, parse_usize, Block, BlockParent, FileContext,
-    NodeData,
+    child, child_by_field, node_text, parse_block, parse_usize, Block, BlockParent, BlockType,
+    FileContext, NodeData,
 };
 
 #[derive(Debug, Clone)]
@@ -346,6 +346,7 @@ pub(crate) fn parse_expression(
         "block" => ExpressionType::Block(parse_block(
             context,
             &node,
+            BlockType::Expression,
             BlockParent::Block(block.clone()),
         )),
         "if_expression" => ExpressionType::If(parse_if(context, &node, block)?),
@@ -567,7 +568,12 @@ fn parse_if<'a>(
     let alternative = node.child_by_field_name("alternative".as_bytes());
 
     let condition = parse_expression(context, &condition, &block)?;
-    let consequence = parse_block(context, &consequence, BlockParent::Block(block.clone()));
+    let consequence = parse_block(
+        context,
+        &consequence,
+        BlockType::If,
+        BlockParent::Block(block.clone()),
+    );
 
     let alternative = match alternative {
         Some(alternative) => {
@@ -577,6 +583,7 @@ fn parse_if<'a>(
                 Some(IfAlternative::Else(parse_block(
                     context,
                     &alternative,
+                    BlockType::IfAlternative,
                     BlockParent::Block(block.clone()),
                 )))
             }

@@ -4,7 +4,7 @@ use crate::{tree_sitter::find_node, types::Ptr};
 
 use super::{
     child_by_field, node_text, parse_block, parse_type_param, parse_types, Block, BlockParent,
-    FileContext, NodeData, RefType, SourceSpan, TypeParamType,
+    BlockType, FileContext, NodeData, RefType, SourceSpan, TypeParamType,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -73,7 +73,12 @@ impl FunctionTrait for Ptr<Function> {
             position.column,
         )
         .unwrap();
-        parse_block(&self.file, &body_node, BlockParent::Function(self.clone()))
+        parse_block(
+            &self.file,
+            &body_node,
+            BlockType::Function,
+            BlockParent::Function(self.clone()),
+        )
     }
 }
 
