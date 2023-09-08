@@ -7,8 +7,8 @@ use crate::{
 };
 
 use super::{
-    intersection, BlockSemantics, CurrentFlowContainer, ExpressionSemantics, FileSemanticAnalyzer,
-    FlowContainer, SumType,
+    flow_container::{CurrentFlowContainer, FlowContainer},
+    intersection, BlockSemantics, ExpressionSemantics, FileSemanticAnalyzer, SumType,
 };
 
 impl FileSemanticAnalyzer {
