@@ -80,18 +80,21 @@ impl FileSemanticAnalyzer {
                 };
 
                 let query_context = TypeQueryContext::from_block(&context.block);
-                let resolved_types = match &binding {
-                    IdentifierBinding::VarDeclaration(var) => {
-                        Some(self.query_var_types(&query_context, &var))
-                    }
-                    IdentifierBinding::Parameter(param) => {
-                        Some(self.query_types(&query_context, &param.types))
-                    }
-                    IdentifierBinding::PipeArg(arg) => Some(arg.clone()),
+                let (resolved_types, is_mutable) = match &binding {
+                    IdentifierBinding::VarDeclaration(var) => (
+                        Some(self.query_var_types(&query_context, &var)),
+                        var.is_mutable,
+                    ),
+                    IdentifierBinding::Parameter(param) => (
+                        Some(self.query_types(&query_context, &param.types)),
+                        param.is_mutable,
+                    ),
+                    IdentifierBinding::PipeArg(arg) => (Some(arg.clone()), false),
                 };
                 ExpressionSemantics {
                     resolved_types,
                     narrowed_types: flow.flow.lookup(identifier),
+                    is_mutable,
                     binding: Some(binding),
                 }
             }

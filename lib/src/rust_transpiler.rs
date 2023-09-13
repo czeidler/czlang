@@ -1267,6 +1267,23 @@ impl RustTranspiler {
                     writer.write("continue;");
                     writer.new_line();
                 }
+                Statement::Assignment(assignment) => {
+                    self.transpile_expression(analyzer, &assignment.left, block, writer);
+                    writer.write(" = ");
+                    let target = &analyzer
+                        .query_expression(block, &assignment.left)
+                        .unwrap()
+                        .types();
+                    self.transpile_expression_with_mapping(
+                        analyzer,
+                        &assignment.right,
+                        target,
+                        block,
+                        writer,
+                    );
+                    writer.write(";");
+                    writer.new_line();
+                }
             }
         }
     }

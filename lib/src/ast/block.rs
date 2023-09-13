@@ -96,9 +96,17 @@ pub struct ExpressionStatement {
 }
 
 #[derive(Debug, Clone)]
+pub struct AssignmentStatement {
+    pub node: NodeData,
+    pub left: Expression,
+    pub right: Expression,
+}
+
+#[derive(Debug, Clone)]
 pub enum Statement {
     Expression(ExpressionStatement),
     VarDeclaration(Ptr<VarDeclaration>),
+    Assignment(AssignmentStatement),
     Return(ReturnStatement),
     Loop(Loop),
     Break(NodeData),
@@ -110,6 +118,7 @@ impl Statement {
         match self {
             Statement::Expression(expr) => &expr.expression.node,
             Statement::VarDeclaration(var) => &var.node,
+            Statement::Assignment(assignment) => &assignment.node,
             Statement::Return(ret) => &ret.node,
             Statement::Loop(l) => &l.node,
             Statement::Break(node) => &node,
@@ -152,6 +161,8 @@ impl<'a> Iterator for StatementIterator<'a> {
                 }
                 "var_declaration" => parse_var_declaration(&self.file, statement_node, &self.block)
                     .map(|statement| Statement::VarDeclaration(Ptr::new(statement))),
+                "assignment_statement" => parse_assignment(&self.file, statement_node, &self.block)
+                    .map(|statement| Statement::Assignment(statement)),
                 "return_statement" => {
                     parse_return_statement(&self.file, &statement_node, &self.block)
                         .map(|statement| Statement::Return(statement))
@@ -208,6 +219,20 @@ fn parse_var_declaration<'a>(
         is_mutable,
         types: var_type,
         value,
+    })
+}
+
+fn parse_assignment<'a>(
+    context: &Ptr<FileContext>,
+    node: Node<'a>,
+    block: &Ptr<Block>,
+) -> Option<AssignmentStatement> {
+    let left = child_by_field(&node, "left")?;
+    let right = child_by_field(&node, "right")?;
+    Some(AssignmentStatement {
+        node: NodeData::from_node(&node),
+        left: parse_expression(context, &left, block)?,
+        right: parse_expression(context, &right, block)?,
     })
 }
 

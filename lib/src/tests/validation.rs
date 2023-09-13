@@ -359,4 +359,18 @@ fun main() { test() }
         let value = find_var_in_fun(&mut analysis, "main", "value5").unwrap();
         assert_eq!(value.to_string(), "bool ? null | i32");
     }
+
+    #[test]
+    fn var_assignment_error() {
+        let err = validate_project(
+            "test_projects/var_assignment_error",
+            r#"
+            fun main() {
+                var test bool = false
+                test = true
+            }
+        "#,
+        );
+        assert_eq!(&format!("{}", err.unwrap_err()), "Left side is not mutable");
+    }
 }

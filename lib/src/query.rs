@@ -123,6 +123,14 @@ fn find_in_block(
             }
             Statement::Break(_) => {}
             Statement::Continue(_) => {}
+            Statement::Assignment(assignment) => {
+                if assignment.left.node.contains(position) {
+                    return find_in_expression(analyzer, &block, &assignment.left, position);
+                }
+                if assignment.right.node.contains(position) {
+                    return find_in_expression(analyzer, &block, &assignment.right, position);
+                }
+            }
         }
     }
     None

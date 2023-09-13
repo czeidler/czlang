@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 
 use crate::{
-    ast::{Block, LangError, Loop, ReturnStatement, Statement, VarDeclaration},
+    ast::{
+        AssignmentStatement, Block, LangError, Loop, ReturnStatement, Statement, VarDeclaration,
+    },
     semantics::{types_to_string, ExpContext, VarDeclarationSemantics},
     types::Ptr,
 };
@@ -32,6 +34,9 @@ impl FileSemanticAnalyzer {
             }
             Statement::VarDeclaration(var_declaration) => {
                 self.validate_var_declaration(flow, block, var_declaration.clone());
+            }
+            Statement::Assignment(assignment) => {
+                self.validate_assignment(flow, block, assignment);
             }
             Statement::Return(ret) => {
                 let return_type = self.validate_return_statement(flow, block, ret);
@@ -198,6 +203,45 @@ impl FileSemanticAnalyzer {
             .vars
             .insert(var_declaration.name.clone(), var_declaration.clone())
             .is_none()
+    }
+
+    fn validate_assignment(
+        &mut self,
+        flow: &mut CurrentFlowContainer,
+        block: &Ptr<Block>,
+        assignment: &AssignmentStatement,
+    ) {
+        let left_sem =
+            self.validate_expression(flow, &ExpContext::new(block, None), &assignment.left, false);
+        let right =
+            self.validate_expression(flow, &ExpContext::new(block, None), &assignment.right, true);
+        let (Some(left), Some(right)) = (left_sem.types(), right.types()) else {
+            self.errors.push(LangError::type_error(
+                &assignment.node,
+                format!("Can't assign types"),
+            ));
+            return;
+        };
+        if !left_sem.is_mutable {
+            self.errors.push(LangError::type_error(
+                &assignment.left.node,
+                "Left side is not mutable".to_string(),
+            ));
+            return;
+        }
+
+        let inter = intersection(&right, &left);
+        if inter.is_none() {
+            self.errors.push(LangError::type_error(
+                &assignment.node,
+                format!(
+                    "Incompatible type in assignment: left: {}, right: {}",
+                    types_to_string(left.types()),
+                    types_to_string(right.types()),
+                ),
+            ));
+        }
+        // TODO: back propagation
     }
 
     fn validate_return_statement(

@@ -107,6 +107,8 @@ pub struct ExpressionSemantics {
     /// The narrowed type, e.g. through an `if typeof` expression.
     pub narrowed_types: Option<SumType>,
 
+    pub is_mutable: bool,
+
     /// Binding if the expression is an identifier
     pub binding: Option<IdentifierBinding>,
 }
@@ -117,6 +119,7 @@ impl ExpressionSemantics {
             resolved_types: None,
             narrowed_types: None,
             binding: None,
+            is_mutable: false,
         }
     }
 
@@ -124,6 +127,7 @@ impl ExpressionSemantics {
         ExpressionSemantics {
             resolved_types,
             narrowed_types: None,
+            is_mutable: false,
             binding: None,
         }
     }

@@ -68,6 +68,10 @@ fn inlay_hint_from_block(
             }
             Statement::Break(_) => {}
             Statement::Continue(_) => {}
+            Statement::Assignment(assignment) => {
+                inlay_hints_from_expr(file, &block, range, &assignment.left, hints);
+                inlay_hints_from_expr(file, &block, range, &assignment.right, hints);
+            }
         }
     }
 }

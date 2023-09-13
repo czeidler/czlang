@@ -531,4 +531,17 @@ fun main() {
         "#,
         )
     }
+
+    #[test]
+    fn var_assignment() {
+        transpile_and_validate_project(
+            "test_projects/var_assignment",
+            r#"
+            fun main() {
+                var test mut bool = false
+                test = true
+            }
+        "#,
+        )
+    }
 }
