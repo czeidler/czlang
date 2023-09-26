@@ -458,6 +458,23 @@ fun main() {
     }
 
     #[test]
+    fn pipe_operator_error_fallback() {
+        transpile_and_validate_project(
+            "test_projects/pipe_operator_error_fallback",
+            r#"
+            fun test() bool ? null {
+                return false
+            }
+
+
+            fun main() {
+                var result bool = test() |?> true
+            }
+        "#,
+        )
+    }
+
+    #[test]
     fn pipe_operator_error_handling() {
         transpile_and_validate_project(
             "test_projects/pipe_operator_error_handling",

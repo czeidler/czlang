@@ -1077,7 +1077,8 @@ impl FileSemanticAnalyzer {
             if !pipe.is_err_pipe {
                 return Some(SumType::from_type(Type::Either(right_type, left_error)));
             } else {
-                return Some(SumType::from_type(Type::Either(left_value, right_type)));
+                left_value.union(right_type);
+                return Some(left_value);
             }
         }
     }
