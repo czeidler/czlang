@@ -4,7 +4,7 @@ use crate::{
     ast::{
         BinaryExpression, BinaryOperator, EitherCheckExpression, Expression, ExpressionType, Field,
         IfAlternative, IfExpression, LangError, NodeData, PipeExpression, SelectorExpression,
-        SelectorFieldType, Struct, StructFieldInitialization, UnaryOperator,
+        SelectorFieldType, StringTemplatePart, Struct, StructFieldInitialization, UnaryOperator,
     },
     semantics::{
         FunctionCallBinding, IdentifierBinding, IfExpressionSemantics, PipeSemantics,
@@ -64,7 +64,15 @@ impl FileSemanticAnalyzer {
         is_assignment: bool,
     ) -> Result<Option<ExpressionSemantics>, LangError> {
         let expression_semantics = match &expression.r#type {
-            ExpressionType::String(_) => {
+            ExpressionType::String(parts) => {
+                for part in parts {
+                    match part {
+                        StringTemplatePart::Expression(expr) => {
+                            self.validate_expression(flow, context, expr, false);
+                        }
+                        StringTemplatePart::String(_) => continue,
+                    }
+                }
                 ExpressionSemantics::resolved_types(Some(SumType::from_type(Type::String)))
             }
 

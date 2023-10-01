@@ -48,9 +48,23 @@
 				{
 					"name": "constant.character.escape.czlang",
 					"match": "\\\\."
-				}
+				},
+				{ "include": "#string-template-exp" }
 			]
+		},
+		"string-template-exp": {
+			"name": "meta.template.expression.czlang",
+			"begin": "{",
+			"beginCaptures": {
+				"0": { "name": "punctuation.definition.template-expression.begin.czlang" }
+			},
+			"end": "}",
+			"endCaptures": {
+				"0": { "name": "punctuation.definition.template-expression.end.czlang" }
+			},
+			"contentName": "meta.embedded.line.czlang"
 		}
 	},
+
 	"scopeName": "source.czlang"
 }

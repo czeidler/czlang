@@ -561,4 +561,17 @@ fun main() {
         "#,
         )
     }
+
+    #[test]
+    fn string_template() {
+        transpile_and_validate_project(
+            "test_projects/string_template",
+            r#"
+            fun main() {
+                var test = "Hello"
+                println("Test: {test}")
+            }
+        "#,
+        )
+    }
 }

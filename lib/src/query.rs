@@ -1,8 +1,8 @@
 use crate::{
     ast::{
         Block, BlockTrait, Expression, ExpressionType, Field, Function, FunctionTrait,
-        IfAlternative, IfExpression, Parameter, SelectorField, SourcePosition, Statement, Struct,
-        VarDeclaration,
+        IfAlternative, IfExpression, Parameter, SelectorField, SourcePosition, Statement,
+        StringTemplatePart, Struct, VarDeclaration,
     },
     semantics::{
         types::SumType, ExpressionSemantics, FileSemanticAnalyzer, FileSemantics,
@@ -294,6 +294,19 @@ fn find_in_expression(
         ExpressionType::ReturnErrorPipe(pipe) => {
             if pipe.left.node.contains(position) {
                 return find_in_expression(analyzer, block, &pipe.left, position);
+            }
+            None
+        }
+        ExpressionType::String(parts) => {
+            for part in parts {
+                match part {
+                    StringTemplatePart::Expression(expr) => {
+                        if expr.node.contains(position) {
+                            return find_in_expression(analyzer, block, &expr, position);
+                        }
+                    }
+                    StringTemplatePart::String(_) => continue,
+                }
             }
             None
         }
