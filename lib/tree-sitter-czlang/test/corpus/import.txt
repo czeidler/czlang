@@ -1,0 +1,25 @@
+==================
+Imports
+==================
+
+import "package1"
+import . "test/package"
+import p2 "test/package2"
+
+---
+
+(source_file
+      (import_declaration
+        (import_spec
+          (interpreted_string_literal)))
+      (import_declaration
+        (import_spec
+          (dot)
+          (interpreted_string_literal)))
+      (import_declaration
+        (import_spec
+          (identifier)
+          (interpreted_string_literal)
+        )
+      )
+)

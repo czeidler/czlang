@@ -28,7 +28,7 @@ fun x() i32 {
     (block
       (var_declaration (identifier) (int_literal))
       (var_declaration (identifier) (primitive_type) (true))
-      (var_declaration (identifier) (interpreted_string_literal))
+      (var_declaration (identifier) (string_expression))
       (var_declaration (identifier) (primitive_type) (int_literal))
 
       (var_declaration (identifier) (primitive_type) (int_literal))

@@ -60,7 +60,7 @@ fun main() {
             (int_literal))
           (keyed_element
             (identifier)
-            (interpreted_string_literal))
+            (string_expression))
           (keyed_element
             (identifier)
             (struct_initialization
@@ -108,7 +108,7 @@ fun main() {
                   (int_literal))
                 (keyed_element
                   (identifier)
-                  (interpreted_string_literal))
+                  (string_expression))
                 (keyed_element
                   (identifier)
                   (struct_initialization

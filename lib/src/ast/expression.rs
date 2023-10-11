@@ -315,7 +315,7 @@ pub(crate) fn parse_expression(
     let expression_type = match node.kind() {
         "identifier" => ExpressionType::Identifier(node_text(&node, context)?),
         "int_literal" => ExpressionType::IntLiteral(parse_usize(context, node)?),
-        "interpreted_string_literal" => ExpressionType::String(parse_string(context, node, block)?),
+        "string_expression" => ExpressionType::String(parse_string(context, node, block)?),
         "null" => ExpressionType::Null,
         "true" => ExpressionType::Bool(true),
         "false" => ExpressionType::Bool(false),
