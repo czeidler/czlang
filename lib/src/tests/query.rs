@@ -32,7 +32,7 @@ fun main() {
         let mut parse_errors = Vec::new();
         let file = FileContext::parse(0, "test.cz".to_string(), source_code, &mut parse_errors);
 
-        let mut analyzer = FileSemanticAnalyzer::new(file);
+        let mut analyzer = FileSemanticAnalyzer::new(vec![file]);
         let result = find_in_file(&mut analyzer, SourcePosition::new(17, 24)).unwrap();
         match result {
             QueryResult::SelectorField((_, semantics)) => {

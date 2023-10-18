@@ -67,7 +67,7 @@ pub fn validate_project<'a>(
         )));
     }
 
-    let mut analyzer = FileSemanticAnalyzer::new(file);
+    let mut analyzer = FileSemanticAnalyzer::new(vec![file]);
     analyzer.query_all();
     if !analyzer.errors.is_empty() {
         return Err(anyhow::Error::msg(analyzer.errors[0].msg.clone()));

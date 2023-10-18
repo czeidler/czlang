@@ -29,7 +29,7 @@ impl ProjectFile {
         let project_file = ProjectFile {
             file: file.clone(),
             parse_errors,
-            file_analyzer: FileSemanticAnalyzer::new(file),
+            file_analyzer: FileSemanticAnalyzer::new(vec![file]),
         };
 
         project_file
@@ -87,7 +87,7 @@ impl ProjectFile {
             &mut self.parse_errors,
         );
 
-        self.file_analyzer = FileSemanticAnalyzer::new(self.file.clone())
+        self.file_analyzer = FileSemanticAnalyzer::new(vec![self.file.clone()])
     }
 }
 

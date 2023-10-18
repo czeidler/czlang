@@ -213,7 +213,7 @@ pub struct PipeSemantics {
 
 #[derive(Debug)]
 pub struct FileSemanticAnalyzer {
-    pub file: Ptr<FileContext>,
+    pub files: Vec<Ptr<FileContext>>,
     /// List of all sum_types in the file
     pub sum_types: HashMap<String, SumType>,
     pub errors: Vec<LangError>,
@@ -247,9 +247,9 @@ pub struct FileSemanticAnalyzer {
 }
 
 impl FileSemanticAnalyzer {
-    pub fn new(file: Ptr<FileContext>) -> Self {
+    pub fn new(files: Vec<Ptr<FileContext>>) -> Self {
         FileSemanticAnalyzer {
-            file,
+            files,
             file_semantics: None,
             sum_types: HashMap::new(),
             errors: Vec::new(),
@@ -274,7 +274,7 @@ impl FileSemanticAnalyzer {
 
     /// Query all symbols in the files and thus doing a full validation
     pub fn query_all(&mut self) {
-        let file_semantics = self.query_file();
+        let file_semantics = self.query_files();
 
         for (_, struct_def) in &file_semantics.structs {
             self.query_struct(struct_def);
@@ -320,12 +320,12 @@ impl FileSemanticAnalyzer {
         self.blocks.get(&block.node.id()).map(|s| s.clone())
     }
 
-    pub fn query_file(&mut self) -> Ptr<FileSemantics> {
+    pub fn query_files(&mut self) -> Ptr<FileSemantics> {
         if let Some(file) = &self.file_semantics {
             return file.clone();
         }
 
-        let file = Ptr::new(self.validate_file());
+        let file = Ptr::new(self.validate_files());
         self.file_semantics = Some(file.clone());
 
         file
@@ -704,7 +704,7 @@ impl FileSemanticAnalyzer {
     pub fn query_usage(&mut self, node_id: NodeId) -> Vec<NodeData> {
         // validate whole file
         // TODO this can be optimized, e.g. when in a block it might be enough to just validate the block
-        self.query_file();
+        self.query_files();
 
         self.usages
             .get(&node_id)
@@ -742,7 +742,7 @@ impl FileSemanticAnalyzer {
             TypeQueryContext::Function(_) => {}
             TypeQueryContext::StructMethodReceiver => {}
         }
-        let file = self.query_file();
+        let file = self.query_files();
         let Some(struct_def) = file.structs.get(identifier).map(|s| s.clone()) else {
             self.errors.push(LangError::type_error(
                 node,
@@ -1006,7 +1006,7 @@ impl FileSemanticAnalyzer {
     }
 
     fn lookup_function_declaration(&mut self, call: &FunctionCall) -> Option<FunctionCallBinding> {
-        let file = self.query_file();
+        let file = self.query_files();
         if let Some(declaration) = file.functions.get(&call.name) {
             let binding = FunctionCallBinding::Function(declaration.clone());
             return Some(binding);

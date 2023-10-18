@@ -1451,7 +1451,7 @@ impl RustTranspiler {
         writer.write(" {");
         writer.new_line();
         writer.indented(|writer| {
-            let file = analyzer.query_file();
+            let file = analyzer.query_files();
             let struct_def = file.structs.get(&struct_init.name).unwrap();
             for field in &struct_init.fields {
                 self.transpile_struct_field_init(analyzer, field, &struct_def, block, writer);
@@ -1463,7 +1463,7 @@ impl RustTranspiler {
     }
 
     pub fn transpile_file(&self, analyzer: &mut FileSemanticAnalyzer, writer: &mut Writer) {
-        let file = analyzer.query_file();
+        let file = analyzer.query_files();
         for (name, types) in &analyzer.sum_types {
             self.transpile_sum_type_def(name, types, writer);
             writer.new_line();
@@ -1538,7 +1538,7 @@ pub fn transpile_project(project_dir: &Path) -> Result<(), anyhow::Error> {
         )));
     }
 
-    let mut analyzer = FileSemanticAnalyzer::new(file.clone());
+    let mut analyzer = FileSemanticAnalyzer::new(vec![file.clone()]);
     analyzer.query_all();
     if !analyzer.errors.is_empty() {
         return Err(anyhow::Error::msg(analyzer.errors[0].msg.clone()));

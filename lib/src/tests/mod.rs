@@ -38,7 +38,8 @@ pub(crate) fn find_var_in_fun(
     fun: &str,
     var: &str,
 ) -> Option<SumType> {
-    let fun = find_function(&analysis.file, fun)?;
+    let file = analysis.files.first().unwrap();
+    let fun = find_function(file, fun)?;
     let var = find_var(&fun, var)?;
     Some(analysis.query_var_types(&TypeQueryContext::from_fun(&fun), &var))
 }

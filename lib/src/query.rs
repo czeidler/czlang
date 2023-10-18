@@ -31,7 +31,7 @@ pub fn find_in_file(
     analyzer: &mut FileSemanticAnalyzer,
     position: SourcePosition,
 ) -> Option<QueryResult> {
-    let file = analyzer.query_file();
+    let file = analyzer.query_files();
     for (_, fun) in &file.functions {
         if !fun.signature.node.contains(position) {
             continue;
@@ -401,7 +401,7 @@ pub fn find_completions(
     analyzer: &mut FileSemanticAnalyzer,
     position: SourcePosition,
 ) -> (Ptr<FileSemantics>, Option<Vec<Ptr<VarDeclaration>>>) {
-    let file = analyzer.query_file();
+    let file = analyzer.query_files();
     for (_, fun) in &file.functions {
         let body = fun.body();
 
