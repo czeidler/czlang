@@ -103,7 +103,7 @@ fn find_in_block(
                 if let Some(range) = loop_statement.range {
                     if range.variable_node.contains(position) {
                         let Some(identifier_semantics) = analyzer
-                            .query_identifier(block.block, range.variable_node.id) else { return None };
+                            .query_identifier(block.block, range.variable_node.id()) else { return None };
                         return Some(QueryResult::Identifier(
                             range.variable_node.id,
                             loop_statement.body.clone(),
@@ -170,7 +170,7 @@ fn find_in_expression(
     match &expression.r#type {
         ExpressionType::Identifier(_) => {
             let Some(identifier_semantics) = analyzer
-                .query_identifier(block.block, expression.node.id) else { return None };
+                .query_identifier(block.block, expression.node.id()) else { return None };
             Some(QueryResult::Identifier(
                 expression.node.id,
                 block.block.clone(),

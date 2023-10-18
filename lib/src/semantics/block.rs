@@ -64,10 +64,13 @@ impl FileSemanticAnalyzer {
     }
 
     fn bind_block_return(&mut self, block: &Ptr<Block>, last_expression: &Expression) {
-        let mut entry = self.blocks.entry(block.node.id).or_insert(BlockSemantics {
-            vars: HashMap::new(),
-            block_return: None,
-        });
+        let mut entry = self
+            .blocks
+            .entry(block.node.id())
+            .or_insert(BlockSemantics {
+                vars: HashMap::new(),
+                block_return: None,
+            });
         entry.block_return = Some(last_expression.clone());
     }
 }

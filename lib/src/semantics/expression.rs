@@ -412,14 +412,14 @@ impl FileSemanticAnalyzer {
     }
 
     fn bind_expression_type(&mut self, expression: &Expression, semantics: ExpressionSemantics) {
-        let existing = self.expressions.insert(expression.node.id, semantics);
+        let existing = self.expressions.insert(expression.node.id(), semantics);
         assert!(existing.is_none());
     }
 
     fn bind_identifier_usage(&mut self, reference: &NodeData, binding: &IdentifierBinding) {
         let id = match binding {
-            IdentifierBinding::VarDeclaration(var) => var.name_node.id,
-            IdentifierBinding::Parameter(param) => param.name_node.id,
+            IdentifierBinding::VarDeclaration(var) => var.name_node.id(),
+            IdentifierBinding::Parameter(param) => param.name_node.id(),
             IdentifierBinding::PipeArg(_) => return,
         };
         let references = self.usages.entry(id).or_default();
@@ -432,12 +432,12 @@ impl FileSemanticAnalyzer {
         field: &StructFieldInitialization,
         struct_field: &Field,
     ) {
-        if self.struct_field_inits.contains_key(&field.node.id) {
+        if self.struct_field_inits.contains_key(&field.node.id()) {
             return;
         }
         let existing = self
             .struct_field_inits
-            .insert(field.node.id, struct_field.clone());
+            .insert(field.node.id(), struct_field.clone());
         assert!(existing.is_none());
     }
 
@@ -666,7 +666,7 @@ impl FileSemanticAnalyzer {
         };
         let existing = self
             .selector_fields
-            .insert(field_node.id, semantics.clone());
+            .insert(field_node.id(), semantics.clone());
         assert!(existing.is_none());
         semantics
     }
@@ -677,7 +677,7 @@ impl FileSemanticAnalyzer {
         narrowing: TypeNarrowing,
     ) {
         let existing = self.if_expressions.insert(
-            if_expression.node.id,
+            if_expression.node.id(),
             IfExpressionSemantics {
                 type_narrowing: Some(narrowing),
             },
@@ -978,7 +978,7 @@ impl FileSemanticAnalyzer {
 
     fn bind_fun_call_usage(&mut self, reference: &NodeData, binding: &FunctionCallBinding) {
         let id = match binding {
-            FunctionCallBinding::Function(fun) => fun.signature.name_node.id,
+            FunctionCallBinding::Function(fun) => fun.signature.name_node.id(),
             FunctionCallBinding::Buildin(_) => return,
         };
         let references = self.usages.entry(id).or_default();
@@ -988,7 +988,7 @@ impl FileSemanticAnalyzer {
 
     fn bind_pipe(&mut self, node: &NodeData, pipe_arg: &Option<SumType>) {
         let existing = self.pipe_expressions.insert(
-            node.id,
+            node.id(),
             PipeSemantics {
                 pipe_argument: pipe_arg.clone(),
             },

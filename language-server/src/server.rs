@@ -541,12 +541,14 @@ impl Server {
             let Some(result) = find_in_file(&mut file.file_analyzer, position) else { return None };
             let usages = match result {
                 QueryResult::Function(fun) => {
-                    file.file_analyzer.query_usage(fun.signature.name_node.id)
+                    file.file_analyzer.query_usage(fun.signature.name_node.id())
                 }
                 QueryResult::VarDeclaration(_, var) => {
-                    file.file_analyzer.query_usage(var.name_node.id)
+                    file.file_analyzer.query_usage(var.name_node.id())
                 }
-                QueryResult::Parameter(_, par) => file.file_analyzer.query_usage(par.name_node.id),
+                QueryResult::Parameter(_, par) => {
+                    file.file_analyzer.query_usage(par.name_node.id())
+                }
 
                 _ => return None,
             };

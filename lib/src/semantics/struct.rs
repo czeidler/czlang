@@ -9,7 +9,7 @@ impl FileSemanticAnalyzer {
         // TODO: struct name clash with other declarations?
 
         let new_entry = self.structs.insert(
-            struct_def.node.id,
+            struct_def.node.id(),
             StructSemantics {
                 specializations: HashMap::new(),
             },

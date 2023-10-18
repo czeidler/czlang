@@ -176,7 +176,7 @@ impl FileSemanticAnalyzer {
         }
 
         let existing = self.variable_declarations.insert(
-            var_declaration.node.id,
+            var_declaration.node.id(),
             VarDeclarationSemantics {
                 inferred_types: Some(var_types),
             },
@@ -195,7 +195,7 @@ impl FileSemanticAnalyzer {
     /// Return false if var was already bound
     fn bind_block_var(&mut self, block: &Block, var_declaration: &Ptr<VarDeclaration>) -> bool {
         self.blocks
-            .entry(block.node.id)
+            .entry(block.node.id())
             .or_insert(BlockSemantics {
                 vars: HashMap::new(),
                 block_return: None,

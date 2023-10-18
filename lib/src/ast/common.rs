@@ -137,6 +137,8 @@ impl LangError {
     }
 }
 
+pub type NodeId = (usize, usize);
+
 #[derive(Debug, Clone, Eq, PartialEq, Hash, PartialOrd, Ord)]
 pub struct NodeData {
     pub id: usize,
@@ -155,7 +157,7 @@ impl NodeData {
         }
     }
 
-    pub fn id(&self) -> (usize, usize) {
+    pub fn id(&self) -> NodeId {
         (self.id, self.file_id)
     }
 

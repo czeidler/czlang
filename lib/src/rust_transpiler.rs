@@ -1136,7 +1136,7 @@ impl RustTranspiler {
         }
 
         let identifier_semantics = analyzer
-            .query_identifier(block, type_narrowing.identifier_node.id)
+            .query_identifier(block, type_narrowing.identifier_node.id())
             .unwrap();
         let condition_type = identifier_semantics.resolved_types.unwrap().sum_type_name();
         let target_type_name = type_narrowing.types.sum_type_name();

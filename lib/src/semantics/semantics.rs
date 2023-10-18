@@ -7,7 +7,7 @@ use super::{
 use crate::{
     ast::{
         self, Block, BlockParent, Expression, ExpressionType, Field, FileContext, Function,
-        FunctionCall, FunctionSignature, IfAlternative, IfExpression, LangError, NodeData,
+        FunctionCall, FunctionSignature, IfAlternative, IfExpression, LangError, NodeData, NodeId,
         Parameter, RefType, SelectorExpression, SelectorField, Struct, StructFieldInitialization,
         StructInitialization, TypeParam, TypeParamType, VarDeclaration,
     },
@@ -221,29 +221,29 @@ pub struct FileSemanticAnalyzer {
     /// top level file content
     file_semantics: Option<Ptr<FileSemantics>>,
     /// struct declarations
-    pub structs: HashMap<usize, StructSemantics>,
+    pub structs: HashMap<NodeId, StructSemantics>,
 
     /// Just keeps track of analyzed/checked functions
-    fun_symbols: HashSet<usize>,
+    fun_symbols: HashSet<NodeId>,
     /// Bindings for an type identifier, e.g. a struct name
-    pub(crate) type_identifiers: HashMap<usize, TypeIdentifierSemantics>,
+    pub(crate) type_identifiers: HashMap<NodeId, TypeIdentifierSemantics>,
     /// Validated SumType for type nodes
-    types: HashMap<usize, SumType>,
-    pub(crate) if_expressions: HashMap<usize, IfExpressionSemantics>,
-    pub(crate) expressions: HashMap<usize, ExpressionSemantics>,
-    pub(crate) pipe_expressions: HashMap<usize, PipeSemantics>,
+    types: HashMap<NodeId, SumType>,
+    pub(crate) if_expressions: HashMap<NodeId, IfExpressionSemantics>,
+    pub(crate) expressions: HashMap<NodeId, ExpressionSemantics>,
+    pub(crate) pipe_expressions: HashMap<NodeId, PipeSemantics>,
     /// Various details about the selector field, e.g. if nullable or which the parent struct is
-    pub(crate) selector_fields: HashMap<usize, SelectorFieldSemantics>,
-    pub(crate) variable_declarations: HashMap<usize, VarDeclarationSemantics>,
-    function_calls: HashMap<usize, FunctionCallSemantics>,
-    method_calls: HashMap<usize, MethodCallSemantics>,
-    pub(crate) blocks: HashMap<usize, BlockSemantics>,
+    pub(crate) selector_fields: HashMap<NodeId, SelectorFieldSemantics>,
+    pub(crate) variable_declarations: HashMap<NodeId, VarDeclarationSemantics>,
+    function_calls: HashMap<NodeId, FunctionCallSemantics>,
+    method_calls: HashMap<NodeId, MethodCallSemantics>,
+    pub(crate) blocks: HashMap<NodeId, BlockSemantics>,
 
     /// Binding for a struct field initialization to the matching Field in of the target struct
-    pub(crate) struct_field_inits: HashMap<usize, Field>,
+    pub(crate) struct_field_inits: HashMap<NodeId, Field>,
 
     /// Map of node usages
-    pub(crate) usages: HashMap<usize, Vec<NodeData>>,
+    pub(crate) usages: HashMap<NodeId, Vec<NodeData>>,
 }
 
 impl FileSemanticAnalyzer {
@@ -291,33 +291,33 @@ impl FileSemanticAnalyzer {
 
     /// Query/validate a single struct
     pub fn query_struct(&mut self, struct_def: &Ptr<Struct>) -> Option<StructSemantics> {
-        if let Some(st) = self.structs.get(&struct_def.node.id) {
+        if let Some(st) = self.structs.get(&struct_def.node.id()) {
             return Some(st.clone());
         }
 
         self.validate_struct_def(&struct_def);
 
-        self.structs.get(&struct_def.node.id).map(|s| s.clone())
+        self.structs.get(&struct_def.node.id()).map(|s| s.clone())
     }
 
     /// Query/validate a single function
     pub fn query_fun(&mut self, fun: &Ptr<Function>) {
-        if self.fun_symbols.contains(&fun.signature.node.id) {
+        if self.fun_symbols.contains(&fun.signature.node.id()) {
             return;
         }
         self.validate_fun(&fun);
-        let new_entry = self.fun_symbols.insert(fun.signature.node.id);
+        let new_entry = self.fun_symbols.insert(fun.signature.node.id());
         assert!(new_entry);
     }
 
     pub fn query_block(&mut self, block: &Ptr<Block>) -> Option<BlockSemantics> {
-        if let Some(s) = self.blocks.get(&block.node.id) {
+        if let Some(s) = self.blocks.get(&block.node.id()) {
             return Some(s.clone());
         }
 
         self.query_fun(&block.fun());
 
-        self.blocks.get(&block.node.id).map(|s| s.clone())
+        self.blocks.get(&block.node.id()).map(|s| s.clone())
     }
 
     pub fn query_file(&mut self) -> Ptr<FileSemantics> {
@@ -336,12 +336,14 @@ impl FileSemanticAnalyzer {
         block: &Block,
         expression: &Expression,
     ) -> Option<ExpressionSemantics> {
-        if let Some(s) = self.expressions.get(&expression.node.id) {
+        if let Some(s) = self.expressions.get(&expression.node.id()) {
             return Some(s.clone());
         }
         self.query_fun(&block.fun());
 
-        self.expressions.get(&expression.node.id).map(|s| s.clone())
+        self.expressions
+            .get(&expression.node.id())
+            .map(|s| s.clone())
     }
 
     pub fn query_if_expression(
@@ -349,13 +351,13 @@ impl FileSemanticAnalyzer {
         block: &Block,
         statement: &IfExpression,
     ) -> Option<IfExpressionSemantics> {
-        if let Some(s) = self.if_expressions.get(&statement.node.id) {
+        if let Some(s) = self.if_expressions.get(&statement.node.id()) {
             return Some(s.clone());
         }
         self.query_fun(&block.fun());
 
         self.if_expressions
-            .get(&statement.node.id)
+            .get(&statement.node.id())
             .map(|s| s.clone())
     }
 
@@ -365,14 +367,14 @@ impl FileSemanticAnalyzer {
         struct_init: &StructInitialization,
         identifier: &String,
     ) -> Option<TypeIdentifierSemantics> {
-        if let Some(s) = self.type_identifiers.get(&struct_init.node.id) {
+        if let Some(s) = self.type_identifiers.get(&struct_init.node.id()) {
             return Some(s.clone());
         }
 
         self.bind_type_identifier(&context, &struct_init.node, identifier);
 
         self.type_identifiers
-            .get(&struct_init.node.id)
+            .get(&struct_init.node.id())
             .map(|s| s.clone())
     }
 
@@ -428,7 +430,7 @@ impl FileSemanticAnalyzer {
                 ),
             ),
             ast::Type::Identifier(ident) => {
-                if let Some(s) = self.type_identifiers.get(&node.id) {
+                if let Some(s) = self.type_identifiers.get(&node.id()) {
                     return s.binding.as_ref().map(|b| match b {
                         TypeBinding::Struct(st) => Type::Struct(st.clone()),
                         TypeBinding::StructTypeArgument(arg) => {
@@ -439,7 +441,7 @@ impl FileSemanticAnalyzer {
 
                 self.bind_type_identifier(context, &node, ident);
 
-                return self.type_identifiers.get(&node.id).and_then(|s| {
+                return self.type_identifiers.get(&node.id()).and_then(|s| {
                     s.binding.as_ref().map(|b| match b {
                         TypeBinding::Struct(st) => Type::Struct(st.clone()),
                         TypeBinding::StructTypeArgument(arg) => {
@@ -509,13 +511,13 @@ impl FileSemanticAnalyzer {
         signature: &FunctionSignature,
         param: &Parameter,
     ) -> Option<SumType> {
-        if let Some(s) = self.types.get(&param.node.id) {
+        if let Some(s) = self.types.get(&param.node.id()) {
             return Some(s.clone());
         }
 
         Some(self.bind_types(
             TypeQueryContext::Function(signature.clone()),
-            param.node.id,
+            param.node.id(),
             &param.types,
         ))
     }
@@ -524,13 +526,13 @@ impl FileSemanticAnalyzer {
         let Some(return_type) = &signature.return_type else {
             return None;
         };
-        if let Some(s) = self.types.get(&return_type.node.id) {
+        if let Some(s) = self.types.get(&return_type.node.id()) {
             return Some(s.clone());
         }
 
         Some(self.bind_types(
             TypeQueryContext::Function(signature.clone()),
-            return_type.node.id,
+            return_type.node.id(),
             &return_type.types,
         ))
     }
@@ -544,25 +546,25 @@ impl FileSemanticAnalyzer {
         let Some(var_types) = &var.types else {
             return None;
         };
-        if let Some(s) = self.types.get(&var.node.id) {
+        if let Some(s) = self.types.get(&var.node.id()) {
             return Some(s.clone());
         }
 
         Some(self.bind_types(
             TypeQueryContext::Function(fun.signature.clone()),
-            var.node.id,
+            var.node.id(),
             var_types,
         ))
     }
 
     pub fn query_field_type(&mut self, st: &Ptr<Struct>, field: &Field) -> Option<SumType> {
-        if let Some(s) = self.types.get(&field.node.id) {
+        if let Some(s) = self.types.get(&field.node.id()) {
             return Some(s.clone());
         }
 
         Some(self.bind_types(
             TypeQueryContext::Struct(st.clone()),
-            field.node.id,
+            field.node.id(),
             &field.types,
         ))
     }
@@ -571,7 +573,7 @@ impl FileSemanticAnalyzer {
     pub fn query_identifier(
         &mut self,
         block: &Block,
-        node_id: usize,
+        node_id: NodeId,
     ) -> Option<ExpressionSemantics> {
         if let Some(s) = self.expressions.get(&node_id) {
             return Some(s.clone());
@@ -583,7 +585,7 @@ impl FileSemanticAnalyzer {
     }
 
     pub fn query_function_call(&mut self, call: &FunctionCall) -> Option<FunctionCallSemantics> {
-        if let Some(s) = self.function_calls.get(&call.node.id) {
+        if let Some(s) = self.function_calls.get(&call.node.id()) {
             return Some(s.clone());
         }
 
@@ -591,10 +593,10 @@ impl FileSemanticAnalyzer {
 
         let existing = self
             .function_calls
-            .insert(call.node.id, FunctionCallSemantics { binding });
+            .insert(call.node.id(), FunctionCallSemantics { binding });
         assert!(existing.is_none());
 
-        self.function_calls.get(&call.node.id).map(|s| s.clone())
+        self.function_calls.get(&call.node.id()).map(|s| s.clone())
     }
 
     pub fn query_method_call(
@@ -602,17 +604,17 @@ impl FileSemanticAnalyzer {
         receiver: &Ptr<Struct>,
         call: &FunctionCall,
     ) -> Option<MethodCallSemantics> {
-        if let Some(s) = self.method_calls.get(&call.node.id) {
+        if let Some(s) = self.method_calls.get(&call.node.id()) {
             return Some(s.clone());
         }
 
         let binding = self.lookup_struct_method(receiver, call);
         let existing = self
             .method_calls
-            .insert(call.node.id, MethodCallSemantics { binding });
+            .insert(call.node.id(), MethodCallSemantics { binding });
         assert!(existing.is_none());
 
-        self.method_calls.get(&call.node.id).map(|s| s.clone())
+        self.method_calls.get(&call.node.id()).map(|s| s.clone())
     }
 
     /// Query the root selector expression
@@ -621,14 +623,14 @@ impl FileSemanticAnalyzer {
         block: &Block,
         select: &SelectorExpression,
     ) -> Option<SelectorFieldSemantics> {
-        if let Some(s) = self.selector_fields.get(&select.root.node.id) {
+        if let Some(s) = self.selector_fields.get(&select.root.node.id()) {
             return Some(s.clone());
         }
 
         self.query_fun(&block.fun());
 
         self.selector_fields
-            .get(&select.root.node.id)
+            .get(&select.root.node.id())
             .map(|s| s.clone())
     }
 
@@ -637,13 +639,15 @@ impl FileSemanticAnalyzer {
         block: &Block,
         field: &SelectorField,
     ) -> Option<SelectorFieldSemantics> {
-        if let Some(s) = self.selector_fields.get(&field.node.id) {
+        if let Some(s) = self.selector_fields.get(&field.node.id()) {
             return Some(s.clone());
         }
 
         self.query_fun(&block.fun());
 
-        self.selector_fields.get(&field.node.id).map(|s| s.clone())
+        self.selector_fields
+            .get(&field.node.id())
+            .map(|s| s.clone())
     }
 
     pub fn query_struct_field_initializer(
@@ -651,14 +655,14 @@ impl FileSemanticAnalyzer {
         block: &Block,
         field: &StructFieldInitialization,
     ) -> Option<Field> {
-        if let Some(f) = self.struct_field_inits.get(&field.node.id) {
+        if let Some(f) = self.struct_field_inits.get(&field.node.id()) {
             return Some(f.clone());
         }
 
         self.query_fun(&block.fun());
 
         self.struct_field_inits
-            .get(&field.node.id)
+            .get(&field.node.id())
             .map(|f| f.clone())
     }
 
@@ -670,7 +674,7 @@ impl FileSemanticAnalyzer {
     ) -> SumType {
         match self
             .variable_declarations
-            .get(&var_declaration.node.id)
+            .get(&var_declaration.node.id())
             .map(|s| s.inferred_types.as_ref())
             .flatten()
         {
@@ -688,16 +692,16 @@ impl FileSemanticAnalyzer {
         block: &Block,
         node: &NodeData,
     ) -> Option<PipeSemantics> {
-        if let Some(f) = self.pipe_expressions.get(&node.id) {
+        if let Some(f) = self.pipe_expressions.get(&node.id()) {
             return Some(f.clone());
         }
 
         self.query_fun(&block.fun());
 
-        self.pipe_expressions.get(&node.id).map(|s| s.clone())
+        self.pipe_expressions.get(&node.id()).map(|s| s.clone())
     }
 
-    pub fn query_usage(&mut self, node_id: usize) -> Vec<NodeData> {
+    pub fn query_usage(&mut self, node_id: NodeId) -> Vec<NodeData> {
         // validate whole file
         // TODO this can be optimized, e.g. when in a block it might be enough to just validate the block
         self.query_file();
@@ -724,7 +728,7 @@ impl FileSemanticAnalyzer {
                         } {
                             let binding = Some(TypeBinding::StructTypeArgument(arg.clone()));
                             let existing = self.type_identifiers.insert(
-                                node.id,
+                                node.id(),
                                 TypeIdentifierSemantics {
                                     binding: binding.clone(),
                                 },
@@ -751,7 +755,7 @@ impl FileSemanticAnalyzer {
 
         let binding = Some(TypeBinding::Struct(struct_def));
         let existing = self.type_identifiers.insert(
-            node.id,
+            node.id(),
             TypeIdentifierSemantics {
                 binding: binding.clone(),
             },
@@ -763,7 +767,7 @@ impl FileSemanticAnalyzer {
     fn bind_types(
         &mut self,
         context: TypeQueryContext,
-        node_id: usize,
+        node_id: NodeId,
         types: &Vec<RefType>,
     ) -> SumType {
         let mut result_types = vec![];
@@ -813,7 +817,7 @@ impl FileSemanticAnalyzer {
     ) {
         match &expression.r#type {
             ExpressionType::Identifier(_) => {
-                let Some(id) = self.expressions.get(&expression.node.id).map(|s|s.binding.clone()).flatten()  else {return};
+                let Some(id) = self.expressions.get(&expression.node.id()).map(|s|s.binding.clone()).flatten()  else {return};
                 match id {
                     IdentifierBinding::VarDeclaration(var_declaration) => {
                         // narrow the expression down
@@ -831,7 +835,7 @@ impl FileSemanticAnalyzer {
                         if var_declaration.types.is_none() {
                             let entry = self
                                 .variable_declarations
-                                .entry(var_declaration.node.id)
+                                .entry(var_declaration.node.id())
                                 .or_insert(VarDeclarationSemantics {
                                     inferred_types: None,
                                 });
@@ -890,7 +894,7 @@ impl FileSemanticAnalyzer {
                 };
                 let entry = self
                     .expressions
-                    .entry(expression.node.id)
+                    .entry(expression.node.id())
                     .or_insert(ExpressionSemantics::empty());
                 entry.resolved_types = Some(resolved_types);
 
@@ -925,7 +929,7 @@ impl FileSemanticAnalyzer {
         };
         let entry = self
             .expressions
-            .entry(expression.node.id)
+            .entry(expression.node.id())
             .or_insert(ExpressionSemantics::empty());
         entry.resolved_types = Some(resolved_types);
     }
@@ -976,7 +980,7 @@ impl FileSemanticAnalyzer {
             };
             let var = self
                 .blocks
-                .get(&b.node.id)
+                .get(&b.node.id())
                 .map(|s| s.vars.get(identifier))
                 .flatten();
             if let Some(var) = var {

@@ -79,7 +79,7 @@ impl FileSemanticAnalyzer {
 
     fn bind_method_to_struct(&mut self, fun: &Ptr<Function>, st: Ptr<Struct>) {
         // struct most have in validated before hand, i.e. it must exist:
-        let entry = self.structs.get_mut(&st.node.id).unwrap();
+        let entry = self.structs.get_mut(&st.node.id()).unwrap();
         let implementation = entry
             .specializations
             .entry("".to_string())
