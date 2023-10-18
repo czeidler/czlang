@@ -184,7 +184,7 @@ pub(crate) fn parse_types<'a>(context: &Ptr<FileContext>, node: &Node<'a>) -> Op
             let reference_node = child_by_field(&node, "reference")?;
             let reference_str = node_text(&reference_node, context)?;
             vec![RefType {
-                node: NodeData::from_node(&type_node),
+                node: context.node_data(&type_node),
                 is_reference: true,
                 is_mut: reference_str == "&mut",
                 r#type: parse_type(context, &type_node)?,
@@ -196,7 +196,7 @@ pub(crate) fn parse_types<'a>(context: &Ptr<FileContext>, node: &Node<'a>) -> Op
             let data = parse_types(context, &type_node)?;
             let error = parse_types(context, &error_node)?;
             vec![RefType {
-                node: NodeData::from_node(&type_node),
+                node: context.node_data(&type_node),
                 is_reference: false,
                 is_mut: false,
                 r#type: Type::Either(data, error),
@@ -204,14 +204,14 @@ pub(crate) fn parse_types<'a>(context: &Ptr<FileContext>, node: &Node<'a>) -> Op
         }
         "closure_type" => {
             vec![RefType {
-                node: NodeData::from_node(&node),
+                node: context.node_data(&node),
                 is_reference: false,
                 is_mut: false,
                 r#type: Type::Closure(parse_closure_type(context, &node)?),
             }]
         }
         _ => vec![RefType {
-            node: NodeData::from_node(&node),
+            node: context.node_data(&node),
             is_reference: false,
             is_mut: false,
             r#type: parse_type(context, node)?,
@@ -251,7 +251,7 @@ pub(crate) fn parse_type_params<'a>(context: &Ptr<FileContext>, node: &Node<'a>)
     for type_node in node.children_by_field_name("type", &mut cursor) {
         if let Some(t) = parse_type_param(context, &type_node) {
             output.push(TypeParam {
-                node: NodeData::from_node(&type_node),
+                node: context.node_data(&type_node),
                 r#type: t,
             });
         }
@@ -309,7 +309,7 @@ pub(crate) fn parse_closure_type<'a>(
     let return_type = result_node.map(|n| parse_return_type(context, &n));
 
     Some(ClosureType {
-        node: NodeData::from_node(node),
+        node: context.node_data(node),
         context: closure_context,
         parameters,
         return_type,

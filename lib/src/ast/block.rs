@@ -169,9 +169,9 @@ impl<'a> Iterator for StatementIterator<'a> {
                 }
                 "for_statement" => parse_loop(&self.file, &statement_node, &self.block)
                     .map(|statement| Statement::Loop(statement)),
-                "break_statement" => Some(Statement::Break(NodeData::from_node(&statement_node))),
+                "break_statement" => Some(Statement::Break(self.file.node_data(&statement_node))),
                 "continue_statement" => {
-                    Some(Statement::Continue(NodeData::from_node(&statement_node)))
+                    Some(Statement::Continue(self.file.node_data(&statement_node)))
                 }
                 _ => None,
             };
@@ -194,7 +194,7 @@ pub(crate) fn parse_block<'a>(
         context: file.clone(),
         parent,
         r#type,
-        node: NodeData::from_node(node),
+        node: file.node_data(node),
     })
 }
 
@@ -213,9 +213,9 @@ fn parse_var_declaration<'a>(
     let value_node = child_by_field(&node, "value")?;
     let value = parse_expression(context, &value_node, block)?;
     Some(VarDeclaration {
-        node: NodeData::from_node(&node),
+        node: context.node_data(&node),
         name: node_text(&name, context)?,
-        name_node: NodeData::from_node(&name),
+        name_node: context.node_data(&name),
         is_mutable,
         types: var_type,
         value,
@@ -230,7 +230,7 @@ fn parse_assignment<'a>(
     let left = child_by_field(&node, "left")?;
     let right = child_by_field(&node, "right")?;
     Some(AssignmentStatement {
-        node: NodeData::from_node(&node),
+        node: context.node_data(&node),
         left: parse_expression(context, &left, block)?,
         right: parse_expression(context, &right, block)?,
     })
@@ -246,7 +246,7 @@ fn parse_return_statement<'a>(
         None => None,
     };
     Some(ReturnStatement {
-        node: NodeData::from_node(node),
+        node: context.node_data(node),
         expression,
     })
 }

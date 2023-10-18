@@ -38,7 +38,7 @@ pub(crate) fn parse_loop<'a>(
     };
 
     Some(Loop {
-        node: NodeData::from_node(&node),
+        node: context.node_data(&node),
         range,
         body: parse_block(
             context,
@@ -64,9 +64,9 @@ fn parse_loop_range<'a>(
     let to: Expression = parse_expression(context, &to_node, block)?;
 
     Some(LoopRange {
-        node: NodeData::from_node(node),
+        node: context.node_data(node),
         variable,
-        variable_node: NodeData::from_node(&var_node),
+        variable_node: context.node_data(&var_node),
         from,
         to_inclusive: op == "..=",
         to,

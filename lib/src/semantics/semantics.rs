@@ -218,11 +218,12 @@ pub struct FileSemanticAnalyzer {
     pub sum_types: HashMap<String, SumType>,
     pub errors: Vec<LangError>,
 
+    /// top level file content
     file_semantics: Option<Ptr<FileSemantics>>,
     /// struct declarations
     pub structs: HashMap<usize, StructSemantics>,
 
-    /// Just keep track of analyzed/checked functions
+    /// Just keeps track of analyzed/checked functions
     fun_symbols: HashSet<usize>,
     /// Bindings for an type identifier, e.g. a struct name
     pub(crate) type_identifiers: HashMap<usize, TypeIdentifierSemantics>,

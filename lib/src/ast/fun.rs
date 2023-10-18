@@ -92,7 +92,7 @@ fn parse_receiver<'a>(file: &Ptr<FileContext>, node: &Node<'a>) -> Option<Receiv
         None
     };
     Some(Receiver {
-        node: NodeData::from_node(node),
+        node: file.node_data(node),
         types,
         interface,
     })
@@ -100,7 +100,7 @@ fn parse_receiver<'a>(file: &Ptr<FileContext>, node: &Node<'a>) -> Option<Receiv
 
 pub(crate) fn parse_return_type<'a>(file: &Ptr<FileContext>, node: &Node<'a>) -> ReturnType {
     ReturnType {
-        node: NodeData::from_node(node),
+        node: file.node_data(node),
         types: parse_types(file, node).unwrap_or(vec![]),
     }
 }
@@ -120,14 +120,14 @@ pub(crate) fn parse_method<'a>(file: &Ptr<FileContext>, node: &Node<'a>) -> Opti
     let method = Ptr::new(Function {
         file: file.clone(),
         signature: FunctionSignature {
-            node: NodeData::from_node(&node),
+            node: file.node_data(&node),
             receiver: Some(receiver),
             name: node_text(&name, file)?,
-            name_node: NodeData::from_node(&name),
+            name_node: file.node_data(&name),
             parameters: parse_parameters(file, parameter_list)?,
             return_type,
         },
-        body_node: NodeData::from_node(&body_node),
+        body_node: file.node_data(&body_node),
     });
     Some(method)
 }
@@ -137,7 +137,7 @@ pub(crate) fn parse_fun<'a>(file: &Ptr<FileContext>, node: &Node<'a>) -> Option<
     let parameter_list = child_by_field(&node, "parameters")?;
     let return_type = match node.child_by_field_name("result".as_bytes()) {
         Some(return_node) => Some(ReturnType {
-            node: NodeData::from_node(&return_node),
+            node: file.node_data(&return_node),
             types: parse_types(file, &return_node).unwrap_or(vec![]),
         }),
         None => None,
@@ -147,14 +147,14 @@ pub(crate) fn parse_fun<'a>(file: &Ptr<FileContext>, node: &Node<'a>) -> Option<
     let fun = Ptr::new(Function {
         file: file.clone(),
         signature: FunctionSignature {
-            node: NodeData::from_node(&node),
+            node: file.node_data(&node),
             receiver: None,
             name: node_text(&name, file)?,
-            name_node: NodeData::from_node(&name),
+            name_node: file.node_data(&name),
             parameters: parse_parameters(file, parameter_list)?,
             return_type,
         },
-        body_node: NodeData::from_node(&body_node),
+        body_node: file.node_data(&body_node),
     });
     Some(fun)
 }
@@ -180,8 +180,8 @@ fn parse_parameter<'a>(context: &Ptr<FileContext>, node: Node<'a>) -> Option<Par
     let _type = node.child_by_field_name("type".as_bytes())?;
 
     Some(Parameter {
-        node: NodeData::from_node(&node),
-        name_node: NodeData::from_node(&name),
+        node: context.node_data(&node),
+        name_node: context.node_data(&name),
         name: node_text(&name, context)?,
         is_mutable,
         types: parse_types(context, &_type)?,

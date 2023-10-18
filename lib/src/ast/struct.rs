@@ -45,9 +45,9 @@ pub(crate) fn parse_struct<'a>(context: &Ptr<FileContext>, node: &Node<'a>) -> O
     let fields = child_by_field(&node, "fields")?;
     let fields = parse_struct_fields(context, &fields, node);
     Some(Ptr::new(Struct {
-        node: NodeData::from_node(&node),
+        node: context.node_data(&node),
         name: node_text(&name, context)?,
-        name_node: NodeData::from_node(&name),
+        name_node: context.node_data(&name),
         type_params,
         fields,
     }))
@@ -80,13 +80,14 @@ fn parse_struct_field<'a>(
 
     Some(Field {
         node: NodeData {
+            file_id: context.file_id,
             id: node.id(),
             parent: parent.id(),
             span: SourceSpan::from_node(&node),
         },
 
         name: node_text(&name, context)?,
-        name_node: NodeData::from_node(&name),
+        name_node: context.node_data(&name),
         types: parse_types(context, &field_type)?,
     })
 }

@@ -56,7 +56,7 @@ pub fn validate_project<'a>(
     let source_code = String::from_utf8(buffer)?;
     let file_path = main_file_path.to_string_lossy();
     let mut parse_errors = Vec::new();
-    let file = FileContext::parse(file_path.to_string(), source_code, &mut parse_errors);
+    let file = FileContext::parse(0, file_path.to_string(), source_code, &mut parse_errors);
     for error in &parse_errors {
         print_err(&error, &file.source);
     }

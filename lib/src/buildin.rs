@@ -10,6 +10,7 @@ pub struct Buildins {
 
 fn dummy_node(id: usize) -> NodeData {
     NodeData {
+        file_id: 0,
         id: id,
         parent: 0,
         span: SourceSpan {

@@ -61,6 +61,7 @@ impl Server {
             connection: Arc::new(connection),
             pool: threadpool::Builder::new().build(),
             project: Arc::new(Mutex::new(Project {
+                file_id_counter: 0,
                 open_files: HashMap::new(),
             })),
         }

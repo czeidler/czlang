@@ -202,9 +202,9 @@ fn parse_function_call(
     let arguments = parse_function_call_arguments(context, &arguments_list, block)?;
 
     Some(FunctionCall {
-        node: NodeData::from_node(node),
+        node: context.node_data(node),
         name: node_text(&name, context)?,
-        name_node: NodeData::from_node(&name),
+        name_node: context.node_data(&name),
         arguments,
     })
 }
@@ -232,9 +232,9 @@ fn parse_struct_field_initialization(
     let value_node = child(node, "value", 2)?;
 
     Some(StructFieldInitialization {
-        node: NodeData::from_node(&node),
+        node: context.node_data(&node),
         name: node_text(&name, context)?,
-        name_node: NodeData::from_node(&name),
+        name_node: context.node_data(&name),
         value: parse_expression(context, &value_node, block)?,
     })
 }
@@ -262,9 +262,9 @@ fn parse_struct_initialization(
         }
     }
     Some(StructInitialization {
-        node: NodeData::from_node(&node),
+        node: context.node_data(&node),
         name: node_text(&name, context)?,
-        name_node: NodeData::from_node(&name),
+        name_node: context.node_data(&name),
         fields,
     })
 }
@@ -283,7 +283,7 @@ fn parse_selector_field(
         _ => return None,
     };
     Some(SelectorField {
-        node: NodeData::from_node(node),
+        node: context.node_data(node),
         optional_chaining: chaining_text == "?.",
         field,
     })
@@ -376,7 +376,7 @@ pub(crate) fn parse_expression(
         }
     };
     Some(Expression {
-        node: NodeData::from_node(&node),
+        node: context.node_data(&node),
         r#type: expression_type,
     })
 }
@@ -591,7 +591,7 @@ fn parse_if<'a>(
         None => None,
     };
     Some(Ptr::new(IfExpression {
-        node: NodeData::from_node(&node),
+        node: context.node_data(&node),
         condition,
         consequence,
         alternative,

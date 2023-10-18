@@ -22,9 +22,9 @@ pub struct FileChange {
 }
 
 impl ProjectFile {
-    fn new(path: String, source: String) -> Self {
+    fn new(file_id: usize, path: String, source: String) -> Self {
         let mut parse_errors = Vec::new();
-        let file = FileContext::parse(path, source, &mut parse_errors);
+        let file = FileContext::parse(file_id, path, source, &mut parse_errors);
 
         let project_file = ProjectFile {
             file: file.clone(),
@@ -79,21 +79,30 @@ impl ProjectFile {
         }
 
         self.parse_errors.clear();
-        self.file =
-            FileContext::parse_from_existing_tree(url, source, &tree, &mut self.parse_errors);
+        self.file = FileContext::parse_from_existing_tree(
+            self.file.file_id,
+            url,
+            source,
+            &tree,
+            &mut self.parse_errors,
+        );
 
         self.file_analyzer = FileSemanticAnalyzer::new(self.file.clone())
     }
 }
 
 pub struct Project {
+    pub file_id_counter: usize,
     pub open_files: HashMap<String, ProjectFile>,
 }
 
 impl Project {
     pub fn open_file(&mut self, url: String, source: String) {
-        self.open_files
-            .insert(url.clone(), ProjectFile::new(url, source));
+        self.file_id_counter = self.file_id_counter + 1;
+        self.open_files.insert(
+            url.clone(),
+            ProjectFile::new(self.file_id_counter, url, source),
+        );
     }
 
     pub fn close_file(&mut self, url: &String) {
