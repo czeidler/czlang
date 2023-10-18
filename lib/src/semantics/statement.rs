@@ -10,10 +10,10 @@ use crate::{
 
 use super::{
     flow_container::{CurrentFlowContainer, FlowContainer},
-    intersection, BlockSemantics, ExpressionSemantics, FileSemanticAnalyzer, SumType,
+    intersection, BlockSemantics, ExpressionSemantics, PackageSemanticAnalyzer, SumType,
 };
 
-impl FileSemanticAnalyzer {
+impl PackageSemanticAnalyzer {
     /// If statement is an expression this method returns the ExpressionSemantics None.
     pub(crate) fn validate_statement(
         &mut self,

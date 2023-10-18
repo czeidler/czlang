@@ -5,10 +5,10 @@ use crate::{
 
 use super::{
     flow_container::{CurrentFlowContainer, FlowContainer},
-    FileSemanticAnalyzer, StructImplementation, Type, TypeQueryContext,
+    PackageSemanticAnalyzer, StructImplementation, Type, TypeQueryContext,
 };
 
-impl FileSemanticAnalyzer {
+impl PackageSemanticAnalyzer {
     pub(crate) fn validate_fun(&mut self, fun: &Ptr<Function>) {
         // TODO: fun name clash with other definitions?
 

@@ -7,7 +7,7 @@ use std::{
 use crate::{
     ast::{print_err, FileContext},
     rust_transpiler::transpile_project,
-    semantics::FileSemanticAnalyzer,
+    semantics::PackageSemanticAnalyzer,
 };
 
 pub fn create_project(test_dir: &str, file_content: &str) {
@@ -44,7 +44,7 @@ pub fn check_project(test_dir: &str) {
 pub fn validate_project<'a>(
     test_dir: &str,
     file_content: &str,
-) -> Result<FileSemanticAnalyzer, anyhow::Error> {
+) -> Result<PackageSemanticAnalyzer, anyhow::Error> {
     create_project(test_dir, file_content);
     let project_dir = Path::new(test_dir);
 
@@ -67,7 +67,7 @@ pub fn validate_project<'a>(
         )));
     }
 
-    let mut analyzer = FileSemanticAnalyzer::new(vec![file]);
+    let mut analyzer = PackageSemanticAnalyzer::new(vec![file]);
     analyzer.query_all();
     if !analyzer.errors.is_empty() {
         return Err(anyhow::Error::msg(analyzer.errors[0].msg.clone()));

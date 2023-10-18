@@ -2,7 +2,7 @@ use crate::{
     ast::{FunctionSignature, Parameter, Receiver, TypeParamType, VarDeclaration},
     semantics::{
         types::{types_to_string, SumType},
-        FileSemanticAnalyzer, TypeQueryContext,
+        PackageSemanticAnalyzer, TypeQueryContext,
     },
 };
 
@@ -11,7 +11,7 @@ pub fn format_var_declaration(var: &VarDeclaration, types: &SumType) -> String {
 }
 
 pub fn format_param(
-    analyzer: &mut FileSemanticAnalyzer,
+    analyzer: &mut PackageSemanticAnalyzer,
     fun: FunctionSignature,
     param: &Parameter,
 ) -> String {
@@ -38,7 +38,7 @@ pub fn format_type_param_type(type_param: &TypeParamType) -> String {
     }
 }
 
-pub fn format_receiver(analyzer: &mut FileSemanticAnalyzer, receiver: &Receiver) -> String {
+pub fn format_receiver(analyzer: &mut PackageSemanticAnalyzer, receiver: &Receiver) -> String {
     let interface_part = if let Some(interface) = &receiver.interface {
         format!(" impl {}", format_type_param_type(interface))
     } else {
@@ -49,7 +49,7 @@ pub fn format_receiver(analyzer: &mut FileSemanticAnalyzer, receiver: &Receiver)
 }
 
 pub fn format_fun_signature(
-    analyzer: &mut FileSemanticAnalyzer,
+    analyzer: &mut PackageSemanticAnalyzer,
     signature: FunctionSignature,
 ) -> String {
     let params = signature

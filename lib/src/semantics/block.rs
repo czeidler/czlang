@@ -6,10 +6,11 @@ use crate::{
 };
 
 use super::{
-    flow_container::CurrentFlowContainer, BlockSemantics, ExpressionSemantics, FileSemanticAnalyzer,
+    flow_container::CurrentFlowContainer, BlockSemantics, ExpressionSemantics,
+    PackageSemanticAnalyzer,
 };
 
-impl FileSemanticAnalyzer {
+impl PackageSemanticAnalyzer {
     /// Returns the ExpressionSemantics of the last statement (if it was an expression)
     pub(crate) fn validate_block(
         &mut self,

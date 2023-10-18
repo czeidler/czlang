@@ -18,11 +18,11 @@ use super::{
         apply_inverse_narrowing, apply_narrowing, merge_narrowed_flows, CurrentFlowContainer,
         FlowContainer,
     },
-    intersection, types_to_string, ExpContext, ExpressionSemantics, FileSemanticAnalyzer, SArray,
-    SSlice, SumType, TypeBinding, TypeNarrowing, TypeQueryContext,
+    intersection, types_to_string, ExpContext, ExpressionSemantics, PackageSemanticAnalyzer,
+    SArray, SSlice, SumType, TypeBinding, TypeNarrowing, TypeQueryContext,
 };
 
-impl FileSemanticAnalyzer {
+impl PackageSemanticAnalyzer {
     /// Returns the resolved type of the expression.
     ///
     /// # Arguments

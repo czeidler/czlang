@@ -31,7 +31,7 @@ impl ExpContext {
 }
 
 #[derive(Debug, Clone)]
-pub struct FileSemantics {
+pub struct PackageSemantics {
     /// Top level functions
     pub functions: HashMap<String, Ptr<Function>>,
     /// Struct methods declarations
@@ -212,14 +212,14 @@ pub struct PipeSemantics {
 }
 
 #[derive(Debug)]
-pub struct FileSemanticAnalyzer {
+pub struct PackageSemanticAnalyzer {
     pub files: Vec<Ptr<FileContext>>,
-    /// List of all sum_types in the file
+    /// List of all sum_types in the package
     pub sum_types: HashMap<String, SumType>,
     pub errors: Vec<LangError>,
 
-    /// top level file content
-    file_semantics: Option<Ptr<FileSemantics>>,
+    /// Package content
+    package_semantics: Option<Ptr<PackageSemantics>>,
     /// struct declarations
     pub structs: HashMap<NodeId, StructSemantics>,
 
@@ -246,11 +246,11 @@ pub struct FileSemanticAnalyzer {
     pub(crate) usages: HashMap<NodeId, Vec<NodeData>>,
 }
 
-impl FileSemanticAnalyzer {
+impl PackageSemanticAnalyzer {
     pub fn new(files: Vec<Ptr<FileContext>>) -> Self {
-        FileSemanticAnalyzer {
+        PackageSemanticAnalyzer {
             files,
-            file_semantics: None,
+            package_semantics: None,
             sum_types: HashMap::new(),
             errors: Vec::new(),
 
@@ -320,13 +320,13 @@ impl FileSemanticAnalyzer {
         self.blocks.get(&block.node.id()).map(|s| s.clone())
     }
 
-    pub fn query_files(&mut self) -> Ptr<FileSemantics> {
-        if let Some(file) = &self.file_semantics {
+    pub fn query_files(&mut self) -> Ptr<PackageSemantics> {
+        if let Some(file) = &self.package_semantics {
             return file.clone();
         }
 
-        let file = Ptr::new(self.validate_files());
-        self.file_semantics = Some(file.clone());
+        let file = Ptr::new(self.validate_package());
+        self.package_semantics = Some(file.clone());
 
         file
     }
@@ -1028,7 +1028,7 @@ impl FileSemanticAnalyzer {
         receiver: &Ptr<Struct>,
         call: &FunctionCall,
     ) -> Option<Ptr<Function>> {
-        let Some(methods) = self.file_semantics.as_ref().map(|s|s.methods.clone()) else {
+        let Some(methods) = self.package_semantics.as_ref().map(|s|s.methods.clone()) else {
             return None;
         };
         for method in &methods {

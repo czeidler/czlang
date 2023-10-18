@@ -2,10 +2,10 @@ use std::collections::HashMap;
 
 use crate::ast::{FileTrait, LangError, RootSymbol};
 
-use super::{FileSemanticAnalyzer, FileSemantics};
+use super::{PackageSemanticAnalyzer, PackageSemantics};
 
-impl FileSemanticAnalyzer {
-    pub(crate) fn validate_files(&mut self) -> FileSemantics {
+impl PackageSemanticAnalyzer {
+    pub(crate) fn validate_package(&mut self) -> PackageSemantics {
         let mut functions = HashMap::new();
         let mut structs = HashMap::new();
         let mut methods = Vec::new();
@@ -41,7 +41,7 @@ impl FileSemanticAnalyzer {
             }
         }
 
-        FileSemantics {
+        PackageSemantics {
             functions,
             structs,
             methods,

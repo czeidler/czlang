@@ -5,8 +5,8 @@ use crate::{
         StringTemplatePart, Struct, VarDeclaration,
     },
     semantics::{
-        types::SumType, ExpressionSemantics, FileSemanticAnalyzer, FileSemantics,
-        FunctionCallSemantics, SelectorFieldSemantics, TypeBinding, TypeQueryContext,
+        types::SumType, ExpressionSemantics, FunctionCallSemantics, PackageSemanticAnalyzer,
+        PackageSemantics, SelectorFieldSemantics, TypeBinding, TypeQueryContext,
     },
     types::Ptr,
 };
@@ -28,7 +28,7 @@ pub enum QueryResult {
 }
 
 pub fn find_in_file(
-    analyzer: &mut FileSemanticAnalyzer,
+    analyzer: &mut PackageSemanticAnalyzer,
     position: SourcePosition,
 ) -> Option<QueryResult> {
     let file = analyzer.query_files();
@@ -47,7 +47,7 @@ pub fn find_in_file(
     None
 }
 
-fn find_in_structs(file: &FileSemantics, position: SourcePosition) -> Option<QueryResult> {
+fn find_in_structs(file: &PackageSemantics, position: SourcePosition) -> Option<QueryResult> {
     for (_, struct_def) in &file.structs {
         if !struct_def.node.contains(position) {
             continue;
@@ -68,7 +68,7 @@ fn find_in_structs(file: &FileSemantics, position: SourcePosition) -> Option<Que
 }
 
 fn find_in_block(
-    analyzer: &mut FileSemanticAnalyzer,
+    analyzer: &mut PackageSemanticAnalyzer,
     block: &Ptr<Block>,
     position: SourcePosition,
 ) -> Option<QueryResult> {
@@ -137,7 +137,7 @@ fn find_in_block(
 }
 
 fn find_in_function(
-    analyzer: &mut FileSemanticAnalyzer,
+    analyzer: &mut PackageSemanticAnalyzer,
     fun: &Ptr<Function>,
     position: SourcePosition,
 ) -> Option<QueryResult> {
@@ -162,7 +162,7 @@ struct FunctionBlock<'a> {
 }
 
 fn find_in_expression(
-    analyzer: &mut FileSemanticAnalyzer,
+    analyzer: &mut PackageSemanticAnalyzer,
     block: &FunctionBlock,
     expression: &Expression,
     position: SourcePosition,
@@ -315,7 +315,7 @@ fn find_in_expression(
 }
 
 fn find_in_if(
-    analyzer: &mut FileSemanticAnalyzer,
+    analyzer: &mut PackageSemanticAnalyzer,
     block: &FunctionBlock,
     if_expression: &IfExpression,
     position: SourcePosition,
@@ -337,7 +337,7 @@ fn find_in_if(
 }
 
 fn find_in_selector_field(
-    analyzer: &mut FileSemanticAnalyzer,
+    analyzer: &mut PackageSemanticAnalyzer,
     block: &FunctionBlock,
     selector_field: &SelectorField,
     position: SourcePosition,
@@ -398,9 +398,9 @@ fn find_completions_in_block(
 }
 
 pub fn find_completions(
-    analyzer: &mut FileSemanticAnalyzer,
+    analyzer: &mut PackageSemanticAnalyzer,
     position: SourcePosition,
-) -> (Ptr<FileSemantics>, Option<Vec<Ptr<VarDeclaration>>>) {
+) -> (Ptr<PackageSemantics>, Option<Vec<Ptr<VarDeclaration>>>) {
     let file = analyzer.query_files();
     for (_, fun) in &file.functions {
         let body = fun.body();

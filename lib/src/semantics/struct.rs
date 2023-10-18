@@ -2,9 +2,9 @@ use std::collections::HashMap;
 
 use crate::{ast::Struct, semantics::StructSemantics, types::Ptr};
 
-use super::FileSemanticAnalyzer;
+use super::PackageSemanticAnalyzer;
 
-impl FileSemanticAnalyzer {
+impl PackageSemanticAnalyzer {
     pub(crate) fn validate_struct_def(&mut self, struct_def: &Ptr<Struct>) {
         // TODO: struct name clash with other declarations?
 

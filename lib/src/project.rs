@@ -4,7 +4,7 @@ use tree_sitter::{InputEdit, Point};
 
 use crate::{
     ast::{FileContext, LangError, SourceSpan},
-    semantics::FileSemanticAnalyzer,
+    semantics::PackageSemanticAnalyzer,
     tree_sitter::parse,
     types::Ptr,
 };
@@ -12,7 +12,7 @@ use crate::{
 pub struct ProjectFile {
     pub parse_errors: Vec<LangError>,
     pub file: Ptr<FileContext>,
-    pub file_analyzer: FileSemanticAnalyzer,
+    pub file_analyzer: PackageSemanticAnalyzer,
 }
 
 #[derive(Debug)]
@@ -29,7 +29,7 @@ impl ProjectFile {
         let project_file = ProjectFile {
             file: file.clone(),
             parse_errors,
-            file_analyzer: FileSemanticAnalyzer::new(vec![file]),
+            file_analyzer: PackageSemanticAnalyzer::new(vec![file]),
         };
 
         project_file
@@ -87,7 +87,7 @@ impl ProjectFile {
             &mut self.parse_errors,
         );
 
-        self.file_analyzer = FileSemanticAnalyzer::new(vec![self.file.clone()])
+        self.file_analyzer = PackageSemanticAnalyzer::new(vec![self.file.clone()])
     }
 }
 
