@@ -9,7 +9,7 @@ impl PackageSemanticAnalyzer {
         let mut functions = HashMap::new();
         let mut structs = HashMap::new();
         let mut methods = Vec::new();
-        for file in &self.files {
+        for (_, file) in &self.files {
             for child in file.children() {
                 match child {
                     RootSymbol::Function(fun) => {

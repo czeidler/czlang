@@ -1,5 +1,7 @@
 #[cfg(test)]
 mod tests {
+    use std::{collections::HashMap, ffi::OsString};
+
     use crate::{
         ast::{FileContext, SourcePosition},
         query::{find_in_file, QueryResult},
@@ -29,11 +31,11 @@ fun main() {
 }
 "#
         .to_string();
-        let mut parse_errors = Vec::new();
-        let file = FileContext::parse(0, "test.cz".to_string(), source_code, &mut parse_errors);
-
-        let mut analyzer = PackageSemanticAnalyzer::new(vec![file]);
-        let result = find_in_file(&mut analyzer, SourcePosition::new(17, 24)).unwrap();
+        let file = FileContext::parse(0, "test.cz".to_string(), source_code);
+        let mut files = HashMap::new();
+        files.insert(OsString::from("test.cz"), file.clone());
+        let mut analyzer = PackageSemanticAnalyzer::new(files);
+        let result = find_in_file(&mut analyzer, &file, SourcePosition::new(17, 24)).unwrap();
         match result {
             QueryResult::SelectorField((_, semantics)) => {
                 assert!(semantics.binding.is_some());

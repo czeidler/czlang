@@ -172,6 +172,7 @@ pub struct FileContext {
     pub tree: Tree,
     pub file_path: String,
     pub source: String,
+    pub parse_errors: Vec<LangError>,
 }
 
 impl FileContext {
@@ -179,19 +180,16 @@ impl FileContext {
         NodeData::from_node(node, self.file_id)
     }
 
-    pub fn parse(
-        file_id: usize,
-        file_path: String,
-        source: String,
-        errors: &mut Vec<LangError>,
-    ) -> Ptr<Self> {
+    pub fn parse(file_id: usize, file_path: String, source: String) -> Ptr<Self> {
         let tree = parse(&source, None);
-        collect_errors(file_id, tree.root_node(), &source, errors);
+        let mut parse_errors = Vec::new();
+        collect_errors(file_id, tree.root_node(), &source, &mut parse_errors);
         Ptr::new(FileContext {
             file_id,
             tree,
             file_path,
             source,
+            parse_errors,
         })
     }
 
@@ -200,15 +198,16 @@ impl FileContext {
         file_path: String,
         source: String,
         old_tree: &Tree,
-        errors: &mut Vec<LangError>,
     ) -> Ptr<Self> {
         let tree = parse(&source, Some(old_tree));
-        collect_errors(file_id, tree.root_node(), &source, errors);
+        let mut parse_errors = Vec::new();
+        collect_errors(file_id, tree.root_node(), &source, &mut parse_errors);
         Ptr::new(FileContext {
             file_id,
             tree,
             file_path,
             source,
+            parse_errors,
         })
     }
 }

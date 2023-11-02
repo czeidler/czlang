@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    ffi::OsString,
+};
 
 use super::{
     types::{intersection, SArray, SRefType, SSlice, SumType, Type},
@@ -213,7 +216,7 @@ pub struct PipeSemantics {
 
 #[derive(Debug)]
 pub struct PackageSemanticAnalyzer {
-    pub files: Vec<Ptr<FileContext>>,
+    pub files: HashMap<OsString, Ptr<FileContext>>,
     /// List of all sum_types in the package
     pub sum_types: HashMap<String, SumType>,
     pub errors: Vec<LangError>,
@@ -247,7 +250,7 @@ pub struct PackageSemanticAnalyzer {
 }
 
 impl PackageSemanticAnalyzer {
-    pub fn new(files: Vec<Ptr<FileContext>>) -> Self {
+    pub fn new(files: HashMap<OsString, Ptr<FileContext>>) -> Self {
         PackageSemanticAnalyzer {
             files,
             package_semantics: None,
@@ -274,7 +277,7 @@ impl PackageSemanticAnalyzer {
 
     /// Query all symbols in the files and thus doing a full validation
     pub fn query_all(&mut self) {
-        let file_semantics = self.query_files();
+        let file_semantics = self.query_package();
 
         for (_, struct_def) in &file_semantics.structs {
             self.query_struct(struct_def);
@@ -320,7 +323,7 @@ impl PackageSemanticAnalyzer {
         self.blocks.get(&block.node.id()).map(|s| s.clone())
     }
 
-    pub fn query_files(&mut self) -> Ptr<PackageSemantics> {
+    pub fn query_package(&mut self) -> Ptr<PackageSemantics> {
         if let Some(file) = &self.package_semantics {
             return file.clone();
         }
@@ -702,9 +705,9 @@ impl PackageSemanticAnalyzer {
     }
 
     pub fn query_usage(&mut self, node_id: NodeId) -> Vec<NodeData> {
-        // validate whole file
+        // validate whole package
         // TODO this can be optimized, e.g. when in a block it might be enough to just validate the block
-        self.query_files();
+        self.query_all();
 
         self.usages
             .get(&node_id)
@@ -742,7 +745,7 @@ impl PackageSemanticAnalyzer {
             TypeQueryContext::Function(_) => {}
             TypeQueryContext::StructMethodReceiver => {}
         }
-        let file = self.query_files();
+        let file = self.query_package();
         let Some(struct_def) = file.structs.get(identifier).map(|s| s.clone()) else {
             self.errors.push(LangError::type_error(
                 node,
@@ -1006,7 +1009,7 @@ impl PackageSemanticAnalyzer {
     }
 
     fn lookup_function_declaration(&mut self, call: &FunctionCall) -> Option<FunctionCallBinding> {
-        let file = self.query_files();
+        let file = self.query_package();
         if let Some(declaration) = file.functions.get(&call.name) {
             let binding = FunctionCallBinding::Function(declaration.clone());
             return Some(binding);

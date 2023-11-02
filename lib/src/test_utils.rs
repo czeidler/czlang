@@ -1,7 +1,9 @@
 use std::{
+    collections::HashMap,
     fs::{create_dir_all, remove_dir_all, File},
     io::{Read, Write},
-    path::Path,
+    path::{Path, PathBuf},
+    str::FromStr,
 };
 
 use crate::{
@@ -55,19 +57,20 @@ pub fn validate_project<'a>(
 
     let source_code = String::from_utf8(buffer)?;
     let file_path = main_file_path.to_string_lossy();
-    let mut parse_errors = Vec::new();
-    let file = FileContext::parse(0, file_path.to_string(), source_code, &mut parse_errors);
-    for error in &parse_errors {
+    let file = FileContext::parse(0, file_path.to_string(), source_code);
+    for error in &file.parse_errors {
         print_err(&error, &file.source);
     }
-    if !parse_errors.is_empty() {
+    if !file.parse_errors.is_empty() {
         return Err(anyhow::Error::msg(format!(
             "{} compile error(s)",
-            parse_errors.len()
+            file.parse_errors.len()
         )));
     }
 
-    let mut analyzer = PackageSemanticAnalyzer::new(vec![file]);
+    let mut files = HashMap::new();
+    files.insert(main_file_path.file_name().unwrap().to_os_string(), file);
+    let mut analyzer = PackageSemanticAnalyzer::new(files);
     analyzer.query_all();
     if !analyzer.errors.is_empty() {
         return Err(anyhow::Error::msg(analyzer.errors[0].msg.clone()));
@@ -78,7 +81,7 @@ pub fn validate_project<'a>(
 
 pub fn transpile_and_validate_project(test_dir: &str, file_content: &str) {
     create_project(test_dir, file_content);
-    let project_path = Path::new(test_dir);
+    let project_path = PathBuf::from_str(test_dir).unwrap();
     transpile_project(&project_path).unwrap();
     check_project(test_dir);
 }

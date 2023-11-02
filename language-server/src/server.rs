@@ -1,7 +1,9 @@
 use std::{
     collections::HashMap,
+    ffi::OsString,
     path::PathBuf,
-    sync::{Arc, Mutex},
+    str::FromStr,
+    sync::{Arc, Mutex, RwLock},
 };
 
 use anyhow::Result;
@@ -9,9 +11,12 @@ use czlanglib::{
     ast::{SelectorFieldType, SourcePosition, SourceSpan},
     format::{format_fun_signature, format_param, format_var_declaration},
     init,
-    project::{FileChange, Project},
+    project::{package_and_file_name, FileChange, Project},
     query::{find_in_file, QueryResult},
-    semantics::{types::types_to_string, IdentifierBinding, TypeQueryContext},
+    semantics::{
+        types::types_to_string, IdentifierBinding, PackageSemanticAnalyzer, TypeQueryContext,
+    },
+    types::Ptr,
 };
 use lsp_server::{Connection, Message, Notification, RequestId};
 use lsp_types::{notification::*, request::*, *};
@@ -62,7 +67,8 @@ impl Server {
             pool: threadpool::Builder::new().build(),
             project: Arc::new(Mutex::new(Project {
                 file_id_counter: 0,
-                open_files: HashMap::new(),
+                packages: HashMap::new(),
+                usages: HashMap::new(),
             })),
         }
     }
@@ -145,77 +151,72 @@ impl Server {
         Ok(())
     }
 
-    fn publish_errors(&self, project: &Project, uri: &Url) {
-        let url: String = uri.clone().into();
-        if let Some(file) = project.open_files.get(&url) {
-            let mut all_errors = file
-                .parse_errors
-                .iter()
-                .chain(file.file_analyzer.errors.iter())
-                .peekable();
-            if all_errors.peek().is_none() {
-                self.connection
-                    .sender
-                    .send(
-                        Notification::new(
-                            "textDocument/publishDiagnostics".to_string(),
-                            PublishDiagnosticsParams {
-                                uri: uri.clone(),
-                                diagnostics: vec![],
-                                version: None,
+    fn publish_errors(&self, package: &PackageSemanticAnalyzer, uri: &Url, file_name: &OsString) {
+        if let Some(file) = package.files.get(file_name) {
+            let all_errors = file.parse_errors.iter().chain(
+                package
+                    .errors
+                    .iter()
+                    .filter(|e| e.node.file_id == file.file_id),
+            );
+
+            let diagnostics = all_errors
+                .map(|error| {
+                    let start = error.node.span.start;
+                    let end = error.node.span.end;
+                    Diagnostic::new_simple(
+                        Range {
+                            start: Position {
+                                line: start.row as u32,
+                                character: start.column as u32,
                             },
-                        )
-                        .into(),
-                    )
-                    .unwrap();
-            }
-            for error in all_errors {
-                let start = error.node.span.start;
-                let end = error.node.span.end;
-                self.connection
-                    .sender
-                    .send(
-                        Notification::new(
-                            "textDocument/publishDiagnostics".to_string(),
-                            PublishDiagnosticsParams {
-                                uri: uri.clone(),
-                                diagnostics: vec![Diagnostic::new_simple(
-                                    Range {
-                                        start: Position {
-                                            line: start.row as u32,
-                                            character: start.column as u32,
-                                        },
-                                        end: Position {
-                                            line: end.row as u32,
-                                            character: end.column as u32,
-                                        },
-                                    },
-                                    format!("{:?}: {}", error.kind, error.msg.clone()),
-                                )],
-                                version: None,
+                            end: Position {
+                                line: end.row as u32,
+                                character: end.column as u32,
                             },
-                        )
-                        .into(),
+                        },
+                        format!("{:?}: {}", error.kind, error.msg.clone()),
                     )
-                    .unwrap();
-            }
+                })
+                .collect();
+            self.connection
+                .sender
+                .send(
+                    Notification::new(
+                        "textDocument/publishDiagnostics".to_string(),
+                        PublishDiagnosticsParams {
+                            uri: uri.clone(),
+                            diagnostics,
+                            version: None,
+                        },
+                    )
+                    .into(),
+                )
+                .unwrap();
         }
     }
 
     fn did_open(&mut self, mut params: DidOpenTextDocumentParams) -> Result<()> {
         normalize_uri(&mut params.text_document.uri);
-        let url: String = params.text_document.uri.clone().into();
+        let url = params.text_document.uri.path().to_string();
 
         let mut project = self.project.lock().unwrap();
-        project.open_file(url.clone(), params.text_document.text);
-        project.validate_file(&url);
-        self.publish_errors(&project, &params.text_document.uri);
+        let (package, file_name) = package_and_file_name(&PathBuf::from_str(&url).unwrap());
+        let Some(package) = project
+            .query_package(&package) else {
+                return Ok(())
+            };
+        drop(project);
+        let mut package = package.write().unwrap();
+        package.query_all();
+        self.publish_errors(&package, &params.text_document.uri, &file_name);
+
         Ok(())
     }
 
     fn did_change(&mut self, mut params: DidChangeTextDocumentParams) -> Result<()> {
         normalize_uri(&mut params.text_document.uri);
-        let url: String = params.text_document.uri.clone().into();
+        let url = params.text_document.uri.path().to_string();
 
         let changes = params
             .content_changes
@@ -236,8 +237,15 @@ impl Server {
             .collect::<Vec<_>>();
         let mut project = self.project.lock().unwrap();
         project.edit_file(url.clone(), changes);
-        project.validate_file(&url);
-        self.publish_errors(&project, &params.text_document.uri);
+        let (package, file_name) = package_and_file_name(&PathBuf::from_str(&url).unwrap());
+        let Some(package) = project
+            .query_package(&package) else {
+                return Ok(())
+            };
+        drop(project);
+        let mut package = package.write().unwrap();
+        package.query_all();
+        self.publish_errors(&package, &params.text_document.uri, &file_name);
 
         Ok(())
     }
@@ -249,12 +257,7 @@ impl Server {
         Ok(())
     }
 
-    fn did_close(&mut self, mut params: DidCloseTextDocumentParams) -> Result<()> {
-        normalize_uri(&mut params.text_document.uri);
-
-        let mut project = self.project.lock().unwrap();
-        project.close_file(&params.text_document.uri.into());
-
+    fn did_close(&mut self, _params: DidCloseTextDocumentParams) -> Result<()> {
         Ok(())
     }
 
@@ -293,18 +296,16 @@ impl Server {
         let position = params.text_document_position.position;
         let project = self.project.clone();
         self.handle_feature_request(id, params, uri.clone(), move |_request| {
-            let uri: String = uri.as_ref().clone().into();
-            let mut project = project.lock().unwrap();
-            let file = project.open_files.get_mut(&uri);
-            let Some(file) = file else {return None};
+            let (package, file_name) = find_package_file(project, &uri);
+            let mut package = package.write().unwrap();
+            let file = package.files.get(&file_name).unwrap().clone();
 
             let position = SourcePosition::new(position.line as usize, position.character as usize);
-
-            if let Some(dot_completions) = dot_completion(file, &position) {
+            if let Some(dot_completions) = dot_completion(&mut package, &file, &position) {
                 return Some(dot_completions);
             }
 
-            let list = scope_symbols_completion(file, position);
+            let list = scope_symbols_completion(&mut package, position);
             Some(list)
         })?;
 
@@ -329,22 +330,21 @@ impl Server {
 
         let project = self.project.clone();
         self.handle_feature_request(id, params, uri.clone(), move |_request| {
-            let mut project = project.lock().unwrap();
-            let uri: String = uri.as_ref().clone().into();
-            let file = project.open_files.get_mut(&uri);
-            let Some(file) = file else {return None};
+            let (package, file_name) = find_package_file(project, &uri);
+            let mut package = package.write().unwrap();
+            let file = package.files.get(&file_name).unwrap().clone();
 
             let position = SourcePosition::new(position.line as usize, position.character as usize);
-            let Some(result) = find_in_file(&mut file.file_analyzer, position) else { return None };
+            let Some(result) = find_in_file(&mut package, &file, position) else { return None };
 
             let result = match result {
                 QueryResult::Function(fun) => {
-                    format_fun_signature(&mut file.file_analyzer, fun.signature.clone())
+                    format_fun_signature(&mut package, fun.signature.clone())
                 }
                 QueryResult::Parameter(fun, parameter) => {
                     format!(
                         "(parameter) {}",
-                        format_param(&mut file.file_analyzer, fun.signature.clone(), &parameter)
+                        format_param(&mut package, fun.signature.clone(), &parameter)
                     )
                 }
                 QueryResult::Identifier(_, block, expression_semantics) => {
@@ -358,7 +358,7 @@ impl Server {
                                     "{}\n(narrowed variable): {}",
                                     format_var_declaration(
                                         &var,
-                                        &file.file_analyzer.query_var_types(
+                                        &package.query_var_types(
                                             &TypeQueryContext::from_block(&block),
                                             &var
                                         ),
@@ -368,7 +368,7 @@ impl Server {
                             } else {
                                 format_var_declaration(
                                     &var,
-                                    &file.file_analyzer.query_var_types(
+                                    &package.query_var_types(
                                         &TypeQueryContext::from_block(&block),
                                         &var,
                                     ),
@@ -380,7 +380,7 @@ impl Server {
                                 format!(
                                     "{}\n(narrowed parameter) {}",
                                     format_param(
-                                        &mut file.file_analyzer,
+                                        &mut package,
                                         block.fun().signature.clone(),
                                         &param
                                     ),
@@ -390,7 +390,7 @@ impl Server {
                                 format!(
                                     "(parameter) {}",
                                     format_param(
-                                        &mut file.file_analyzer,
+                                        &mut package,
                                         block.fun().signature.clone(),
                                         &param
                                     )
@@ -404,16 +404,11 @@ impl Server {
                 }
                 QueryResult::VarDeclaration(block, var) => format_var_declaration(
                     &var,
-                    &file
-                        .file_analyzer
-                        .query_var_types(&TypeQueryContext::from_block(&block), &var),
+                    &package.query_var_types(&TypeQueryContext::from_block(&block), &var),
                 ),
                 QueryResult::FunctionCall(fun) => {
                     if let Some(fun) = fun.binding {
-                        format_fun_signature(
-                            &mut file.file_analyzer,
-                            fun.as_function_signature().clone(),
-                        )
+                        format_fun_signature(&mut package, fun.as_function_signature().clone())
                     } else {
                         return None;
                     }
@@ -422,9 +417,7 @@ impl Server {
                     format!("struct {}", struct_dec.name)
                 }
                 QueryResult::StructFieldDeclaration(str, field) => {
-                    let types = file
-                        .file_analyzer
-                        .query_types(&TypeQueryContext::Struct(str), &field.types);
+                    let types = package.query_types(&TypeQueryContext::Struct(str), &field.types);
                     format!("{} {}", field.name, types_to_string(types.types()))
                 }
                 QueryResult::SelectorField(result) => {
@@ -434,9 +427,7 @@ impl Server {
                     format!("struct {}", struct_dec.name)
                 }
                 QueryResult::StructFieldInitialization(str, field) => {
-                    let types = file
-                        .file_analyzer
-                        .query_types(&TypeQueryContext::Struct(str), &field.types);
+                    let types = package.query_types(&TypeQueryContext::Struct(str), &field.types);
                     format!("field {}", types_to_string(types.types()))
                 }
                 QueryResult::Literal(types) => {
@@ -453,7 +444,7 @@ impl Server {
 
     fn goto_definition(&self, id: RequestId, mut params: GotoDefinitionParams) -> Result<()> {
         normalize_uri(&mut params.text_document_position_params.text_document.uri);
-        let url = Arc::new(
+        let uri = Arc::new(
             params
                 .text_document_position_params
                 .text_document
@@ -462,15 +453,13 @@ impl Server {
         );
         let position = params.text_document_position_params.position;
         let project = self.project.clone();
-        self.handle_feature_request(id, params, url.clone(), move |_request| {
-            let mut project = project.lock().unwrap();
-            let uri: String = url.as_ref().clone().into();
-            let file = project.open_files.get_mut(&uri);
-            let Some(file) = file else {return None};
+        self.handle_feature_request(id, params, uri.clone(), move |_request| {
+            let (package, file_name) = find_package_file(project, &uri);
+            let mut package = package.write().unwrap();
+            let file = package.files.get(&file_name).unwrap().clone();
 
             let position = SourcePosition::new(position.line as usize, position.character as usize);
-            let Some(result) = find_in_file(&mut file.file_analyzer, position) else { return None };
-
+            let Some(result) = find_in_file(&mut package, &file,position) else { return None };
             let target = match result {
                 QueryResult::Identifier(_, _, identifier_semantics) => {
                     let Some(binding) = identifier_semantics.binding else {
@@ -519,7 +508,7 @@ impl Server {
                 Position::new(target.end.row as u32, target.end.column as u32),
             );
             Some(GotoDefinitionResponse::Scalar(Location {
-                uri: url.as_ref().clone(),
+                uri: uri.as_ref().clone(),
                 range: target,
             }))
         })?;
@@ -528,27 +517,20 @@ impl Server {
 
     fn references(&self, id: RequestId, mut params: ReferenceParams) -> Result<()> {
         normalize_uri(&mut params.text_document_position.text_document.uri);
-        let url = Arc::new(params.text_document_position.text_document.uri.clone());
+        let uri = Arc::new(params.text_document_position.text_document.uri.clone());
         let position = params.text_document_position.position;
         let project = self.project.clone();
-        self.handle_feature_request(id, params, url.clone(), move |_request| {
-            let mut project = project.lock().unwrap();
-            let uri: String = url.as_ref().clone().into();
-            let file = project.open_files.get_mut(&uri);
-            let Some(file) = file else {return None};
+        self.handle_feature_request(id, params, uri.clone(), move |_request| {
+            let (package, file_name) = find_package_file(project, &uri);
+            let mut package = package.write().unwrap();
+            let file = package.files.get(&file_name).unwrap().clone();
 
             let position = SourcePosition::new(position.line as usize, position.character as usize);
-            let Some(result) = find_in_file(&mut file.file_analyzer, position) else { return None };
+            let Some(result) = find_in_file(&mut package, &file, position) else { return None };
             let usages = match result {
-                QueryResult::Function(fun) => {
-                    file.file_analyzer.query_usage(fun.signature.name_node.id())
-                }
-                QueryResult::VarDeclaration(_, var) => {
-                    file.file_analyzer.query_usage(var.name_node.id())
-                }
-                QueryResult::Parameter(_, par) => {
-                    file.file_analyzer.query_usage(par.name_node.id())
-                }
+                QueryResult::Function(fun) => package.query_usage(fun.signature.name_node.id()),
+                QueryResult::VarDeclaration(_, var) => package.query_usage(var.name_node.id()),
+                QueryResult::Parameter(_, par) => package.query_usage(par.name_node.id()),
 
                 _ => return None,
             };
@@ -562,7 +544,7 @@ impl Server {
                     )
                 })
                 .map(|range| Location {
-                    uri: url.as_ref().clone(),
+                    uri: uri.as_ref().clone(),
                     range,
                 })
                 .collect();
@@ -611,17 +593,23 @@ impl Server {
 
     fn inlay_hints(&self, id: RequestId, mut params: InlayHintParams) -> Result<()> {
         normalize_uri(&mut params.text_document.uri);
-        let url = Arc::new(params.text_document.uri.clone());
+        let uri = Arc::new(params.text_document.uri.clone());
         let project = self.project.clone();
-        self.handle_feature_request(id, params, url.clone(), move |request| {
+        self.handle_feature_request(id, params, uri.clone(), move |request| {
+            let url = uri.path().to_string();
+            let (package, file_name) = package_and_file_name(&PathBuf::from_str(&url).unwrap());
             let mut project = project.lock().unwrap();
-            let uri: String = url.as_ref().clone().into();
-            let file = project.open_files.get_mut(&uri);
-            let Some(file) = file else {return None};
+            let package = project.query_package(&package)?;
+            drop(project);
+            let mut package = package.write().unwrap();
+            let Some(file) = package.files.get(&file_name).map(|f|f.clone()) else {
+                return None;
+            };
 
             let range = &request.params.range;
             let hints = inlay_hints(
-                file,
+                &mut package,
+                &file,
                 &SourceSpan {
                     start: SourcePosition {
                         row: range.start.line as usize,
@@ -727,4 +715,15 @@ impl Server {
         self.pool.join();
         Ok(())
     }
+}
+
+fn find_package_file(
+    project: Ptr<Mutex<Project>>,
+    uri: &Arc<Url>,
+) -> (Ptr<RwLock<PackageSemanticAnalyzer>>, OsString) {
+    let url = uri.path().to_string();
+    let (package, file_name) = package_and_file_name(&PathBuf::from_str(&url).unwrap());
+    let mut project = project.lock().unwrap();
+    let package = project.query_package(&package).unwrap();
+    (package, file_name)
 }

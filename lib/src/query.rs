@@ -1,6 +1,6 @@
 use crate::{
     ast::{
-        Block, BlockTrait, Expression, ExpressionType, Field, Function, FunctionTrait,
+        Block, BlockTrait, Expression, ExpressionType, Field, FileContext, Function, FunctionTrait,
         IfAlternative, IfExpression, Parameter, SelectorField, SourcePosition, Statement,
         StringTemplatePart, Struct, VarDeclaration,
     },
@@ -29,10 +29,14 @@ pub enum QueryResult {
 
 pub fn find_in_file(
     analyzer: &mut PackageSemanticAnalyzer,
+    file: &Ptr<FileContext>,
     position: SourcePosition,
 ) -> Option<QueryResult> {
-    let file = analyzer.query_files();
-    for (_, fun) in &file.functions {
+    let package = analyzer.query_package();
+    for (_, fun) in &package.functions {
+        if fun.body_node.file_id != file.file_id {
+            continue;
+        }
         if !fun.signature.node.contains(position) {
             continue;
         }
@@ -41,14 +45,21 @@ pub fn find_in_file(
         }
     }
 
-    if let Some(result) = find_in_structs(&file, position) {
+    if let Some(result) = find_in_structs(&package, file, position) {
         return Some(result);
     }
     None
 }
 
-fn find_in_structs(file: &PackageSemantics, position: SourcePosition) -> Option<QueryResult> {
-    for (_, struct_def) in &file.structs {
+fn find_in_structs(
+    package: &PackageSemantics,
+    file: &Ptr<FileContext>,
+    position: SourcePosition,
+) -> Option<QueryResult> {
+    for (_, struct_def) in &package.structs {
+        if struct_def.node.file_id != file.file_id {
+            continue;
+        }
         if !struct_def.node.contains(position) {
             continue;
         }
@@ -401,7 +412,7 @@ pub fn find_completions(
     analyzer: &mut PackageSemanticAnalyzer,
     position: SourcePosition,
 ) -> (Ptr<PackageSemantics>, Option<Vec<Ptr<VarDeclaration>>>) {
-    let file = analyzer.query_files();
+    let file = analyzer.query_package();
     for (_, fun) in &file.functions {
         let body = fun.body();
 

@@ -1,9 +1,10 @@
-use std::path::Path;
+use std::{path::PathBuf, str::FromStr};
 
 use rust_transpiler::transpile_project;
 
 pub mod ast;
 mod buildin;
+pub mod project;
 mod rust_transpiler;
 pub mod semantics;
 mod tree_sitter;
@@ -13,5 +14,5 @@ mod types;
 pub mod test_utils;
 
 fn main() {
-    transpile_project(&Path::new("./test_project")).unwrap();
+    transpile_project(&PathBuf::from_str("./test_project").unwrap()).unwrap();
 }

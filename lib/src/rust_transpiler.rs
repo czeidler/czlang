@@ -1,16 +1,17 @@
 use std::fs::create_dir_all;
-use std::io::{self, Read, Write};
-use std::path::{Path, PathBuf};
+use std::io::{self, Write};
+use std::path::PathBuf;
 
 use crate::ast::{
-    print_err, ArrayExpression, BinaryOperator, Block, BlockTrait, Expression, ExpressionType,
-    Field, FileContext, Function, FunctionCall, FunctionSignature, FunctionTrait, IfAlternative,
-    IfExpression, Loop, Parameter, PipeExpression, Receiver, ReturnErrorPipeExpression,
-    SelectorExpression, SelectorFieldType, SliceExpression, Statement, StringTemplatePart, Struct,
+    ArrayExpression, BinaryOperator, Block, BlockTrait, Expression, ExpressionType, Field,
+    Function, FunctionCall, FunctionSignature, FunctionTrait, IfAlternative, IfExpression, Loop,
+    Parameter, PipeExpression, Receiver, ReturnErrorPipeExpression, SelectorExpression,
+    SelectorFieldType, SliceExpression, Statement, StringTemplatePart, Struct,
     StructFieldInitialization, StructInitialization, TypeParam, TypeParamType, UnaryOperator,
     VarDeclaration,
 };
 use crate::buildin::Buildins;
+use crate::project::Project;
 use crate::semantics::ClosureContext;
 use crate::semantics::{
     types::{SArray, SSlice, SumType, Type},
@@ -1451,7 +1452,7 @@ impl RustTranspiler {
         writer.write(" {");
         writer.new_line();
         writer.indented(|writer| {
-            let file = analyzer.query_files();
+            let file = analyzer.query_package();
             let struct_def = file.structs.get(&struct_init.name).unwrap();
             for field in &struct_init.fields {
                 self.transpile_struct_field_init(analyzer, field, &struct_def, block, writer);
@@ -1463,7 +1464,7 @@ impl RustTranspiler {
     }
 
     pub fn transpile_file(&self, analyzer: &mut PackageSemanticAnalyzer, writer: &mut Writer) {
-        let file = analyzer.query_files();
+        let file = analyzer.query_package();
         for (name, types) in &analyzer.sum_types {
             self.transpile_sum_type_def(name, types, writer);
             writer.new_line();
@@ -1521,30 +1522,16 @@ pub fn transpile(
     Ok(())
 }
 
-pub fn transpile_project(project_dir: &Path) -> Result<(), anyhow::Error> {
-    let main_file_path = project_dir.join("main.cz");
-    let mut main_file = std::fs::File::open(&main_file_path)?;
-    let mut buffer = Vec::new();
-    main_file.read_to_end(&mut buffer)?;
+pub fn transpile_project(project_dir: &PathBuf) -> Result<(), anyhow::Error> {
+    let mut project = Project::new();
+    let package = project
+        .query_package(project_dir)
+        .ok_or(anyhow::Error::msg("Not a package directory"))?;
+    let mut package = package.write().unwrap();
 
-    let source_code = String::from_utf8(buffer)?;
-    let file_path = main_file_path.to_string_lossy();
-    let mut parse_errors = Vec::new();
-    let file = FileContext::parse(0, file_path.to_string(), source_code, &mut parse_errors);
-    for error in &parse_errors {
-        print_err(&error, &file.source);
-    }
-    if !parse_errors.is_empty() {
-        return Err(anyhow::Error::msg(format!(
-            "{} compile error(s)",
-            parse_errors.len()
-        )));
-    }
-
-    let mut analyzer = PackageSemanticAnalyzer::new(vec![file.clone()]);
-    analyzer.query_all();
-    if !analyzer.errors.is_empty() {
-        return Err(anyhow::Error::msg(analyzer.errors[0].msg.clone()));
+    package.query_all();
+    if !package.errors.is_empty() {
+        return Err(anyhow::Error::msg(package.errors[0].msg.clone()));
     }
 
     let build_dir = project_dir.join(".build");
@@ -1552,7 +1539,7 @@ pub fn transpile_project(project_dir: &Path) -> Result<(), anyhow::Error> {
     create_dir_all(&src_rust)?;
     let main_rust = src_rust.join("main.rs");
 
-    transpile(&mut analyzer, &main_rust)?;
+    transpile(&mut package, &main_rust)?;
 
     // write Cargo.toml
     let mut cargo_file = std::fs::File::create(&build_dir.join("Cargo.toml"))?;
