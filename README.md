@@ -20,6 +20,7 @@ Feature Summary (work in progress):
 
 Planned features:
 - Memory safety (borrow checker + lifetimes)
+- Go like packages (and modules)
 - `never` type
 - Leak type (or similar)
 - Virtual threads based on stack-less coroutines
