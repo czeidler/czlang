@@ -1,10 +1,13 @@
 use crate::types::Ptr;
 
-use super::{parse_fun, parse_method, parse_struct, FileContext, Function, Struct};
+use super::{
+    parse_fun, parse_import, parse_method, parse_struct, FileContext, Function, Import, Struct,
+};
 
 pub enum RootSymbol {
     Function(Ptr<Function>),
     Struct(Ptr<Struct>),
+    Import(Import),
 }
 
 pub trait FileTrait {
@@ -57,6 +60,13 @@ impl Iterator for FileSymbolIterator {
                         return Some(RootSymbol::Function(method));
                     } else {
                         log::error!("Invalid method_definition: {:?}", child);
+                    }
+                }
+                "import_declaration" => {
+                    if let Some(import_declaration) = parse_import(&self.file, &child) {
+                        return Some(RootSymbol::Import(import_declaration));
+                    } else {
+                        log::error!("Invalid import_declaration: {:?}", child);
                     }
                 }
                 _ => {}

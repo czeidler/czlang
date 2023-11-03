@@ -141,6 +141,7 @@ pub fn inlay_hints(
                 inlay_hint_from_block(package, &body, range, &mut hints);
             }
             RootSymbol::Struct(_) => continue,
+            RootSymbol::Import(_) => continue,
         }
     }
     hints

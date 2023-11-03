@@ -37,6 +37,9 @@ impl PackageSemanticAnalyzer {
                             ))
                         }
                     }
+                    RootSymbol::Import(_) => {
+                        todo!()
+                    }
                 }
             }
         }
