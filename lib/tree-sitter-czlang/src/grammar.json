@@ -1394,15 +1394,6 @@
           "value": "import"
         },
         {
-          "type": "SYMBOL",
-          "name": "import_spec"
-        }
-      ]
-    },
-    "import_spec": {
-      "type": "SEQ",
-      "members": [
-        {
           "type": "CHOICE",
           "members": [
             {
