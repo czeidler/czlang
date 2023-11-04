@@ -25,7 +25,7 @@ pub(crate) fn find_var_in_fun(
     fun: &str,
     var: &str,
 ) -> Option<SumType> {
-    let package = analysis.validate_package();
+    let package = analysis.validate_package_content();
     let fun = package.functions.get(fun)?;
     let var = find_var(fun, var)?;
     Some(analysis.query_var_types(&TypeQueryContext::from_fun(fun), &var))

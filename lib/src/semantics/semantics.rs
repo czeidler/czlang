@@ -10,9 +10,9 @@ use super::{
 use crate::{
     ast::{
         self, Block, BlockParent, Expression, ExpressionType, Field, FileContext, Function,
-        FunctionCall, FunctionSignature, IfAlternative, IfExpression, LangError, NodeData, NodeId,
-        Parameter, RefType, SelectorExpression, SelectorField, Struct, StructFieldInitialization,
-        StructInitialization, TypeParam, TypeParamType, VarDeclaration,
+        FunctionCall, FunctionSignature, IfAlternative, IfExpression, Import, LangError, NodeData,
+        NodeId, Parameter, RefType, SelectorExpression, SelectorField, Struct,
+        StructFieldInitialization, StructInitialization, TypeParam, TypeParamType, VarDeclaration,
     },
     buildin::Buildins,
     types::Ptr,
@@ -34,7 +34,8 @@ impl ExpContext {
 }
 
 #[derive(Debug, Clone)]
-pub struct PackageSemantics {
+pub struct PackageContentSemantics {
+    pub imports: Vec<Import>,
     /// Top level functions
     pub functions: HashMap<String, Ptr<Function>>,
     /// Struct methods declarations
@@ -222,7 +223,7 @@ pub struct PackageSemanticAnalyzer {
     pub errors: Vec<LangError>,
 
     /// Package content
-    package_semantics: Option<Ptr<PackageSemantics>>,
+    package_semantics: Option<Ptr<PackageContentSemantics>>,
     /// struct declarations
     pub structs: HashMap<NodeId, StructSemantics>,
 
@@ -277,7 +278,7 @@ impl PackageSemanticAnalyzer {
 
     /// Query all symbols in the files and thus doing a full validation
     pub fn query_all(&mut self) {
-        let file_semantics = self.query_package();
+        let file_semantics = self.query_package_content();
 
         for (_, struct_def) in &file_semantics.structs {
             self.query_struct(struct_def);
@@ -323,12 +324,12 @@ impl PackageSemanticAnalyzer {
         self.blocks.get(&block.node.id()).map(|s| s.clone())
     }
 
-    pub fn query_package(&mut self) -> Ptr<PackageSemantics> {
+    pub fn query_package_content(&mut self) -> Ptr<PackageContentSemantics> {
         if let Some(file) = &self.package_semantics {
             return file.clone();
         }
 
-        let file = Ptr::new(self.validate_package());
+        let file = Ptr::new(self.validate_package_content());
         self.package_semantics = Some(file.clone());
 
         file
@@ -745,7 +746,7 @@ impl PackageSemanticAnalyzer {
             TypeQueryContext::Function(_) => {}
             TypeQueryContext::StructMethodReceiver => {}
         }
-        let file = self.query_package();
+        let file = self.query_package_content();
         let Some(struct_def) = file.structs.get(identifier).map(|s| s.clone()) else {
             self.errors.push(LangError::type_error(
                 node,
@@ -1009,7 +1010,7 @@ impl PackageSemanticAnalyzer {
     }
 
     fn lookup_function_declaration(&mut self, call: &FunctionCall) -> Option<FunctionCallBinding> {
-        let file = self.query_package();
+        let file = self.query_package_content();
         if let Some(declaration) = file.functions.get(&call.name) {
             let binding = FunctionCallBinding::Function(declaration.clone());
             return Some(binding);

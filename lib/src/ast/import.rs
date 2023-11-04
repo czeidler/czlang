@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use tree_sitter::Node;
 
 use crate::types::Ptr;
@@ -17,6 +19,12 @@ pub struct Import {
     pub name: ImportName,
 
     pub path: Vec<String>,
+}
+
+impl Import {
+    pub fn path_buf(&self) -> PathBuf {
+        PathBuf::from_iter(self.path.iter())
+    }
 }
 
 pub fn parse_import<'a>(file: &Ptr<FileContext>, node: &Node<'a>) -> Option<Import> {

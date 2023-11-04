@@ -5,8 +5,8 @@ use crate::{
         StringTemplatePart, Struct, VarDeclaration,
     },
     semantics::{
-        types::SumType, ExpressionSemantics, FunctionCallSemantics, PackageSemanticAnalyzer,
-        PackageSemantics, SelectorFieldSemantics, TypeBinding, TypeQueryContext,
+        types::SumType, ExpressionSemantics, FunctionCallSemantics, PackageContentSemantics,
+        PackageSemanticAnalyzer, SelectorFieldSemantics, TypeBinding, TypeQueryContext,
     },
     types::Ptr,
 };
@@ -32,7 +32,7 @@ pub fn find_in_file(
     file: &Ptr<FileContext>,
     position: SourcePosition,
 ) -> Option<QueryResult> {
-    let package = analyzer.query_package();
+    let package = analyzer.query_package_content();
     for (_, fun) in &package.functions {
         if fun.body_node.file_id != file.file_id {
             continue;
@@ -52,7 +52,7 @@ pub fn find_in_file(
 }
 
 fn find_in_structs(
-    package: &PackageSemantics,
+    package: &PackageContentSemantics,
     file: &Ptr<FileContext>,
     position: SourcePosition,
 ) -> Option<QueryResult> {
@@ -411,8 +411,11 @@ fn find_completions_in_block(
 pub fn find_completions(
     analyzer: &mut PackageSemanticAnalyzer,
     position: SourcePosition,
-) -> (Ptr<PackageSemantics>, Option<Vec<Ptr<VarDeclaration>>>) {
-    let file = analyzer.query_package();
+) -> (
+    Ptr<PackageContentSemantics>,
+    Option<Vec<Ptr<VarDeclaration>>>,
+) {
+    let file = analyzer.query_package_content();
     for (_, fun) in &file.functions {
         let body = fun.body();
 

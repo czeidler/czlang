@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 
-use crate::ast::{FileTrait, LangError, RootSymbol};
+use crate::ast::{FileTrait, Import, LangError, RootSymbol};
 
-use super::{PackageSemanticAnalyzer, PackageSemantics};
+use super::{PackageContentSemantics, PackageSemanticAnalyzer};
 
 impl PackageSemanticAnalyzer {
-    pub(crate) fn validate_package(&mut self) -> PackageSemantics {
+    pub(crate) fn validate_package_content(&mut self) -> PackageContentSemantics {
+        let mut imports = Vec::new();
         let mut functions = HashMap::new();
         let mut structs = HashMap::new();
         let mut methods = Vec::new();
@@ -37,17 +38,28 @@ impl PackageSemanticAnalyzer {
                             ))
                         }
                     }
-                    RootSymbol::Import(_) => {
-                        todo!()
+                    RootSymbol::Import(import) => {
+                        if imports
+                            .iter()
+                            .any(|existing: &Import| existing.path == import.path)
+                        {
+                            self.errors.push(LangError::type_error(
+                                &import.node,
+                                format!("Package already imported {:?}", import.path.join("/")),
+                            ))
+                        } else {
+                            imports.push(import);
+                        }
                     }
                 }
             }
         }
 
-        PackageSemantics {
+        PackageContentSemantics {
             functions,
             structs,
             methods,
+            imports,
         }
     }
 }

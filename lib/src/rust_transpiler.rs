@@ -1452,7 +1452,7 @@ impl RustTranspiler {
         writer.write(" {");
         writer.new_line();
         writer.indented(|writer| {
-            let file = analyzer.query_package();
+            let file = analyzer.query_package_content();
             let struct_def = file.structs.get(&struct_init.name).unwrap();
             for field in &struct_init.fields {
                 self.transpile_struct_field_init(analyzer, field, &struct_def, block, writer);
@@ -1464,7 +1464,7 @@ impl RustTranspiler {
     }
 
     pub fn transpile_file(&self, analyzer: &mut PackageSemanticAnalyzer, writer: &mut Writer) {
-        let file = analyzer.query_package();
+        let file = analyzer.query_package_content();
         for (name, types) in &analyzer.sum_types {
             self.transpile_sum_type_def(name, types, writer);
             writer.new_line();
