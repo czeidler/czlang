@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, ffi::OsString};
+    use std::{collections::HashMap, ffi::OsString, path::PathBuf};
 
     use crate::{
         ast::{FileContext, SourcePosition},
@@ -34,7 +34,7 @@ fun main() {
         let file = FileContext::parse(0, "test.cz".to_string(), source_code);
         let mut files = HashMap::new();
         files.insert(OsString::from("test.cz"), file.clone());
-        let mut analyzer = PackageSemanticAnalyzer::new(files);
+        let mut analyzer = PackageSemanticAnalyzer::new(PathBuf::new(), files);
         let result = find_in_file(&mut analyzer, &file, SourcePosition::new(17, 24)).unwrap();
         match result {
             QueryResult::SelectorField((_, semantics)) => {

@@ -75,14 +75,17 @@ impl Project {
         path: &PathBuf,
         files: HashMap<OsString, Ptr<FileContext>>,
     ) -> Ptr<RwLock<PackageSemanticAnalyzer>> {
-        let mut package = PackageSemanticAnalyzer::new(files);
+        let mut package = PackageSemanticAnalyzer::new(path.clone(), files);
         let package_semantics = package.query_package_content();
         for import in &package_semantics.imports {
             let path_buf = import.path_buf();
-            self.query_package(&path_buf);
-            let entry = self.usages.entry(path_buf).or_insert(vec![]);
+            let Some(dependency) = self.query_package(&path_buf) else {
+                continue;
+            };
+            let entry = self.usages.entry(path_buf.clone()).or_insert(vec![]);
             if !entry.contains(path) {
                 entry.push(path.clone());
+                package.add_dependency(path_buf, dependency);
             }
         }
 

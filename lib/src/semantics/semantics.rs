@@ -1,6 +1,8 @@
 use std::{
     collections::{HashMap, HashSet},
     ffi::OsString,
+    path::PathBuf,
+    sync::RwLock,
 };
 
 use super::{
@@ -217,7 +219,9 @@ pub struct PipeSemantics {
 
 #[derive(Debug)]
 pub struct PackageSemanticAnalyzer {
+    pub path: PathBuf,
     pub files: HashMap<OsString, Ptr<FileContext>>,
+    pub(crate) dependencies: HashMap<PathBuf, Ptr<RwLock<PackageSemanticAnalyzer>>>,
     /// List of all sum_types in the package
     pub sum_types: HashMap<String, SumType>,
     pub errors: Vec<LangError>,
@@ -227,6 +231,8 @@ pub struct PackageSemanticAnalyzer {
     /// struct declarations
     pub structs: HashMap<NodeId, StructSemantics>,
 
+    /// Just keeps track of validated imports
+    imports: HashSet<NodeId>,
     /// Just keeps track of analyzed/checked functions
     fun_symbols: HashSet<NodeId>,
     /// Bindings for an type identifier, e.g. a struct name
@@ -251,14 +257,17 @@ pub struct PackageSemanticAnalyzer {
 }
 
 impl PackageSemanticAnalyzer {
-    pub fn new(files: HashMap<OsString, Ptr<FileContext>>) -> Self {
+    pub fn new(path: PathBuf, files: HashMap<OsString, Ptr<FileContext>>) -> Self {
         PackageSemanticAnalyzer {
+            path,
             files,
+            dependencies: HashMap::new(),
             package_semantics: None,
             sum_types: HashMap::new(),
             errors: Vec::new(),
 
             structs: HashMap::new(),
+            imports: HashSet::new(),
             fun_symbols: HashSet::new(),
             type_identifiers: HashMap::new(),
             types: HashMap::new(),
@@ -276,9 +285,21 @@ impl PackageSemanticAnalyzer {
         }
     }
 
+    pub fn add_dependency(
+        &mut self,
+        path_buf: PathBuf,
+        package: Ptr<RwLock<PackageSemanticAnalyzer>>,
+    ) {
+        self.dependencies.insert(path_buf, package);
+    }
+
     /// Query all symbols in the files and thus doing a full validation
     pub fn query_all(&mut self) {
         let file_semantics = self.query_package_content();
+
+        for import in &file_semantics.imports {
+            self.query_import(import);
+        }
 
         for (_, struct_def) in &file_semantics.structs {
             self.query_struct(struct_def);
@@ -291,6 +312,17 @@ impl PackageSemanticAnalyzer {
         for method in &file_semantics.methods {
             self.query_fun(method);
         }
+    }
+
+    pub fn query_import(&mut self, import: &Import) {
+        if let Some(_) = self.imports.get(&import.node.id()) {
+            return;
+        }
+
+        self.validate_import(&import);
+
+        let new_entry = self.imports.insert(import.node.id());
+        assert!(new_entry);
     }
 
     /// Query/validate a single struct

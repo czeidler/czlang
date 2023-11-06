@@ -70,7 +70,7 @@ pub fn validate_project<'a>(
 
     let mut files = HashMap::new();
     files.insert(main_file_path.file_name().unwrap().to_os_string(), file);
-    let mut analyzer = PackageSemanticAnalyzer::new(files);
+    let mut analyzer = PackageSemanticAnalyzer::new(PathBuf::new(), files);
     analyzer.query_all();
     if !analyzer.errors.is_empty() {
         return Err(anyhow::Error::msg(analyzer.errors[0].msg.clone()));
