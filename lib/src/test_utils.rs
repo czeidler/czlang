@@ -1,15 +1,15 @@
 use std::{
     collections::HashMap,
     fs::{create_dir_all, remove_dir_all, File},
-    io::{Read, Write},
+    io::Write,
     path::{Path, PathBuf},
     str::FromStr,
+    sync::RwLock,
 };
 
 use crate::{
-    ast::{print_err, FileContext},
-    rust_transpiler::transpile_project,
-    semantics::PackageSemanticAnalyzer,
+    project::Project, rust_transpiler::transpile_project, semantics::PackageSemanticAnalyzer,
+    types::Ptr, vfs::MemoryFS,
 };
 
 pub fn create_project(test_dir: &str, file_content: &str) {
@@ -43,40 +43,33 @@ pub fn check_project(test_dir: &str) {
     assert!(output.status.success());
 }
 
-pub fn validate_project<'a>(
+pub fn validate_project_files(
+    files: HashMap<PathBuf, String>,
+    main_package: &PathBuf,
+) -> Result<Ptr<RwLock<PackageSemanticAnalyzer>>, anyhow::Error> {
+    let mut vfs = MemoryFS::new();
+    for (path, content) in files {
+        vfs.add_file(path, content);
+    }
+    let mut project = Project::new(Box::new(vfs));
+    let package = project.validate_package(main_package).unwrap();
+    let errors = project.current_errors();
+
+    if !errors.is_empty() {
+        return Err(anyhow::Error::msg(errors[0].msg.clone()));
+    }
+    Ok(package)
+}
+
+pub fn validate_project(
     test_dir: &str,
     file_content: &str,
-) -> Result<PackageSemanticAnalyzer, anyhow::Error> {
-    create_project(test_dir, file_content);
-    let project_dir = Path::new(test_dir);
-
+) -> Result<Ptr<RwLock<PackageSemanticAnalyzer>>, anyhow::Error> {
+    let project_dir = PathBuf::from_str(test_dir).unwrap();
     let main_file_path = project_dir.join("main.cz");
-    let mut main_file = std::fs::File::open(&main_file_path)?;
-    let mut buffer = Vec::new();
-    main_file.read_to_end(&mut buffer)?;
-
-    let source_code = String::from_utf8(buffer)?;
-    let file_path = main_file_path.to_string_lossy();
-    let file = FileContext::parse(0, file_path.to_string(), source_code);
-    for error in &file.parse_errors {
-        print_err(&error, &file.source);
-    }
-    if !file.parse_errors.is_empty() {
-        return Err(anyhow::Error::msg(format!(
-            "{} compile error(s)",
-            file.parse_errors.len()
-        )));
-    }
-
     let mut files = HashMap::new();
-    files.insert(main_file_path.file_name().unwrap().to_os_string(), file);
-    let mut analyzer = PackageSemanticAnalyzer::new(PathBuf::new(), files);
-    analyzer.query_all();
-    if !analyzer.errors.is_empty() {
-        return Err(anyhow::Error::msg(analyzer.errors[0].msg.clone()));
-    }
-
-    Ok(analyzer)
+    files.insert(main_file_path.clone(), file_content.to_string());
+    validate_project_files(files, &project_dir)
 }
 
 pub fn transpile_and_validate_project(test_dir: &str, file_content: &str) {

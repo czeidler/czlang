@@ -3,8 +3,10 @@ use flexi_logger::{FileSpec, Logger, WriteMode};
 pub mod ast;
 mod buildin;
 pub mod rust_transpiler;
+pub mod topological_sort;
 mod tree_sitter;
 pub mod types;
+pub mod vfs;
 
 pub mod format;
 pub mod project;

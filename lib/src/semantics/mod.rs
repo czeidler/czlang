@@ -7,7 +7,6 @@ mod package;
 pub mod semantics;
 mod statement;
 mod r#struct;
-mod topological_sort;
 pub mod types;
 
 pub use semantics::*;

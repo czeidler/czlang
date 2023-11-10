@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     ffi::OsString,
     path::PathBuf,
     str::FromStr,
@@ -17,6 +16,7 @@ use czlanglib::{
         types::types_to_string, IdentifierBinding, PackageSemanticAnalyzer, TypeQueryContext,
     },
     types::Ptr,
+    vfs::DiskFS,
 };
 use lsp_server::{Connection, Message, Notification, RequestId};
 use lsp_types::{notification::*, request::*, *};
@@ -65,11 +65,7 @@ impl Server {
         Self {
             connection: Arc::new(connection),
             pool: threadpool::Builder::new().build(),
-            project: Arc::new(Mutex::new(Project {
-                file_id_counter: 0,
-                packages: HashMap::new(),
-                usages: HashMap::new(),
-            })),
+            project: Arc::new(Mutex::new(Project::new(Box::new(DiskFS {})))),
         }
     }
 

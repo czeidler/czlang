@@ -7,8 +7,10 @@ mod buildin;
 pub mod project;
 mod rust_transpiler;
 pub mod semantics;
+mod topological_sort;
 mod tree_sitter;
 mod types;
+pub mod vfs;
 
 #[cfg(test)]
 pub mod test_utils;

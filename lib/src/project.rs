@@ -1,12 +1,15 @@
-use std::{collections::HashMap, ffi::OsString, fs, path::PathBuf, str::FromStr, sync::RwLock};
+use rayon::prelude::*;
+use std::{collections::HashMap, ffi::OsString, path::PathBuf, str::FromStr, sync::RwLock};
 
 use tree_sitter::{InputEdit, Point};
 
 use crate::{
-    ast::{FileContext, SourceSpan},
+    ast::{FileContext, LangError, SourceSpan},
     semantics::PackageSemanticAnalyzer,
+    topological_sort::TopologicalSort,
     tree_sitter::parse,
     types::Ptr,
+    vfs::VirtualFileSystem,
 };
 
 #[derive(Debug)]
@@ -22,6 +25,7 @@ pub fn package_and_file_name(path: &PathBuf) -> (PathBuf, OsString) {
 }
 
 pub struct Project {
+    vfs: Box<dyn VirtualFileSystem>,
     pub file_id_counter: usize,
     /// package path -> PackageSemanticAnalyzer
     pub packages: HashMap<PathBuf, Ptr<RwLock<PackageSemanticAnalyzer>>>,
@@ -32,14 +36,74 @@ pub struct Project {
 }
 
 impl Project {
-    pub fn new() -> Self {
+    pub fn new(vfs: Box<dyn VirtualFileSystem>) -> Self {
         let project_file = Project {
+            vfs,
             file_id_counter: 0,
             packages: HashMap::new(),
             usages: HashMap::new(),
         };
 
         project_file
+    }
+
+    pub fn current_errors(&self) -> Vec<LangError> {
+        let mut out = vec![];
+        for (_, package) in &self.packages {
+            let package = package.write().unwrap();
+            package.current_errors(&mut out);
+        }
+        out
+    }
+
+    /// Validates package and all its dependencies
+    pub fn validate_package(
+        &mut self,
+        path: &PathBuf,
+    ) -> Option<Ptr<RwLock<PackageSemanticAnalyzer>>> {
+        let Some(root) = self.query_package(path) else {
+           return None;
+        };
+        let mut imports = HashMap::new();
+        // collect all deps
+        let mut ongoing = vec![root.clone()];
+        while let Some(current) = ongoing.pop() {
+            let mut current = current.write().unwrap();
+            let entry = imports.entry(current.path.clone()).or_insert(vec![]);
+            let content = current.query_package_content();
+            for import in &content.imports {
+                let dependency_path = import.path_buf();
+                if let Some(dep) = self.query_package(&dependency_path) {
+                    ongoing.push(dep);
+                };
+
+                entry.push(dependency_path)
+            }
+        }
+
+        // validating packages with already validated dependencies in parallel
+        let mut sort = TopologicalSort::new(imports);
+        loop {
+            let current = sort.remove_without_dependencies();
+            let current: Vec<_> = current
+                .iter()
+                .filter_map(|path| self.query_package(path))
+                .collect();
+            current.par_iter().for_each(|package| {
+                let mut package = package.write().unwrap();
+                package.query_all();
+            });
+
+            if !current.is_empty() {
+                continue;
+            }
+            if !sort.remaining_elements().is_empty() {
+                // circular dependency: this should already gave an error in one of the packages
+                break;
+            }
+            break;
+        }
+        return Some(root);
     }
 
     pub fn query_package(
@@ -49,22 +113,22 @@ impl Project {
         if let Some(package) = self.packages.get(path) {
             return Some(package.clone());
         }
-        let dir = fs::read_dir(path).ok()?;
+
+        let dir_content = self.vfs.read_dir(path).ok()?;
         let mut files = HashMap::new();
-        for entry in dir {
-            let entry = entry.ok()?;
-            let file_name = entry.file_name();
+        for file_name in dir_content {
             if !file_name.to_string_lossy().ends_with(".cz") {
                 continue;
             }
-            let source = fs::read_to_string(entry.path()).ok()?;
+            let file_path = path.join(&file_name);
+            let source = self.vfs.read_file(&file_path).ok()?;
             self.file_id_counter = self.file_id_counter + 1;
             let file_context = FileContext::parse(
                 self.file_id_counter,
-                entry.path().to_string_lossy().to_string(),
+                file_path.to_string_lossy().to_string(),
                 source,
             );
-            files.insert(file_name.to_os_string(), file_context);
+            files.insert(file_name, file_context);
         }
         let package = self.init_package(path, files);
         Some(package)

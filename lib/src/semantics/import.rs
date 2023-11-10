@@ -1,8 +1,11 @@
 use std::{collections::HashMap, path::PathBuf};
 
-use crate::ast::{Import, LangError};
+use crate::{
+    ast::{Import, LangError},
+    topological_sort::has_cycle,
+};
 
-use super::{topological_sort::topological_sort, PackageSemanticAnalyzer};
+use super::PackageSemanticAnalyzer;
 
 impl PackageSemanticAnalyzer {
     pub fn validate_import(&mut self, import: &Import) {
@@ -24,12 +27,11 @@ impl PackageSemanticAnalyzer {
             }
         }
 
-        match topological_sort(imports) {
-            Ok(_) => {}
-            Err(_) => self.errors.push(LangError::type_error(
+        if has_cycle(imports) {
+            self.errors.push(LangError::type_error(
                 &import.node,
                 "Import contains circular dependency".to_string(),
-            )),
+            ));
         }
     }
 }

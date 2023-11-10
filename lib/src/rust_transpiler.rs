@@ -19,6 +19,7 @@ use crate::semantics::{
 };
 
 use crate::types::Ptr;
+use crate::vfs::DiskFS;
 
 struct Writer<'a> {
     pub indentation: u16,
@@ -1523,7 +1524,7 @@ pub fn transpile(
 }
 
 pub fn transpile_project(project_dir: &PathBuf) -> Result<(), anyhow::Error> {
-    let mut project = Project::new();
+    let mut project = Project::new(Box::new(DiskFS {}));
     let package = project
         .query_package(project_dir)
         .ok_or(anyhow::Error::msg("Not a package directory"))?;

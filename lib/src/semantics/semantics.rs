@@ -285,6 +285,13 @@ impl PackageSemanticAnalyzer {
         }
     }
 
+    pub fn current_errors(&self, out: &mut Vec<LangError>) {
+        for (_, file) in &self.files {
+            out.append(&mut file.parse_errors.clone());
+        }
+        out.append(&mut self.errors.clone());
+    }
+
     pub fn add_dependency(
         &mut self,
         path_buf: PathBuf,
