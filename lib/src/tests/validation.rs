@@ -1,7 +1,9 @@
 #[cfg(test)]
 mod rust_validation_tests {
+    use std::{collections::HashMap, path::PathBuf, str::FromStr};
+
     use crate::{
-        test_utils::{transpile_and_validate_project, validate_project},
+        test_utils::{transpile_and_validate_project, validate_project, validate_project_files},
         tests::find_var_in_fun,
     };
 
@@ -376,5 +378,53 @@ fun main() { test() }
         "#,
         );
         assert_eq!(&format!("{}", err.unwrap_err()), "Left side is not mutable");
+    }
+
+    #[test]
+    fn error_import_cycle() {
+        let main = PathBuf::new();
+        let mut files = HashMap::new();
+        files.insert(
+            main.join("main.cz"),
+            r#"
+                    import "package1"
+            "#
+            .to_string(),
+        );
+        files.insert(
+            main.join("package1/package1.cz"),
+            r#"
+                    import "package2"
+            "#
+            .to_string(),
+        );
+        files.insert(
+            main.join("package2/package2.cz"),
+            r#"
+                    import "package1"
+            "#
+            .to_string(),
+        );
+        let project = validate_project_files(files, &main);
+        let errors = project.current_errors();
+        assert_eq!(errors.len(), 2);
+        assert!(errors[0].msg.contains("circular dependency"));
+    }
+
+    #[test]
+    fn error_import_self_import() {
+        let main = PathBuf::from_str("package1").unwrap();
+        let mut files = HashMap::new();
+        files.insert(
+            main.join("main.cz"),
+            r#"
+                    import "package1"
+            "#
+            .to_string(),
+        );
+        let project = validate_project_files(files, &main);
+        let errors = project.current_errors();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].msg.contains("itself"));
     }
 }

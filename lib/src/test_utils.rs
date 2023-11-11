@@ -43,22 +43,14 @@ pub fn check_project(test_dir: &str) {
     assert!(output.status.success());
 }
 
-pub fn validate_project_files(
-    files: HashMap<PathBuf, String>,
-    main_package: &PathBuf,
-) -> Result<Ptr<RwLock<PackageSemanticAnalyzer>>, anyhow::Error> {
+pub fn validate_project_files(files: HashMap<PathBuf, String>, main_package: &PathBuf) -> Project {
     let mut vfs = MemoryFS::new();
     for (path, content) in files {
         vfs.add_file(path, content);
     }
     let mut project = Project::new(Box::new(vfs));
-    let package = project.validate_package(main_package).unwrap();
-    let errors = project.current_errors();
-
-    if !errors.is_empty() {
-        return Err(anyhow::Error::msg(errors[0].msg.clone()));
-    }
-    Ok(package)
+    project.validate_package(main_package).unwrap();
+    project
 }
 
 pub fn validate_project(
@@ -69,7 +61,14 @@ pub fn validate_project(
     let main_file_path = project_dir.join("main.cz");
     let mut files = HashMap::new();
     files.insert(main_file_path.clone(), file_content.to_string());
-    validate_project_files(files, &project_dir)
+    let mut project = validate_project_files(files, &project_dir);
+    let errors = project.current_errors();
+
+    if !errors.is_empty() {
+        return Err(anyhow::Error::msg(errors[0].msg.clone()));
+    }
+
+    Ok(project.query_package(&project_dir).unwrap())
 }
 
 pub fn transpile_and_validate_project(test_dir: &str, file_content: &str) {

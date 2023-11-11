@@ -1,5 +1,11 @@
 use rayon::prelude::*;
-use std::{collections::HashMap, ffi::OsString, path::PathBuf, str::FromStr, sync::RwLock};
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    ffi::OsString,
+    path::PathBuf,
+    str::FromStr,
+    sync::RwLock,
+};
 
 use tree_sitter::{InputEdit, Point};
 
@@ -69,8 +75,13 @@ impl Project {
         let mut ongoing = vec![root.clone()];
         while let Some(current) = ongoing.pop() {
             let mut current = current.write().unwrap();
-            let entry = imports.entry(current.path.clone()).or_insert(vec![]);
+            let entry = imports.entry(current.path.clone());
+            if let &Entry::Occupied(_) = &entry {
+                continue;
+            }
+            let entry = entry.or_insert(vec![]);
             let content = current.query_package_content();
+            drop(current);
             for import in &content.imports {
                 let dependency_path = import.path_buf();
                 if let Some(dep) = self.query_package(&dependency_path) {
@@ -98,7 +109,17 @@ impl Project {
                 continue;
             }
             if !sort.remaining_elements().is_empty() {
-                // circular dependency: this should already gave an error in one of the packages
+                // circular dependency: just validate all packages as good as possible, i.e. circular error should pop
+                // up
+                let current: Vec<_> = sort
+                    .remaining_elements()
+                    .iter()
+                    .filter_map(|(path, _)| self.query_package(path))
+                    .collect();
+                current.par_iter().for_each(|package| {
+                    let mut package = package.write().unwrap();
+                    package.query_all();
+                });
                 break;
             }
             break;
@@ -141,20 +162,25 @@ impl Project {
     ) -> Ptr<RwLock<PackageSemanticAnalyzer>> {
         let mut package = PackageSemanticAnalyzer::new(path.clone(), files);
         let package_semantics = package.query_package_content();
+        let package = Ptr::new(RwLock::new(package));
+        self.packages.insert(path.clone(), package.clone());
+
         for import in &package_semantics.imports {
             let path_buf = import.path_buf();
+            if self.packages.contains_key(&path_buf) {
+                continue;
+            }
             let Some(dependency) = self.query_package(&path_buf) else {
                 continue;
             };
             let entry = self.usages.entry(path_buf.clone()).or_insert(vec![]);
             if !entry.contains(path) {
                 entry.push(path.clone());
+                let mut package = package.write().unwrap();
                 package.add_dependency(path_buf, dependency);
             }
         }
 
-        let package = Ptr::new(RwLock::new(package));
-        self.packages.insert(path.clone(), package.clone());
         package
     }
 

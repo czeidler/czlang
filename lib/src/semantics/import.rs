@@ -9,6 +9,13 @@ use super::PackageSemanticAnalyzer;
 
 impl PackageSemanticAnalyzer {
     pub fn validate_import(&mut self, import: &Import) {
+        if import.path_buf() == self.path {
+            self.errors.push(LangError::type_error(
+                &import.node,
+                "Package can't import itself".to_string(),
+            ));
+            return;
+        }
         let mut imports = HashMap::<PathBuf, Vec<PathBuf>>::new();
         let mut ongoing = vec![import];
         while let Some(current) = ongoing.pop() {
