@@ -9,10 +9,19 @@ use super::PackageSemanticAnalyzer;
 
 impl PackageSemanticAnalyzer {
     pub fn validate_import(&mut self, import: &Import) {
-        if import.path_buf() == self.path {
+        let path_buf = import.path_buf();
+        if path_buf == self.path {
             self.errors.push(LangError::type_error(
                 &import.node,
                 "Package can't import itself".to_string(),
+            ));
+            return;
+        }
+
+        if !self.dependencies.contains_key(&path_buf) {
+            self.errors.push(LangError::type_error(
+                &import.node,
+                "Package not found".to_string(),
             ));
             return;
         }

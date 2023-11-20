@@ -151,6 +151,9 @@ impl Project {
             );
             files.insert(file_name, file_context);
         }
+        if files.is_empty() {
+            return None;
+        }
         let package = self.init_package(path, files);
         Some(package)
     }
@@ -167,12 +170,16 @@ impl Project {
 
         for import in &package_semantics.imports {
             let path_buf = import.path_buf();
-            if self.packages.contains_key(&path_buf) {
-                continue;
-            }
-            let Some(dependency) = self.query_package(&path_buf) else {
+
+            let dependency = self
+                .packages
+                .get(&path_buf)
+                .map(|d| d.clone())
+                .or_else(|| self.query_package(&path_buf).to_owned());
+            let Some(dependency) = dependency else {
                 continue;
             };
+
             let entry = self.usages.entry(path_buf.clone()).or_insert(vec![]);
             if !entry.contains(path) {
                 entry.push(path.clone());

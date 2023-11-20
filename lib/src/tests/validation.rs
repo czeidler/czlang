@@ -407,7 +407,7 @@ fun main() { test() }
         );
         let project = validate_project_files(files, &main);
         let errors = project.current_errors();
-        assert_eq!(errors.len(), 2);
+        assert_eq!(errors.len(), 3);
         assert!(errors[0].msg.contains("circular dependency"));
     }
 
@@ -426,5 +426,22 @@ fun main() { test() }
         let errors = project.current_errors();
         assert_eq!(errors.len(), 1);
         assert!(errors[0].msg.contains("itself"));
+    }
+
+    #[test]
+    fn error_import_package_not_found() {
+        let main = PathBuf::from_str("package1").unwrap();
+        let mut files = HashMap::new();
+        files.insert(
+            main.join("main.cz"),
+            r#"
+                    import "package2"
+            "#
+            .to_string(),
+        );
+        let project = validate_project_files(files, &main);
+        let errors = project.current_errors();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].msg.contains("not found"));
     }
 }
