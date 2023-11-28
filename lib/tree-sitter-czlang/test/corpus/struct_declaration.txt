@@ -125,3 +125,39 @@ fun main() {
         )
       )
 )
+
+==================
+package struct init
+==================
+
+fun main() {
+    var test = package1.Struct1 {
+      field1 = 1,
+    }
+}
+
+---
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameter_list)
+    (block
+      (var_declaration
+        (identifier)
+        (selector_expression
+          (identifier)
+          (selector_field
+            (struct_initialization
+              (identifier)
+              (keyed_element
+                (identifier)
+                (int_literal)
+              )
+            )
+          )
+        )
+      )
+    )
+  )
+)

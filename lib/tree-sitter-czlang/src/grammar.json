@@ -1095,6 +1095,10 @@
               {
                 "type": "SYMBOL",
                 "name": "function_call"
+              },
+              {
+                "type": "SYMBOL",
+                "name": "struct_initialization"
               }
             ]
           }

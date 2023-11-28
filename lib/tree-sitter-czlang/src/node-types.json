@@ -3957,6 +3957,10 @@
           {
             "type": "identifier",
             "named": true
+          },
+          {
+            "type": "struct_initialization",
+            "named": true
           }
         ]
       }

@@ -78,3 +78,36 @@ fun x() i32 {
     )
   )
 )
+
+==================
+Package Function call
+==================
+
+fun x() i32 {
+  package1.callFunction(2)
+}
+
+---
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameter_list)
+    (primitive_type)
+    (block
+      (expression_statement
+        (selector_expression
+          (identifier)
+          (selector_field
+            (function_call
+              (identifier)
+              (argument_list
+                (int_literal)
+              )
+            )
+          )
+        )
+      )
+    )
+  )
+)
