@@ -98,6 +98,10 @@ impl PackageSemanticAnalyzer {
                         param.is_mutable,
                     ),
                     IdentifierBinding::PipeArg(arg) => (Some(arg.clone()), false),
+                    IdentifierBinding::Package(package) => (
+                        Some(SumType::from_type(Type::Package(package.clone()))),
+                        false,
+                    ),
                 };
                 ExpressionSemantics {
                     resolved_types,
@@ -215,19 +219,18 @@ impl PackageSemanticAnalyzer {
                 }))))
             }
             ExpressionType::FunctionCall(fun_call) => {
-                let fun_declaration =
-                    match self.query_function_call(&fun_call).and_then(|s| s.binding) {
-                        Some(fun) => {
-                            self.bind_fun_call_usage(&fun_call.name_node, &fun);
-                            fun
-                        }
-                        None => {
-                            return Err(LangError::type_error(
-                                &expression.node,
-                                format!("No fun with name {} found", fun_call.name),
-                            ));
-                        }
-                    };
+                let fun_declaration = match self.validate_fun_call(&fun_call).binding {
+                    Some(fun) => {
+                        self.bind_fun_call_usage(&fun_call.name_node, &fun);
+                        fun
+                    }
+                    None => {
+                        return Err(LangError::type_error(
+                            &expression.node,
+                            format!("No fun with name {} found", fun_call.name),
+                        ));
+                    }
+                };
                 let fun_signature = fun_declaration.as_function_signature();
 
                 if fun_signature.parameters.len() != fun_call.arguments.len() {
@@ -421,6 +424,7 @@ impl PackageSemanticAnalyzer {
             IdentifierBinding::VarDeclaration(var) => var.name_node.id(),
             IdentifierBinding::Parameter(param) => param.name_node.id(),
             IdentifierBinding::PipeArg(_) => return,
+            IdentifierBinding::Package(_) => return,
         };
         let references = self.usages.entry(id).or_default();
         assert!(!references.contains(reference));
@@ -530,7 +534,7 @@ impl PackageSemanticAnalyzer {
                 }
                 SelectorFieldType::Call(call) => {
                     // TODO: support generic struct instances
-                    let Some(method) = self.query_method_call(&current_struct, call).and_then(|s|s.binding) else {
+                    let Some(method) = self.validate_method_call(&current_struct, call).binding else {
                         self.errors.push(LangError::type_error(
                             &field.node,
                             format!("Not a struct method: {}", call.name),

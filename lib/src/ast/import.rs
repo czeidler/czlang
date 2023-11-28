@@ -6,14 +6,14 @@ use crate::types::Ptr;
 
 use super::{child_by_field, node_text, FileContext, NodeData};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum ImportName {
     Package,
     Dot,
     Alias(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Import {
     pub node: NodeData,
     pub name: ImportName,

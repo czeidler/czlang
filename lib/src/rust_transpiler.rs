@@ -118,6 +118,7 @@ fn type_to_enum_variant(t: &Type) -> String {
             };
             name
         }
+        Type::Package(_) => todo!(),
     }
 }
 
@@ -213,6 +214,11 @@ impl RustTranspiler {
                 };
                 return;
             }
+            Type::Package(path) => {
+                let name = path.file_name().unwrap();
+                writer.write(&name.to_string_lossy().to_string());
+                return;
+            }
         };
         writer.write(text);
     }
@@ -241,6 +247,7 @@ impl RustTranspiler {
             Type::Struct(st) => return st.name.clone(),
             Type::StructTypeArgument(_) => todo!(),
             Type::Closure(_) => todo!(),
+            Type::Package(_) => todo!(),
         };
         t.to_string()
     }
@@ -632,12 +639,7 @@ impl RustTranspiler {
                     writer.write(identifier);
                 }
                 SelectorFieldType::Call(call) => {
-                    let receiver = analyzer
-                        .query_selector_field(block, field)
-                        .unwrap()
-                        .parent
-                        .unwrap();
-                    self.transpile_method_call(analyzer, &receiver, call, block, writer);
+                    self.transpile_method_call(analyzer, call, block, writer);
                 }
             };
 
@@ -1003,13 +1005,12 @@ impl RustTranspiler {
     fn transpile_method_call(
         &self,
         analyzer: &mut PackageSemanticAnalyzer,
-        receiver: &Ptr<Struct>,
         call: &FunctionCall,
         block: &Block,
         writer: &mut Writer,
     ) {
         let method = analyzer
-            .query_method_call(receiver, call)
+            .query_method_call(block, call)
             .unwrap()
             .binding
             .unwrap();
@@ -1028,7 +1029,11 @@ impl RustTranspiler {
             return;
         }
 
-        let fun_call_binding = analyzer.query_function_call(call).unwrap().binding.unwrap();
+        let fun_call_binding = analyzer
+            .query_function_call(block, call)
+            .unwrap()
+            .binding
+            .unwrap();
         let function = fun_call_binding.as_function_signature();
 
         self.transpile_call(analyzer, call, block, function, writer);

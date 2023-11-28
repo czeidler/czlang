@@ -184,7 +184,7 @@ impl Project {
             if !entry.contains(path) {
                 entry.push(path.clone());
                 let mut package = package.write().unwrap();
-                package.add_dependency(path_buf, dependency);
+                package.add_dependency(import.clone(), dependency);
             }
         }
 

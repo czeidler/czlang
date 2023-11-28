@@ -205,7 +205,7 @@ fn find_in_expression(
         }
         ExpressionType::FunctionCall(call) => {
             if call.name_node.contains(position) {
-                return match analyzer.query_function_call(&call) {
+                return match analyzer.query_function_call(&block.block, &call) {
                     Some(function_call) => Some(QueryResult::FunctionCall(function_call.clone())),
                     None => None,
                 };

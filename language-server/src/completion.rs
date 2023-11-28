@@ -56,6 +56,7 @@ pub fn dot_completion(
                 }
                 IdentifierBinding::Parameter(_) => {}
                 IdentifierBinding::PipeArg(_) => {}
+                IdentifierBinding::Package(_) => {}
             }
         }
         QueryResult::SelectorField((_, field_semantics)) => {

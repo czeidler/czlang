@@ -12,8 +12,8 @@ use super::{
 use crate::{
     ast::{
         self, Block, BlockParent, Expression, ExpressionType, Field, FileContext, Function,
-        FunctionCall, FunctionSignature, IfAlternative, IfExpression, Import, LangError, NodeData,
-        NodeId, Parameter, RefType, SelectorExpression, SelectorField, Struct,
+        FunctionCall, FunctionSignature, IfAlternative, IfExpression, Import, ImportName,
+        LangError, NodeData, NodeId, Parameter, RefType, SelectorExpression, SelectorField, Struct,
         StructFieldInitialization, StructInitialization, TypeParam, TypeParamType, VarDeclaration,
     },
     buildin::Buildins,
@@ -76,6 +76,7 @@ pub enum IdentifierBinding {
     VarDeclaration(Ptr<VarDeclaration>),
     Parameter(Parameter),
     PipeArg(SumType),
+    Package(PathBuf),
 }
 
 #[derive(Debug, Clone)]
@@ -221,7 +222,7 @@ pub struct PipeSemantics {
 pub struct PackageSemanticAnalyzer {
     pub path: PathBuf,
     pub files: HashMap<OsString, Ptr<FileContext>>,
-    pub(crate) dependencies: HashMap<PathBuf, Ptr<RwLock<PackageSemanticAnalyzer>>>,
+    pub(crate) dependencies: HashMap<Import, Ptr<RwLock<PackageSemanticAnalyzer>>>,
     /// List of all sum_types in the package
     pub sum_types: HashMap<String, SumType>,
     pub errors: Vec<LangError>,
@@ -294,10 +295,10 @@ impl PackageSemanticAnalyzer {
 
     pub fn add_dependency(
         &mut self,
-        path_buf: PathBuf,
+        import: Import,
         package: Ptr<RwLock<PackageSemanticAnalyzer>>,
     ) {
-        self.dependencies.insert(path_buf, package);
+        self.dependencies.insert(import, package);
     }
 
     /// Query all symbols in the files and thus doing a full validation
@@ -627,35 +628,30 @@ impl PackageSemanticAnalyzer {
         self.expressions.get(&node_id).map(|s| s.clone())
     }
 
-    pub fn query_function_call(&mut self, call: &FunctionCall) -> Option<FunctionCallSemantics> {
+    pub fn query_function_call(
+        &mut self,
+        block: &Block,
+        call: &FunctionCall,
+    ) -> Option<FunctionCallSemantics> {
         if let Some(s) = self.function_calls.get(&call.node.id()) {
             return Some(s.clone());
         }
 
-        let binding = self.lookup_function_declaration(call);
-
-        let existing = self
-            .function_calls
-            .insert(call.node.id(), FunctionCallSemantics { binding });
-        assert!(existing.is_none());
+        self.query_fun(&block.fun());
 
         self.function_calls.get(&call.node.id()).map(|s| s.clone())
     }
 
     pub fn query_method_call(
         &mut self,
-        receiver: &Ptr<Struct>,
+        block: &Block,
         call: &FunctionCall,
     ) -> Option<MethodCallSemantics> {
         if let Some(s) = self.method_calls.get(&call.node.id()) {
             return Some(s.clone());
         }
 
-        let binding = self.lookup_struct_method(receiver, call);
-        let existing = self
-            .method_calls
-            .insert(call.node.id(), MethodCallSemantics { binding });
-        assert!(existing.is_none());
+        self.query_fun(&block.fun());
 
         self.method_calls.get(&call.node.id()).map(|s| s.clone())
     }
@@ -890,6 +886,7 @@ impl PackageSemanticAnalyzer {
                     }
                     IdentifierBinding::Parameter(_) => {}
                     IdentifierBinding::PipeArg(_) => {}
+                    IdentifierBinding::Package(_) => {}
                 }
             }
             ExpressionType::UnaryExpression(expr) => match expr.operand.r#type {
@@ -1003,11 +1000,13 @@ impl PackageSemanticAnalyzer {
         }
     }
 
+    /// Looks up an identifier from with in a function
     pub(crate) fn lookup_identifier(
         &mut self,
         context: &ExpContext,
         identifier: &String,
     ) -> Option<IdentifierBinding> {
+        // pipe argument
         if identifier == "$" {
             if let Some(pipe_arg) = &context.pipe_arg {
                 return Some(IdentifierBinding::PipeArg(pipe_arg.clone()));
@@ -1015,6 +1014,8 @@ impl PackageSemanticAnalyzer {
                 return None;
             }
         }
+
+        // block variable
         let mut current: Option<Ptr<Block>> = None;
         loop {
             let b = match &current {
@@ -1038,7 +1039,7 @@ impl PackageSemanticAnalyzer {
                     {
                         return Some(IdentifierBinding::Parameter(param.clone()));
                     } else {
-                        return None;
+                        break;
                     }
                 }
                 BlockParent::Block(block) => {
@@ -1046,13 +1047,57 @@ impl PackageSemanticAnalyzer {
                 }
             }
         }
+
+        // package
+        for (import, _) in &self.dependencies {
+            match &import.name {
+                ast::ImportName::Package => {
+                    let path = import.path_buf();
+                    let package_name = path.file_name().unwrap().to_string_lossy().to_string();
+                    if &package_name == identifier {
+                        return Some(IdentifierBinding::Package(path));
+                    }
+                }
+                ast::ImportName::Dot => continue,
+                ast::ImportName::Alias(name) => {
+                    if identifier == name {
+                        return Some(IdentifierBinding::Package(import.path_buf()));
+                    }
+                }
+            }
+        }
+
+        return None;
+    }
+
+    pub(crate) fn validate_fun_call(&mut self, call: &FunctionCall) -> FunctionCallSemantics {
+        let binding = self.lookup_function_declaration(call);
+
+        let semantics = FunctionCallSemantics { binding };
+        let existing = self
+            .function_calls
+            .insert(call.node.id(), semantics.clone());
+        assert!(existing.is_none());
+
+        semantics
     }
 
     fn lookup_function_declaration(&mut self, call: &FunctionCall) -> Option<FunctionCallBinding> {
-        let file = self.query_package_content();
-        if let Some(declaration) = file.functions.get(&call.name) {
-            let binding = FunctionCallBinding::Function(declaration.clone());
-            return Some(binding);
+        let package = self.query_package_content();
+        if let Some(fun) = package.functions.get(&call.name) {
+            return Some(FunctionCallBinding::Function(fun.clone()));
+        }
+
+        for (import, dependency) in &self.dependencies {
+            // only look in dot imports
+            let ImportName::Dot = import.name else {
+                continue;
+            };
+            let mut dependency = dependency.write().unwrap();
+            let dependency = dependency.query_package_content();
+            if let Some(fun) = dependency.functions.get(&call.name) {
+                return Some(FunctionCallBinding::Function(fun.clone()));
+            }
         }
 
         let buildins = Buildins::new();
@@ -1064,6 +1109,18 @@ impl PackageSemanticAnalyzer {
 
             None => None,
         }
+    }
+
+    pub(crate) fn validate_method_call(
+        &mut self,
+        receiver: &Ptr<Struct>,
+        call: &FunctionCall,
+    ) -> MethodCallSemantics {
+        let binding = self.lookup_struct_method(receiver, call);
+        let semantics = MethodCallSemantics { binding };
+        let existing = self.method_calls.insert(call.node.id(), semantics.clone());
+        assert!(existing.is_none());
+        semantics
     }
 
     fn lookup_struct_method(

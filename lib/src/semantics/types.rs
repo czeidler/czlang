@@ -2,7 +2,7 @@ use crate::{
     ast::{Struct, TypeParam, TypeParamType},
     types::Ptr,
 };
-use std::{fmt, slice::Iter, vec::IntoIter};
+use std::{fmt, path::PathBuf, slice::Iter, vec::IntoIter};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct SArray {
@@ -44,6 +44,7 @@ pub enum Type {
     StructTypeArgument(TypeParam),
 
     Closure(Ptr<ClosureType>),
+    Package(PathBuf),
 }
 
 impl Type {
@@ -249,6 +250,7 @@ impl SumType {
                     };
                     continue;
                 }
+                Type::Package(_) => todo!(),
             };
             name += part;
         }
@@ -322,6 +324,7 @@ fn is_number(types: &Type) -> bool {
         Type::Struct(_) => false,
         Type::StructTypeArgument(_) => false,
         Type::Closure(_) => false,
+        Type::Package(_) => false,
     }
 }
 
@@ -343,6 +346,7 @@ fn is_integer(types: &Type) -> bool {
         Type::Struct(_) => false,
         Type::StructTypeArgument(_) => false,
         Type::Closure(_) => false,
+        Type::Package(_) => false,
     }
 }
 
@@ -480,6 +484,10 @@ impl fmt::Display for Type {
                     write!(f, " {}", ret.to_string())?;
                 };
                 Ok(())
+            }
+            Type::Package(path) => {
+                write!(f, "package<{:?}>", path)?;
+                return Ok(());
             }
         }
     }

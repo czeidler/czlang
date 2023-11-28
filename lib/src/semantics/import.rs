@@ -18,7 +18,7 @@ impl PackageSemanticAnalyzer {
             return;
         }
 
-        if !self.dependencies.contains_key(&path_buf) {
+        if !self.dependencies.contains_key(import) {
             self.errors.push(LangError::type_error(
                 &import.node,
                 "Package not found".to_string(),
@@ -29,7 +29,7 @@ impl PackageSemanticAnalyzer {
         let mut ongoing = vec![import];
         while let Some(current) = ongoing.pop() {
             let path_buf = current.path_buf();
-            let Some(dep) = self.dependencies.get(&path_buf) else {
+            let Some(dep) = self.dependencies.get(import) else {
                 continue;
             };
             let mut package = dep.write().unwrap();
