@@ -3,10 +3,10 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 
 use crate::ast::{
-    ArrayExpression, BinaryOperator, Block, BlockTrait, Expression, ExpressionType, Field,
-    Function, FunctionCall, FunctionSignature, FunctionTrait, IfAlternative, IfExpression, Loop,
-    Parameter, PipeExpression, Receiver, ReturnErrorPipeExpression, SelectorExpression,
-    SelectorFieldType, SliceExpression, Statement, StringTemplatePart, Struct,
+    root_package_path, ArrayExpression, BinaryOperator, Block, BlockTrait, Expression,
+    ExpressionType, Field, Function, FunctionCall, FunctionSignature, FunctionTrait, IfAlternative,
+    IfExpression, Loop, Parameter, PipeExpression, Receiver, ReturnErrorPipeExpression,
+    SelectorExpression, SelectorFieldType, SliceExpression, Statement, StringTemplatePart, Struct,
     StructFieldInitialization, StructInitialization, TypeParam, TypeParamType, UnaryOperator,
     VarDeclaration,
 };
@@ -1529,9 +1529,9 @@ pub fn transpile(
 }
 
 pub fn transpile_project(project_dir: &PathBuf) -> Result<(), anyhow::Error> {
-    let mut project = Project::new(Box::new(DiskFS {}));
-    let package = project
-        .query_package(project_dir)
+    let mut project = Project::new(Box::new(DiskFS {}), project_dir.clone());
+    let (package, _) = project
+        .query_package(&root_package_path())
         .ok_or(anyhow::Error::msg("Not a package directory"))?;
     let mut package = package.write().unwrap();
 

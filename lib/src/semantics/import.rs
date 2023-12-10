@@ -1,7 +1,7 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::collections::HashMap;
 
 use crate::{
-    ast::{Import, LangError},
+    ast::{Import, LangError, PackagePath},
     topological_sort::has_cycle,
 };
 
@@ -9,8 +9,7 @@ use super::PackageSemanticAnalyzer;
 
 impl PackageSemanticAnalyzer {
     pub fn validate_import(&mut self, import: &Import) {
-        let path_buf = import.path_buf();
-        if path_buf == self.path {
+        if import.path == self.path {
             self.errors.push(LangError::type_error(
                 &import.node,
                 "Package can't import itself".to_string(),
@@ -18,29 +17,17 @@ impl PackageSemanticAnalyzer {
             return;
         }
 
-        if !self.dependencies.contains_key(import) {
+        if !self.dependencies.contains_key(&import.path) {
             self.errors.push(LangError::type_error(
                 &import.node,
                 "Package not found".to_string(),
             ));
             return;
         }
-        let mut imports = HashMap::<PathBuf, Vec<PathBuf>>::new();
-        let mut ongoing = vec![import];
-        while let Some(current) = ongoing.pop() {
-            let path_buf = current.path_buf();
-            let Some(dep) = self.dependencies.get(import) else {
-                continue;
-            };
-            let mut package = dep.write().unwrap();
-            let content = package.query_package_content();
-            let deps = imports.entry(path_buf).or_insert(vec![]);
-            for import in &content.imports {
-                let import_path = import.path_buf();
-                if !deps.contains(&import_path) {
-                    deps.push(import_path)
-                }
-            }
+        let mut imports = HashMap::<PackagePath, Vec<PackagePath>>::new();
+        for (dep_path, dep) in &self.dependencies {
+            let dep_imports = dep.imports.iter().map(|it| it.path.clone()).collect();
+            imports.insert(dep_path.clone(), dep_imports);
         }
 
         if has_cycle(imports) {

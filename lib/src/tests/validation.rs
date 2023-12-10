@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod rust_validation_tests {
-    use std::{collections::HashMap, path::PathBuf, str::FromStr};
+    use std::{collections::HashMap, path::PathBuf};
 
     use crate::{
         test_utils::{transpile_and_validate_project, validate_project, validate_project_files},
@@ -405,7 +405,7 @@ fun main() { test() }
             "#
             .to_string(),
         );
-        let project = validate_project_files(files, &main);
+        let project = validate_project_files(files, main);
         let errors = project.current_errors();
         assert_eq!(errors.len(), 3);
         assert!(errors[0].msg.contains("circular dependency"));
@@ -413,8 +413,15 @@ fun main() { test() }
 
     #[test]
     fn error_import_self_import() {
-        let main = PathBuf::from_str("package1").unwrap();
+        let main = PathBuf::new();
         let mut files = HashMap::new();
+        files.insert(
+            main.join("package1").join("package1.cz"),
+            r#"
+                    import "package1"
+            "#
+            .to_string(),
+        );
         files.insert(
             main.join("main.cz"),
             r#"
@@ -422,24 +429,31 @@ fun main() { test() }
             "#
             .to_string(),
         );
-        let project = validate_project_files(files, &main);
+        let project = validate_project_files(files, main);
         let errors = project.current_errors();
-        assert_eq!(errors.len(), 1);
-        assert!(errors[0].msg.contains("itself"));
+        assert_eq!(errors.len(), 2);
+        assert!(errors.iter().find(|e| e.msg.contains("itself")).is_some());
     }
 
     #[test]
     fn error_import_package_not_found() {
-        let main = PathBuf::from_str("package1").unwrap();
+        let main = PathBuf::new();
         let mut files = HashMap::new();
         files.insert(
-            main.join("main.cz"),
+            main.join("package1").join("package1.cz"),
             r#"
                     import "package2"
             "#
             .to_string(),
         );
-        let project = validate_project_files(files, &main);
+        files.insert(
+            main.join("main.cz"),
+            r#"
+                    import "package1"
+            "#
+            .to_string(),
+        );
+        let project = validate_project_files(files, main);
         let errors = project.current_errors();
         assert_eq!(errors.len(), 1);
         assert!(errors[0].msg.contains("not found"));

@@ -10,8 +10,8 @@ use std::{
 use tree_sitter::{InputEdit, Point};
 
 use crate::{
-    ast::{FileContext, LangError, SourceSpan},
-    semantics::PackageSemanticAnalyzer,
+    ast::{FileContext, LangError, PackagePath, SourceSpan},
+    semantics::{PackageContentSemantics, PackageSemanticAnalyzer},
     topological_sort::TopologicalSort,
     tree_sitter::parse,
     types::Ptr,
@@ -24,27 +24,29 @@ pub struct FileChange {
     pub text: String,
 }
 
-pub fn package_and_file_name(path: &PathBuf) -> (PathBuf, OsString) {
-    let package_path = path.parent().unwrap();
-    let file_name = path.file_name().unwrap().to_os_string();
-    (package_path.to_path_buf(), file_name)
-}
-
 pub struct Project {
     vfs: Box<dyn VirtualFileSystem>,
+    base_path: PathBuf,
     pub file_id_counter: usize,
     /// package path -> PackageSemanticAnalyzer
-    pub packages: HashMap<PathBuf, Ptr<RwLock<PackageSemanticAnalyzer>>>,
+    pub packages: HashMap<
+        PackagePath,
+        (
+            Ptr<RwLock<PackageSemanticAnalyzer>>,
+            Ptr<PackageContentSemantics>,
+        ),
+    >,
 
     /// For loaded packages this keeps track which package is used by which packages.
     /// package path -> list of packages that uses the package
-    pub usages: HashMap<PathBuf, Vec<PathBuf>>,
+    pub usages: HashMap<PackagePath, Vec<PackagePath>>,
 }
 
 impl Project {
-    pub fn new(vfs: Box<dyn VirtualFileSystem>) -> Self {
+    pub fn new(vfs: Box<dyn VirtualFileSystem>, base_path: PathBuf) -> Self {
         let project_file = Project {
             vfs,
+            base_path,
             file_id_counter: 0,
             packages: HashMap::new(),
             usages: HashMap::new(),
@@ -53,9 +55,27 @@ impl Project {
         project_file
     }
 
+    pub fn package_and_file_name(&self, path: &PathBuf) -> Option<(PackagePath, OsString)> {
+        let Ok(path) = path.strip_prefix(&self.base_path) else {
+            return None;
+        };
+
+        let Some(package_path) = path.parent() else {
+            return None;
+        };
+        let file_name = path.file_name().unwrap().to_os_string();
+        Some((
+            package_path
+                .iter()
+                .map(|it| it.to_string_lossy().to_string())
+                .collect(),
+            file_name,
+        ))
+    }
+
     pub fn current_errors(&self) -> Vec<LangError> {
         let mut out = vec![];
-        for (_, package) in &self.packages {
+        for (_, (package, _)) in &self.packages {
             let package = package.write().unwrap();
             package.current_errors(&mut out);
         }
@@ -65,7 +85,7 @@ impl Project {
     /// Validates package and all its dependencies
     pub fn validate_package(
         &mut self,
-        path: &PathBuf,
+        path: &PackagePath,
     ) -> Option<Ptr<RwLock<PackageSemanticAnalyzer>>> {
         let Some(root) = self.query_package(path) else {
            return None;
@@ -73,22 +93,22 @@ impl Project {
         let mut imports = HashMap::new();
         // collect all deps
         let mut ongoing = vec![root.clone()];
-        while let Some(current) = ongoing.pop() {
+        while let Some((current, _)) = ongoing.pop() {
             let mut current = current.write().unwrap();
+            let content = current.query_package_content();
             let entry = imports.entry(current.path.clone());
+            drop(current);
             if let &Entry::Occupied(_) = &entry {
                 continue;
             }
             let entry = entry.or_insert(vec![]);
-            let content = current.query_package_content();
-            drop(current);
             for import in &content.imports {
-                let dependency_path = import.path_buf();
-                if let Some(dep) = self.query_package(&dependency_path) {
+                let dependency_path = &import.path;
+                if let Some(dep) = self.query_package(dependency_path) {
                     ongoing.push(dep);
                 };
 
-                entry.push(dependency_path)
+                entry.push(dependency_path.clone())
             }
         }
 
@@ -100,7 +120,7 @@ impl Project {
                 .iter()
                 .filter_map(|path| self.query_package(path))
                 .collect();
-            current.par_iter().for_each(|package| {
+            current.par_iter().for_each(|(package, _)| {
                 let mut package = package.write().unwrap();
                 package.query_all();
             });
@@ -114,9 +134,9 @@ impl Project {
                 let current: Vec<_> = sort
                     .remaining_elements()
                     .iter()
-                    .filter_map(|(path, _)| self.query_package(path))
+                    .filter_map(|(current_path, _)| self.query_package(current_path))
                     .collect();
-                current.par_iter().for_each(|package| {
+                current.iter().for_each(|(package, _)| {
                     let mut package = package.write().unwrap();
                     package.query_all();
                 });
@@ -124,18 +144,27 @@ impl Project {
             }
             break;
         }
-        return Some(root);
+        return Some(root.0);
+    }
+
+    fn package_file_path(&self, package_path: &PackagePath) -> PathBuf {
+        package_path
+            .iter()
+            .fold(self.base_path.clone(), |prev, item| prev.join(item))
     }
 
     pub fn query_package(
         &mut self,
-        path: &PathBuf,
-    ) -> Option<Ptr<RwLock<PackageSemanticAnalyzer>>> {
-        if let Some(package) = self.packages.get(path) {
+        package_path: &PackagePath,
+    ) -> Option<(
+        Ptr<RwLock<PackageSemanticAnalyzer>>,
+        Ptr<PackageContentSemantics>,
+    )> {
+        if let Some(package) = self.packages.get(package_path) {
             return Some(package.clone());
         }
-
-        let dir_content = self.vfs.read_dir(path).ok()?;
+        let path = self.package_file_path(package_path);
+        let dir_content = self.vfs.read_dir(&path).ok()?;
         let mut files = HashMap::new();
         for file_name in dir_content {
             if !file_name.to_string_lossy().ends_with(".cz") {
@@ -154,52 +183,90 @@ impl Project {
         if files.is_empty() {
             return None;
         }
-        let package = self.init_package(path, files);
+        let package = self.init_package(&package_path, files);
         Some(package)
     }
 
     fn init_package(
         &mut self,
-        path: &PathBuf,
+        path: &PackagePath,
         files: HashMap<OsString, Ptr<FileContext>>,
-    ) -> Ptr<RwLock<PackageSemanticAnalyzer>> {
+    ) -> (
+        Ptr<RwLock<PackageSemanticAnalyzer>>,
+        Ptr<PackageContentSemantics>,
+    ) {
         let mut package = PackageSemanticAnalyzer::new(path.clone(), files);
         let package_semantics = package.query_package_content();
         let package = Ptr::new(RwLock::new(package));
-        self.packages.insert(path.clone(), package.clone());
+        // package needs to be inserted here otherwise we run into problems if there are circular dependencies...
+        self.packages
+            .insert(path.clone(), (package.clone(), package_semantics.clone()));
 
         for import in &package_semantics.imports {
-            let path_buf = import.path_buf();
+            let import_path = &import.path;
 
-            let dependency = self
-                .packages
-                .get(&path_buf)
+            // Make sure package is loaded
+            self.packages
+                .get(import_path)
                 .map(|d| d.clone())
-                .or_else(|| self.query_package(&path_buf).to_owned());
-            let Some(dependency) = dependency else {
-                continue;
-            };
+                .or_else(|| self.query_package(&import.path).to_owned());
 
-            let entry = self.usages.entry(path_buf.clone()).or_insert(vec![]);
+            // add current package to usages of the dependency
+            let entry = self.usages.entry(import_path.clone()).or_insert(vec![]);
             if !entry.contains(path) {
                 entry.push(path.clone());
-                let mut package = package.write().unwrap();
-                package.add_dependency(import.clone(), dependency);
             }
         }
 
-        package
+        let dependencies = self.collect_all_deps(path.clone());
+        let mut pkg = package.write().unwrap();
+        pkg.add_dependencies(dependencies);
+        drop(pkg);
+
+        (package, package_semantics)
+    }
+
+    fn collect_all_deps(
+        &self,
+        path: PackagePath,
+    ) -> HashMap<PackagePath, Ptr<PackageContentSemantics>> {
+        let mut out = HashMap::new();
+        let mut ongoing = vec![path];
+
+        while let Some(current) = ongoing.pop() {
+            if out.contains_key(&current) {
+                continue;
+            }
+            let Some(dependencies) = self.packages.get(&current) else {
+                continue;
+            };
+
+            out.insert(current.clone(), dependencies.1.clone());
+            for dependency in &dependencies.1.imports {
+                ongoing.push(dependency.path.clone());
+            }
+        }
+        out
     }
 
     pub fn edit_file(&mut self, url: String, changes: Vec<FileChange>) {
         let path = PathBuf::from_str(&url).unwrap();
-        let (package_path, file_name) = package_and_file_name(&path);
-        let package = self.query_package(&path).unwrap();
+
+        let Some((package_path, file_name)) = self.package_and_file_name(&path) else {
+            log::info!("File not in workspace: {:?}", path);
+            return;
+        };
+        let Some((package, _)) = self.query_package(&package_path) else {
+            log::info!("Not a package: {:?}", path);
+            return;
+        };
+
         let package = package.write().unwrap();
         let mut package_files = package.files.clone();
         drop(package);
-        let Some(file) =package_files.get(&file_name) else {
-            panic!("Unknown file");
+        let Some(file) = package_files.get(&file_name) else {
+            log::info!("File {:?} not part of the package: {:?}", file_name, path);
+            return;
         };
         let file = update_file(file, changes);
         package_files.insert(file_name, file);
@@ -208,8 +275,8 @@ impl Project {
         self.init_package(&package_path, package_files);
     }
 
-    /// Invalidate a package recursively all packages that depend on it
-    fn invalidate_package(&mut self, package: &PathBuf) {
+    /// Invalidate a package recursively and all packages that depend on it
+    fn invalidate_package(&mut self, package: &PackagePath) {
         self.packages.remove(package);
         let Some(usages) = self.usages.get(package) else {
             return;

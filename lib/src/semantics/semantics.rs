@@ -2,7 +2,6 @@ use std::{
     collections::{HashMap, HashSet},
     ffi::OsString,
     path::PathBuf,
-    sync::RwLock,
 };
 
 use super::{
@@ -13,8 +12,9 @@ use crate::{
     ast::{
         self, Block, BlockParent, Expression, ExpressionType, Field, FileContext, Function,
         FunctionCall, FunctionSignature, IfAlternative, IfExpression, Import, ImportName,
-        LangError, NodeData, NodeId, Parameter, RefType, SelectorExpression, SelectorField, Struct,
-        StructFieldInitialization, StructInitialization, TypeParam, TypeParamType, VarDeclaration,
+        LangError, NodeData, NodeId, PackagePath, Parameter, RefType, SelectorExpression,
+        SelectorField, Struct, StructFieldInitialization, StructInitialization, TypeParam,
+        TypeParamType, VarDeclaration,
     },
     buildin::Buildins,
     types::Ptr,
@@ -220,9 +220,12 @@ pub struct PipeSemantics {
 
 #[derive(Debug)]
 pub struct PackageSemanticAnalyzer {
-    pub path: PathBuf,
+    pub path: PackagePath,
     pub files: HashMap<OsString, Ptr<FileContext>>,
-    pub(crate) dependencies: HashMap<Import, Ptr<RwLock<PackageSemanticAnalyzer>>>,
+
+    // All direct and indirect dependencies
+    pub(crate) dependencies: HashMap<PackagePath, Ptr<PackageContentSemantics>>,
+
     /// List of all sum_types in the package
     pub sum_types: HashMap<String, SumType>,
     pub errors: Vec<LangError>,
@@ -258,7 +261,7 @@ pub struct PackageSemanticAnalyzer {
 }
 
 impl PackageSemanticAnalyzer {
-    pub fn new(path: PathBuf, files: HashMap<OsString, Ptr<FileContext>>) -> Self {
+    pub fn new(path: PackagePath, files: HashMap<OsString, Ptr<FileContext>>) -> Self {
         PackageSemanticAnalyzer {
             path,
             files,
@@ -293,12 +296,11 @@ impl PackageSemanticAnalyzer {
         out.append(&mut self.errors.clone());
     }
 
-    pub fn add_dependency(
+    pub fn add_dependencies(
         &mut self,
-        import: Import,
-        package: Ptr<RwLock<PackageSemanticAnalyzer>>,
+        dependencies: HashMap<PackagePath, Ptr<PackageContentSemantics>>,
     ) {
-        self.dependencies.insert(import, package);
+        self.dependencies = dependencies;
     }
 
     /// Query all symbols in the files and thus doing a full validation
@@ -1049,7 +1051,8 @@ impl PackageSemanticAnalyzer {
         }
 
         // package
-        for (import, _) in &self.dependencies {
+        let content = self.query_package_content();
+        for import in &content.imports {
             match &import.name {
                 ast::ImportName::Package => {
                     let path = import.path_buf();
@@ -1088,13 +1091,16 @@ impl PackageSemanticAnalyzer {
             return Some(FunctionCallBinding::Function(fun.clone()));
         }
 
-        for (import, dependency) in &self.dependencies {
+        let content = self.query_package_content();
+        for import in &content.imports {
             // only look in dot imports
             let ImportName::Dot = import.name else {
                 continue;
             };
-            let mut dependency = dependency.write().unwrap();
-            let dependency = dependency.query_package_content();
+
+            let Some(dependency) = self.dependencies.get(&import.path) else {
+                continue;
+            };
             if let Some(fun) = dependency.functions.get(&call.name) {
                 return Some(FunctionCallBinding::Function(fun.clone()));
             }

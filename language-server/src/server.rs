@@ -10,7 +10,7 @@ use czlanglib::{
     ast::{SelectorFieldType, SourcePosition, SourceSpan},
     format::{format_fun_signature, format_param, format_var_declaration},
     init,
-    project::{package_and_file_name, FileChange, Project},
+    project::{FileChange, Project},
     query::{find_in_file, QueryResult},
     semantics::{
         types::types_to_string, IdentifierBinding, PackageSemanticAnalyzer, TypeQueryContext,
@@ -61,11 +61,11 @@ fn lang_string(value: String) -> LanguageString {
 }
 
 impl Server {
-    pub fn new(connection: Connection, _current_dir: PathBuf) -> Self {
+    pub fn new(connection: Connection, current_dir: PathBuf) -> Self {
         Self {
             connection: Arc::new(connection),
             pool: threadpool::Builder::new().build(),
-            project: Arc::new(Mutex::new(Project::new(Box::new(DiskFS {})))),
+            project: Arc::new(Mutex::new(Project::new(Box::new(DiskFS {}), current_dir))),
         }
     }
 
@@ -229,8 +229,11 @@ impl Server {
             .collect::<Vec<_>>();
         let mut project = self.project.lock().unwrap();
         project.edit_file(url.clone(), changes);
-        let (package, file_name) = package_and_file_name(&PathBuf::from_str(&url).unwrap());
-        let Some(package) = project
+        let Some((package, file_name)) = project.package_and_file_name(&PathBuf::from_str(&url).unwrap()) else {
+            log::info!("File not in workspace: {:?}", url);
+            return Ok(());
+        };
+        let Some((package, _)) = project
             .query_package(&package) else {
                 return Ok(())
             };
@@ -596,9 +599,11 @@ impl Server {
         let project = self.project.clone();
         self.handle_feature_request(id, params, uri.clone(), move |request| {
             let url = uri.path().to_string();
-            let (package, file_name) = package_and_file_name(&PathBuf::from_str(&url).unwrap());
             let mut project = project.lock().unwrap();
-            let package = project.query_package(&package)?;
+            let Some((package, file_name)) = project.package_and_file_name(&PathBuf::from_str(&url).unwrap()) else {
+                return None;
+            };
+            let (package,_) = project.query_package(&package)?;
             drop(project);
             let mut package = package.write().unwrap();
             let Some(file) = package.files.get(&file_name).map(|f|f.clone()) else {
@@ -721,8 +726,8 @@ fn find_package_file(
     uri: &Url,
 ) -> Option<(Ptr<RwLock<PackageSemanticAnalyzer>>, OsString)> {
     let url = uri.path().to_string();
-    let (package, file_name) = package_and_file_name(&PathBuf::from_str(&url).unwrap());
     let mut project = project.lock().unwrap();
-    let package = project.query_package(&package)?;
+    let (package, file_name) = project.package_and_file_name(&PathBuf::from_str(&url).unwrap())?;
+    let (package, _) = project.query_package(&package)?;
     Some((package, file_name))
 }

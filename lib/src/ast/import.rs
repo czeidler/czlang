@@ -13,12 +13,19 @@ pub enum ImportName {
     Alias(String),
 }
 
+/// Relative path as imported
+pub type PackagePath = Vec<String>;
+
+pub fn root_package_path() -> PackagePath {
+    vec![]
+}
+
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Import {
     pub node: NodeData,
     pub name: ImportName,
 
-    pub path: Vec<String>,
+    pub path: PackagePath,
 }
 
 impl Import {
