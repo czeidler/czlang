@@ -169,3 +169,13 @@ Open the `vscode-extension/czlang` directory in VSCode and press `F5` to start a
 The server log is located in `lib/server.log`.
 
 The language server will work for all files with `.cz` extension.
+
+### Debugging the language server (VSCode)
+
+Enable ptrace to attach to foreign processes:
+```bash
+echo 0 | sudo tee /proc/sys/kernel/yama/ptrace_scope
+```
+
+Start extension from the `vscode-extension/czlang` directory (see above).
+In this root workspace start "Attach to Server" debug option and select the running language server.
