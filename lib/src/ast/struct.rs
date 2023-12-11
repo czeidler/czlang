@@ -82,6 +82,7 @@ fn parse_struct_field<'a>(
         node: NodeData {
             file_id: context.file_id,
             id: node.id(),
+            file_path: context.file_path.clone(),
             parent: parent.id(),
             span: SourceSpan::from_node(&node),
         },

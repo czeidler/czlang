@@ -60,6 +60,10 @@ fn lang_string(value: String) -> LanguageString {
     }
 }
 
+fn file_path_to_url(file_path: &str) -> Url {
+    Url::parse(&format!("file://{}", file_path)).unwrap()
+}
+
 impl Server {
     pub fn new(connection: Connection, current_dir: PathBuf) -> Self {
         Self {
@@ -464,8 +468,8 @@ impl Server {
                         return None;
                     };
                     match binding {
-                        IdentifierBinding::VarDeclaration(var) => var.name_node.span.clone(),
-                        IdentifierBinding::Parameter(param) => param.node.span,
+                        IdentifierBinding::VarDeclaration(var) => var.name_node.clone(),
+                        IdentifierBinding::Parameter(param) => param.node,
                         IdentifierBinding::PipeArg(_) => return None,
                         IdentifierBinding::Package(_) => {
                             // TODO collect files and goto these files
@@ -473,11 +477,11 @@ impl Server {
                         }
                     }
                 }
-                QueryResult::StructIdentifier(struct_dec) => struct_dec.name_node.span.clone(),
-                QueryResult::Function(fun) => fun.signature.name_node.span.clone(),
+                QueryResult::StructIdentifier(struct_dec) => struct_dec.name_node.clone(),
+                QueryResult::Function(fun) => fun.signature.name_node.clone(),
                 QueryResult::FunctionCall(fun) => {
                     if let Some(binding) = fun.binding {
-                        binding.as_function_signature().name_node.span.clone()
+                        binding.as_function_signature().name_node.clone()
                     } else {
                         return None;
                     }
@@ -492,7 +496,7 @@ impl Server {
 
                             if let Some(field) = parent.fields.iter().find(|f| f.name == identifier)
                             {
-                                field.name_node.span.clone()
+                                field.name_node.clone()
                             } else {
                                 return None;
                             }
@@ -500,18 +504,21 @@ impl Server {
                         SelectorFieldType::Call(_) => return None, // TODO
                     }
                 }
-                QueryResult::StructFieldInitialization(_, field) => field.name_node.span,
-                QueryResult::VarDeclaration(_, var) => var.name_node.span.clone(),
-                QueryResult::Parameter(_, param) => param.name_node.span,
+                QueryResult::StructFieldInitialization(_, field) => field.name_node,
+                QueryResult::VarDeclaration(_, var) => var.name_node.clone(),
+                QueryResult::Parameter(_, param) => param.name_node,
                 _ => return None,
             };
-            let target = Range::new(
-                Position::new(target.start.row as u32, target.start.column as u32),
-                Position::new(target.end.row as u32, target.end.column as u32),
+            let target_range = Range::new(
+                Position::new(
+                    target.span.start.row as u32,
+                    target.span.start.column as u32,
+                ),
+                Position::new(target.span.end.row as u32, target.span.end.column as u32),
             );
             Some(GotoDefinitionResponse::Scalar(Location {
-                uri: uri.as_ref().clone(),
-                range: target,
+                uri: file_path_to_url(&target.file_path),
+                range: target_range,
             }))
         })?;
         Ok(())
@@ -538,16 +545,16 @@ impl Server {
             };
             let usage_location: Vec<Location> = usages
                 .into_iter()
-                .map(|usage| usage.span)
-                .map(|span| {
-                    Range::new(
+                .map(|usage| {
+                    let span = usage.span;
+                    let range = Range::new(
                         Position::new(span.start.row as u32, span.start.column as u32),
                         Position::new(span.end.row as u32, span.end.column as u32),
-                    )
-                })
-                .map(|range| Location {
-                    uri: uri.as_ref().clone(),
-                    range,
+                    );
+                    Location {
+                        uri: file_path_to_url(&usage.file_path),
+                        range,
+                    }
                 })
                 .collect();
             Some(usage_location)

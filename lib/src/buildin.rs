@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
-use crate::ast::{
-    FunctionSignature, NodeData, Parameter, RefType, SourcePosition, SourceSpan, Type,
+use crate::{
+    ast::{FunctionSignature, NodeData, Parameter, RefType, SourcePosition, SourceSpan, Type},
+    types::Ptr,
 };
 
 pub struct Buildins {
@@ -11,6 +12,7 @@ pub struct Buildins {
 fn dummy_node(id: usize) -> NodeData {
     NodeData {
         file_id: 0,
+        file_path: Ptr::new("dummy.cz".to_string()),
         id: id,
         parent: 0,
         span: SourceSpan {

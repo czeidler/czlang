@@ -120,10 +120,10 @@ pub struct LangError {
 }
 
 impl LangError {
-    pub fn syntax_err(file_id: usize, node: &Node, msg: &str) -> Self {
+    pub fn syntax_err(file_id: usize, file_path: Ptr<String>, node: &Node, msg: &str) -> Self {
         LangError {
             kind: LangErrorKind::SyntaxError,
-            node: NodeData::from_node(node, file_id),
+            node: NodeData::from_node(node, file_id, file_path),
             msg: msg.to_string(),
         }
     }
@@ -143,15 +143,17 @@ pub type NodeId = (usize, usize);
 pub struct NodeData {
     pub id: usize,
     pub file_id: usize,
+    pub file_path: Ptr<String>,
     pub parent: usize,
     pub span: SourceSpan,
 }
 
 impl NodeData {
-    pub fn from_node(&node: &Node, file_id: usize) -> Self {
+    pub fn from_node(&node: &Node, file_id: usize, file_path: Ptr<String>) -> Self {
         NodeData {
             id: node.id(),
             file_id,
+            file_path,
             parent: node.parent().map(|n| n.id()).unwrap_or(0),
             span: SourceSpan::from_node(&node),
         }
@@ -170,20 +172,26 @@ impl NodeData {
 pub struct FileContext {
     pub file_id: usize,
     pub tree: Tree,
-    pub file_path: String,
+    pub file_path: Ptr<String>,
     pub source: String,
     pub parse_errors: Vec<LangError>,
 }
 
 impl FileContext {
     pub fn node_data(&self, node: &Node) -> NodeData {
-        NodeData::from_node(node, self.file_id)
+        NodeData::from_node(node, self.file_id, self.file_path.clone())
     }
 
-    pub fn parse(file_id: usize, file_path: String, source: String) -> Ptr<Self> {
+    pub fn parse(file_id: usize, file_path: Ptr<String>, source: String) -> Ptr<Self> {
         let tree = parse(&source, None);
         let mut parse_errors = Vec::new();
-        collect_errors(file_id, tree.root_node(), &source, &mut parse_errors);
+        collect_errors(
+            file_id,
+            file_path.clone(),
+            tree.root_node(),
+            &source,
+            &mut parse_errors,
+        );
         Ptr::new(FileContext {
             file_id,
             tree,
@@ -195,13 +203,19 @@ impl FileContext {
 
     pub fn parse_from_existing_tree(
         file_id: usize,
-        file_path: String,
+        file_path: Ptr<String>,
         source: String,
         old_tree: &Tree,
     ) -> Ptr<Self> {
         let tree = parse(&source, Some(old_tree));
         let mut parse_errors = Vec::new();
-        collect_errors(file_id, tree.root_node(), &source, &mut parse_errors);
+        collect_errors(
+            file_id,
+            file_path.clone(),
+            tree.root_node(),
+            &source,
+            &mut parse_errors,
+        );
         Ptr::new(FileContext {
             file_id,
             tree,
@@ -279,7 +293,13 @@ pub(crate) fn parse_usize(context: &Ptr<FileContext>, node: &Node) -> Option<usi
         .ok()
 }
 
-pub fn collect_errors(file_id: usize, node: Node, source: &str, errors: &mut Vec<LangError>) {
+pub fn collect_errors(
+    file_id: usize,
+    file_path: Ptr<String>,
+    node: Node,
+    source: &str,
+    errors: &mut Vec<LangError>,
+) {
     if !node.has_error() && !node.is_missing() {
         return;
     }
@@ -290,6 +310,7 @@ pub fn collect_errors(file_id: usize, node: Node, source: &str, errors: &mut Vec
         if current.is_error() || current.is_missing() {
             errors.push(LangError::syntax_err(
                 file_id,
+                file_path.clone(),
                 &current,
                 &error_to_string(&current, source),
             ));

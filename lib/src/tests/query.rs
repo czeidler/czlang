@@ -6,6 +6,7 @@ mod tests {
         ast::{root_package_path, FileContext, SourcePosition},
         query::{find_in_file, QueryResult},
         semantics::PackageSemanticAnalyzer,
+        types::Ptr,
     };
 
     #[test]
@@ -31,7 +32,7 @@ fun main() {
 }
 "#
         .to_string();
-        let file = FileContext::parse(0, "test.cz".to_string(), source_code);
+        let file = FileContext::parse(0, Ptr::new("test.cz".to_string()), source_code);
         let mut files = HashMap::new();
         files.insert(OsString::from("test.cz"), file.clone());
         let mut analyzer = PackageSemanticAnalyzer::new(root_package_path(), files);

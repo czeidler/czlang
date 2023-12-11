@@ -175,7 +175,7 @@ impl Project {
             self.file_id_counter = self.file_id_counter + 1;
             let file_context = FileContext::parse(
                 self.file_id_counter,
-                file_path.to_string_lossy().to_string(),
+                Ptr::new(file_path.to_string_lossy().to_string()),
                 source,
             );
             files.insert(file_name, file_context);
