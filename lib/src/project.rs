@@ -10,7 +10,7 @@ use std::{
 use tree_sitter::{InputEdit, Point};
 
 use crate::{
-    ast::{FileContext, LangError, PackagePath, SourceSpan},
+    ast::{FileContext, LangError, NodeData, NodeId, PackagePath, SourceSpan},
     semantics::{PackageContentSemantics, PackageSemanticAnalyzer},
     topological_sort::TopologicalSort,
     tree_sitter::parse,
@@ -284,6 +284,27 @@ impl Project {
         for usage in usages {
             self.packages.remove(usage);
         }
+    }
+
+    pub fn query_usage(
+        &self,
+        package: &mut PackageSemanticAnalyzer,
+        node_id: NodeId,
+    ) -> Vec<NodeData> {
+        let mut results = package.query_usage(node_id);
+
+        if let Some(usages) = self.usages.get(&package.path) {
+            for usage in usages {
+                let Some((package, _)) = self.packages.get(usage) else {
+                    continue;
+                };
+                let mut package = package.write().unwrap();
+                let mut package_usages = package.query_usage(node_id);
+                results.append(&mut package_usages);
+            }
+        }
+
+        results
     }
 }
 

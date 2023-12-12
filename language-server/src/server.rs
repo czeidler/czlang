@@ -199,7 +199,7 @@ impl Server {
     fn did_open(&mut self, mut params: DidOpenTextDocumentParams) -> Result<()> {
         normalize_uri(&mut params.text_document.uri);
         let Some((package, file_name)) =
-            find_package_file(self.project.clone(), &params.text_document.uri) else {
+            find_package_file(&self.project, &params.text_document.uri) else {
             return Ok(());
         };
         let mut package = package.write().unwrap();
@@ -295,7 +295,7 @@ impl Server {
         let position = params.text_document_position.position;
         let project = self.project.clone();
         self.handle_feature_request(id, params, uri.clone(), move |_request| {
-            let (package, file_name) = find_package_file(project, &uri)?;
+            let (package, file_name) = find_package_file(&project, &uri)?;
             let mut package = package.write().unwrap();
             let file = package.files.get(&file_name)?.clone();
 
@@ -329,7 +329,7 @@ impl Server {
 
         let project = self.project.clone();
         self.handle_feature_request(id, params, uri.clone(), move |_request| {
-            let (package, file_name) = find_package_file(project, &uri)?;
+            let (package, file_name) = find_package_file(&project, &uri)?;
             let mut package = package.write().unwrap();
             let file = package.files.get(&file_name)?.clone();
 
@@ -456,7 +456,7 @@ impl Server {
         let position = params.text_document_position_params.position;
         let project = self.project.clone();
         self.handle_feature_request(id, params, uri.clone(), move |_request| {
-            let (package, file_name) = find_package_file(project, &uri)?;
+            let (package, file_name) = find_package_file(&project, &uri)?;
             let mut package = package.write().unwrap();
             let file = package.files.get(&file_name)?.clone();
 
@@ -530,19 +530,27 @@ impl Server {
         let position = params.text_document_position.position;
         let project = self.project.clone();
         self.handle_feature_request(id, params, uri.clone(), move |_request| {
-            let (package, file_name) = find_package_file(project, &uri)?;
+            let (package, file_name) = find_package_file(&project, &uri)?;
             let mut package = package.write().unwrap();
             let file = package.files.get(&file_name)?.clone();
 
             let position = SourcePosition::new(position.line as usize, position.character as usize);
             let Some(result) = find_in_file(&mut package, &file, position) else { return None };
+            let project = project.lock().unwrap();
             let usages = match result {
-                QueryResult::Function(fun) => package.query_usage(fun.signature.name_node.id()),
-                QueryResult::VarDeclaration(_, var) => package.query_usage(var.name_node.id()),
-                QueryResult::Parameter(_, par) => package.query_usage(par.name_node.id()),
+                QueryResult::Function(fun) => {
+                    project.query_usage(&mut package, fun.signature.name_node.id())
+                }
+                QueryResult::VarDeclaration(_, var) => {
+                    project.query_usage(&mut package, var.name_node.id())
+                }
+                QueryResult::Parameter(_, par) => {
+                    project.query_usage(&mut package, par.name_node.id())
+                }
 
                 _ => return None,
             };
+            drop(project);
             let usage_location: Vec<Location> = usages
                 .into_iter()
                 .map(|usage| {
@@ -729,7 +737,7 @@ impl Server {
 }
 
 fn find_package_file(
-    project: Ptr<Mutex<Project>>,
+    project: &Ptr<Mutex<Project>>,
     uri: &Url,
 ) -> Option<(Ptr<RwLock<PackageSemanticAnalyzer>>, OsString)> {
     let url = uri.path().to_string();
