@@ -183,13 +183,13 @@ impl Project {
         if files.is_empty() {
             return None;
         }
-        let package = self.init_package(&package_path, files);
+        let package = self.init_package(package_path.clone(), files);
         Some(package)
     }
 
     fn init_package(
         &mut self,
-        path: &PackagePath,
+        path: PackagePath,
         files: HashMap<OsString, Ptr<FileContext>>,
     ) -> (
         Ptr<RwLock<PackageSemanticAnalyzer>>,
@@ -213,12 +213,12 @@ impl Project {
 
             // add current package to usages of the dependency
             let entry = self.usages.entry(import_path.clone()).or_insert(vec![]);
-            if !entry.contains(path) {
+            if !entry.contains(&path) {
                 entry.push(path.clone());
             }
         }
 
-        let dependencies = self.collect_all_deps(path.clone());
+        let dependencies = self.collect_all_deps(path);
         let mut pkg = package.write().unwrap();
         pkg.add_dependencies(dependencies);
         drop(pkg);
@@ -231,7 +231,7 @@ impl Project {
         path: PackagePath,
     ) -> HashMap<PackagePath, Ptr<PackageContentSemantics>> {
         let mut out = HashMap::new();
-        let mut ongoing = vec![path];
+        let mut ongoing = vec![path.clone()];
 
         while let Some(current) = ongoing.pop() {
             if out.contains_key(&current) {
@@ -241,7 +241,9 @@ impl Project {
                 continue;
             };
 
-            out.insert(current.clone(), dependencies.1.clone());
+            if current != path {
+                out.insert(current.clone(), dependencies.1.clone());
+            }
             for dependency in &dependencies.1.imports {
                 ongoing.push(dependency.path.clone());
             }
@@ -271,18 +273,27 @@ impl Project {
         let file = update_file(file, changes);
         package_files.insert(file_name, file);
 
-        self.invalidate_package(&package_path);
-        self.init_package(&package_path, package_files);
+        // Remove and invalidate the current package before clearing the usages otherwise we might indirectly init the
+        // current package twice
+        self.packages.remove(&package_path);
+        self.init_package(package_path.clone(), package_files);
+
+        self.invalidate_usages(&package_path);
     }
 
     /// Invalidate a package recursively and all packages that depend on it
-    fn invalidate_package(&mut self, package: &PackagePath) {
-        self.packages.remove(package);
-        let Some(usages) = self.usages.get(package) else {
+    fn invalidate_usages(&mut self, package: &PackagePath) {
+        let Some(usages) = self.usages.remove(package) else {
             return;
         };
-        for usage in usages {
-            self.packages.remove(usage);
+        for usage in usages.clone() {
+            let Some((pkg, _)) = self.packages.remove(&usage) else {
+                continue;
+            };
+            let pkg = pkg.write().unwrap();
+            let pkg_files = pkg.files.clone();
+            let pkg_path = pkg.path.clone();
+            self.init_package(pkg_path, pkg_files);
         }
     }
 
