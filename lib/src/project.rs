@@ -44,7 +44,7 @@ pub struct Project {
 
 impl Project {
     pub fn new(vfs: Box<dyn VirtualFileSystem>, base_path: PathBuf) -> Self {
-        let project_file = Project {
+        let mut project = Project {
             vfs,
             base_path,
             file_id_counter: 0,
@@ -52,7 +52,9 @@ impl Project {
             usages: HashMap::new(),
         };
 
-        project_file
+        // load full package tree
+        project.query_package(&vec![]);
+        project
     }
 
     pub fn package_and_file_name(&self, path: &PathBuf) -> Option<(PackagePath, OsString)> {
