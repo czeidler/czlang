@@ -236,18 +236,15 @@ impl Project {
         let mut ongoing = vec![path.clone()];
 
         while let Some(current) = ongoing.pop() {
-            if out.contains_key(&current) {
-                continue;
-            }
             let Some(dependencies) = self.packages.get(&current) else {
                 continue;
             };
 
-            if current != path {
-                out.insert(current.clone(), dependencies.1.clone());
-            }
+            out.insert(current.clone(), dependencies.1.clone());
             for dependency in &dependencies.1.imports {
-                ongoing.push(dependency.path.clone());
+                if !out.contains_key(&dependency.path) {
+                    ongoing.push(dependency.path.clone());
+                }
             }
         }
         out
