@@ -612,6 +612,39 @@ impl PackageSemanticAnalyzer {
         } else {
             None
         };
+        let single_identifier = single_type.as_ref().and_then(|t| match t {
+            Type::Struct(_) => Some(t.clone()),
+            Type::Either(value, _) => {
+                if value.len() != 1 {
+                    None
+                } else {
+                    let first = value.types().get(0).unwrap();
+                    match first {
+                        Type::Struct(_) => Some(first.clone()),
+                        _ => None,
+                    }
+                }
+            }
+            _ => None,
+        });
+        let found_struct = if let Some(identifier) = single_identifier {
+            let found_struct = match identifier.clone() {
+                Type::Struct(struct_def) => Some(struct_def),
+                _ => None,
+            };
+            if found_struct.is_none() {
+                self.errors.push(LangError::type_error(
+                    field_node,
+                    format!("{:?} not found or not a struct", identifier),
+                ));
+            };
+            found_struct
+        } else {
+            None
+        };
+        let binding = found_struct.map(|s| (SelectorFieldBinding::Struct(s)));
+
+        // combine errors
         let either_type = single_type.as_ref().and_then(|t| match t {
             Type::Either(value, err) => Some((value.clone(), err.clone())),
             _ => None,
@@ -630,42 +663,11 @@ impl PackageSemanticAnalyzer {
             Some(value_error) => SumType::from_type(Type::Either(value, value_error)),
             None => value,
         };
-        let single_identifier = single_type.and_then(|t| match t {
-            Type::Struct(_) => Some(t.clone()),
-            Type::Either(value, _) => {
-                if value.len() != 1 {
-                    None
-                } else {
-                    let first = value.types().get(0).unwrap();
-                    match first {
-                        Type::Struct(_) => Some(first.clone()),
-                        _ => None,
-                    }
-                }
-            }
-            _ => None,
-        });
-
-        let found_struct = if let Some(identifier) = single_identifier {
-            let found_struct = match identifier.clone() {
-                Type::Struct(struct_def) => Some(struct_def),
-                _ => None,
-            };
-            if found_struct.is_none() {
-                self.errors.push(LangError::type_error(
-                    field_node,
-                    format!("{:?} not found or not a struct", identifier),
-                ));
-            };
-            found_struct
-        } else {
-            None
-        };
 
         let semantics = SelectorFieldSemantics {
             field_types: field_types.clone(),
             r#type: full_type,
-            binding: found_struct.map(|s| (SelectorFieldBinding::Struct(s))),
+            binding,
             parent,
         };
         let existing = self
