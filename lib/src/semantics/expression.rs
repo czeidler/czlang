@@ -613,35 +613,19 @@ impl PackageSemanticAnalyzer {
             None
         };
         let single_identifier = single_type.as_ref().and_then(|t| match t {
-            Type::Struct(_) => Some(t.clone()),
             Type::Either(value, _) => {
                 if value.len() != 1 {
                     None
                 } else {
-                    let first = value.types().get(0).unwrap();
-                    match first {
-                        Type::Struct(_) => Some(first.clone()),
-                        _ => None,
-                    }
+                    Some(value.types().get(0).unwrap().clone())
                 }
             }
+            _ => Some(t.clone()),
+        });
+        let found_struct = single_identifier.and_then(|identifier| match &identifier {
+            Type::Struct(struct_def) => Some(struct_def.clone()),
             _ => None,
         });
-        let found_struct = if let Some(identifier) = single_identifier {
-            let found_struct = match identifier.clone() {
-                Type::Struct(struct_def) => Some(struct_def),
-                _ => None,
-            };
-            if found_struct.is_none() {
-                self.errors.push(LangError::type_error(
-                    field_node,
-                    format!("{:?} not found or not a struct", identifier),
-                ));
-            };
-            found_struct
-        } else {
-            None
-        };
         let binding = found_struct.map(|s| (SelectorFieldBinding::Struct(s)));
 
         // combine errors
