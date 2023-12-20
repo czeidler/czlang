@@ -484,7 +484,7 @@ impl PackageSemanticAnalyzer {
             self.bind_selector_field_to_struct(&select.root.node, &root_types, None, None);
         let Some(root_struct) = semantics.binding.map(|b| match &b {
             SelectorFieldBinding::Struct(s) => s.clone(),
-            SelectorFieldBinding::Method(_) => {todo!()},
+            SelectorFieldBinding::Package(_) => {todo!()},
         }) else {
             self.errors.push(LangError::type_error(
                 &select.root.node,
@@ -560,7 +560,7 @@ impl PackageSemanticAnalyzer {
             );
             if let Some(found_struct) = semantics.binding.map(|b| match &b {
                 SelectorFieldBinding::Struct(s) => s.clone(),
-                SelectorFieldBinding::Method(_) => todo!(),
+                SelectorFieldBinding::Package(_) => todo!(),
             }) {
                 current_struct = found_struct;
                 current_struct_type = semantics.r#type;
@@ -606,30 +606,25 @@ impl PackageSemanticAnalyzer {
         parent: Option<Ptr<Struct>>,
         parent_error: Option<SumType>,
     ) -> SelectorFieldSemantics {
-        let single_type = if field_types.len() == 1 {
-            let first = field_types.types().get(0).unwrap();
-            Some(first.clone())
-        } else {
-            None
-        };
-        let single_identifier = single_type.as_ref().and_then(|t| match t {
-            Type::Either(value, _) => {
-                if value.len() != 1 {
-                    None
+        let field_type = field_types.as_type();
+        let field_type_value = field_type.and_then(|t| match t {
+            Type::Either(value, _) => value.as_type(),
+            _ => Some(t),
+        });
+        let binding = field_type_value.and_then(|identifier| match &identifier {
+            Type::Struct(struct_def) => Some(SelectorFieldBinding::Struct(struct_def.clone())),
+            Type::Package(path) => {
+                if let Some(pkg) = self.dependencies.get(path) {
+                    Some(SelectorFieldBinding::Package(pkg.clone()))
                 } else {
-                    Some(value.types().get(0).unwrap().clone())
+                    None
                 }
             }
-            _ => Some(t.clone()),
-        });
-        let found_struct = single_identifier.and_then(|identifier| match &identifier {
-            Type::Struct(struct_def) => Some(struct_def.clone()),
             _ => None,
         });
-        let binding = found_struct.map(|s| (SelectorFieldBinding::Struct(s)));
 
         // combine errors
-        let either_type = single_type.as_ref().and_then(|t| match t {
+        let either_type = field_type.and_then(|t| match t {
             Type::Either(value, err) => Some((value.clone(), err.clone())),
             _ => None,
         });

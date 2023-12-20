@@ -1,7 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
     ffi::OsString,
-    path::PathBuf,
 };
 
 use super::{
@@ -76,7 +75,7 @@ pub enum IdentifierBinding {
     VarDeclaration(Ptr<VarDeclaration>),
     Parameter(Parameter),
     PipeArg(SumType),
-    Package(PathBuf),
+    Package(PackagePath),
 }
 
 #[derive(Debug, Clone)]
@@ -199,7 +198,7 @@ pub struct TypeIdentifierSemantics {
 #[derive(Debug, Clone)]
 pub enum SelectorFieldBinding {
     Struct(Ptr<Struct>),
-    Method(Ptr<Function>),
+    Package(Ptr<PackageContentSemantics>),
 }
 
 #[derive(Debug, Clone)]
@@ -1055,16 +1054,18 @@ impl PackageSemanticAnalyzer {
         for import in &content.imports {
             match &import.name {
                 ast::ImportName::Package => {
-                    let path = import.path_buf();
-                    let package_name = path.file_name().unwrap().to_string_lossy().to_string();
-                    if &package_name == identifier {
-                        return Some(IdentifierBinding::Package(path));
+                    let path = &import.path;
+                    let Some(package_name) = path.last() else {
+                        return None;
+                    };
+                    if &package_name == &identifier {
+                        return Some(IdentifierBinding::Package(path.clone()));
                     }
                 }
                 ast::ImportName::Dot => continue,
                 ast::ImportName::Alias(name) => {
                     if identifier == name {
-                        return Some(IdentifierBinding::Package(import.path_buf()));
+                        return Some(IdentifierBinding::Package(import.path.clone()));
                     }
                 }
             }

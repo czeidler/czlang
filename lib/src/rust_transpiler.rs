@@ -215,8 +215,8 @@ impl RustTranspiler {
                 return;
             }
             Type::Package(path) => {
-                let name = path.file_name().unwrap();
-                writer.write(&name.to_string_lossy().to_string());
+                let name = path.last().unwrap();
+                writer.write(&name);
                 return;
             }
         };

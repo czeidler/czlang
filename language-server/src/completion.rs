@@ -65,7 +65,7 @@ pub fn dot_completion(
                     SelectorFieldBinding::Struct(struct_dec) => {
                         return Some(struct_doc_completions(package, &struct_dec))
                     }
-                    SelectorFieldBinding::Method(_) => {}
+                    SelectorFieldBinding::Package(_) => {}
                 }
             }
         }

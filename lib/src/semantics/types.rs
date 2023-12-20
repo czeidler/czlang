@@ -1,8 +1,8 @@
 use crate::{
-    ast::{Struct, TypeParam, TypeParamType},
+    ast::{PackagePath, Struct, TypeParam, TypeParamType},
     types::Ptr,
 };
-use std::{fmt, path::PathBuf, slice::Iter, vec::IntoIter};
+use std::{fmt, slice::Iter, vec::IntoIter};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct SArray {
@@ -44,7 +44,7 @@ pub enum Type {
     StructTypeArgument(TypeParam),
 
     Closure(Ptr<ClosureType>),
-    Package(PathBuf),
+    Package(PackagePath),
 }
 
 impl Type {
@@ -255,6 +255,13 @@ impl SumType {
             name += part;
         }
         name
+    }
+
+    pub fn as_type(&self) -> Option<&Type> {
+        if self.types.len() != 1 {
+            return None;
+        }
+        self.types.get(0)
     }
 
     fn extract_first(&self) -> Option<&Type> {
