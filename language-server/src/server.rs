@@ -13,7 +13,8 @@ use czlanglib::{
     project::{FileChange, Project},
     query::{find_in_file, QueryResult},
     semantics::{
-        types::types_to_string, IdentifierBinding, PackageSemanticAnalyzer, TypeQueryContext,
+        types::types_to_string, IdentifierBinding, PackageSemanticAnalyzer, SelectorFieldBinding,
+        TypeQueryContext,
     },
     types::Ptr,
     vfs::DiskFS,
@@ -494,11 +495,17 @@ impl Server {
                                 None => return None,
                             };
 
-                            if let Some(field) = parent.fields.iter().find(|f| f.name == identifier)
-                            {
-                                field.name_node.clone()
-                            } else {
-                                return None;
+                            match parent {
+                                SelectorFieldBinding::Struct(st) => {
+                                    if let Some(field) =
+                                        st.fields.iter().find(|f| f.name == identifier)
+                                    {
+                                        field.name_node.clone()
+                                    } else {
+                                        return None;
+                                    }
+                                }
+                                SelectorFieldBinding::Package(_) => return None, // TODO
                             }
                         }
                         SelectorFieldType::Call(_) => return None, // TODO

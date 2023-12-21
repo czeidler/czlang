@@ -4,7 +4,7 @@ use crate::{
     ast::{
         BinaryExpression, BinaryOperator, EitherCheckExpression, Expression, ExpressionType, Field,
         IfAlternative, IfExpression, LangError, NodeData, PipeExpression, SelectorExpression,
-        SelectorFieldType, StringTemplatePart, Struct, StructFieldInitialization, UnaryOperator,
+        SelectorFieldType, StringTemplatePart, StructFieldInitialization, UnaryOperator,
     },
     semantics::{
         FunctionCallBinding, IdentifierBinding, IfExpressionSemantics, PipeSemantics,
@@ -480,31 +480,27 @@ impl PackageSemanticAnalyzer {
         let root_types = self
             .validate_expression(flow, context, &select.root, is_assignment)
             .into_types()?;
-        let semantics =
-            self.bind_selector_field_to_struct(&select.root.node, &root_types, None, None);
-        let Some(root_struct) = semantics.binding.map(|b| match &b {
-            SelectorFieldBinding::Struct(s) => s.clone(),
-            SelectorFieldBinding::Package(_) => {todo!()},
-        }) else {
+        let semantics = self.bind_selector_field(&select.root.node, &root_types, None, None);
+        let Some(binding) = semantics.binding else {
             self.errors.push(LangError::type_error(
                 &select.root.node,
                 format!(
-                    "Struct expected but got {}",
+                    "Struct or package expected but got {}",
                     types_to_string(root_types.types())
                 ),
             ));
             return None
         };
-        let mut current_struct: Ptr<Struct> = root_struct;
-        let mut current_struct_type = semantics.r#type;
+        let mut current_binding = binding;
+        let mut current_type = semantics.r#type;
         for (i, field) in select.fields.iter().enumerate() {
-            let current_struct_error = current_struct_type.err();
+            let current_struct_error = current_type.err();
             if current_struct_error.is_some() && !field.optional_chaining {
                 self.errors.push(LangError::type_error(
                     &field.node,
                     format!(
                         "{} is error/nullable; use optional chaining '?.'",
-                        current_struct.name
+                        field.field.name()
                     ),
                 ));
                 return None;
@@ -514,56 +510,61 @@ impl PackageSemanticAnalyzer {
                     &field.node,
                     format!(
                         "Optional chaining operator '?.' not allowed on none error/nullable struct {}",
-                        current_struct.name
+                        field.field.name()
                     ),
                 ));
                 return None;
             }
 
             let field_types = match &field.field {
-                SelectorFieldType::Identifier(field_identifier) => {
-                    let Some(found_field) = current_struct.fields.iter().find(|f|&f.name == field_identifier) else {
-                            self.errors.push(LangError::type_error(
-                                &field.node,
-                                format!("{} is not field of {}", field_identifier, current_struct.name),
-                            ));
-                            return None;
-                        };
+                SelectorFieldType::Identifier(field_identifier) => match &current_binding {
+                    SelectorFieldBinding::Struct(st) => {
+                        let Some(found_field) = st.fields.iter().find(|f|&f.name == field_identifier) else {
+                                self.errors.push(LangError::type_error(
+                                    &field.node,
+                                    format!("{} is not field of {}", field_identifier, field.field.name()),
+                                ));
+                                return None;
+                            };
 
-                    found_field.types.clone()
-                }
+                        found_field.types.clone()
+                    }
+                    SelectorFieldBinding::Package(_) => todo!(),
+                },
                 SelectorFieldType::Call(call) => {
-                    // TODO: support generic struct instances
-                    let Some(method) = self.validate_method_call(&current_struct, call).binding else {
-                        self.errors.push(LangError::type_error(
-                            &field.node,
-                            format!("Not a struct method: {}", call.name),
-                        ));
-                        return None;
-                    };
-                    method
-                        .signature
-                        .return_type
-                        .as_ref()
-                        .map(|r| r.types.clone())
-                        .unwrap_or(vec![])
+                    match &current_binding {
+                        SelectorFieldBinding::Struct(st) => {
+                            // TODO: support generic struct instances
+                            let Some(method) = self.validate_method_call(&st, call).binding else {
+                                self.errors.push(LangError::type_error(
+                                    &field.node,
+                                    format!("Not a struct method: {}", call.name),
+                                ));
+                                return None;
+                            };
+                            method
+                                .signature
+                                .return_type
+                                .as_ref()
+                                .map(|r| r.types.clone())
+                                .unwrap_or(vec![])
+                        }
+                        SelectorFieldBinding::Package(_) => todo!(),
+                    }
                 }
             };
             let field_types =
                 self.query_types(&TypeQueryContext::from_block(&context.block), &field_types);
 
-            let semantics = self.bind_selector_field_to_struct(
+            let semantics = self.bind_selector_field(
                 &field.node,
                 &field_types,
-                Some(current_struct.clone()),
+                Some(current_binding.clone()),
                 current_struct_error.clone(),
             );
-            if let Some(found_struct) = semantics.binding.map(|b| match &b {
-                SelectorFieldBinding::Struct(s) => s.clone(),
-                SelectorFieldBinding::Package(_) => todo!(),
-            }) {
-                current_struct = found_struct;
-                current_struct_type = semantics.r#type;
+            if let Some(binding) = semantics.binding {
+                current_binding = binding;
+                current_type = semantics.r#type;
             } else if i == select.fields.len() - 1 {
                 // last selector field
                 let current_error = semantics.r#type.err();
@@ -586,7 +587,7 @@ impl PackageSemanticAnalyzer {
                 // all but the last field must be structs
                 self.errors.push(LangError::type_error(
                     &field.node,
-                    format!("Field doesn't point to a struct"),
+                    format!("Field doesn't point to a struct or package"),
                 ));
                 return None;
             }
@@ -599,11 +600,11 @@ impl PackageSemanticAnalyzer {
     /// 2) the field type either the root expression type or the type of the fields
     /// 3) the parent struct, None for the root expression
     /// 4) the current error, if any
-    fn bind_selector_field_to_struct(
+    fn bind_selector_field(
         &mut self,
         field_node: &NodeData,
         field_types: &SumType,
-        parent: Option<Ptr<Struct>>,
+        parent: Option<SelectorFieldBinding>,
         parent_error: Option<SumType>,
     ) -> SelectorFieldSemantics {
         let field_type = field_types.as_type();

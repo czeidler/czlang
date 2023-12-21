@@ -57,6 +57,15 @@ pub enum SelectorFieldType {
     Call(FunctionCall),
 }
 
+impl SelectorFieldType {
+    pub fn name(&self) -> String {
+        match self {
+            SelectorFieldType::Identifier(id) => id.clone(),
+            SelectorFieldType::Call(call) => call.name.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SelectorField {
     pub node: NodeData,

@@ -208,7 +208,7 @@ pub struct SelectorFieldSemantics {
     /// This type contains potential accumulated errors types from previous selector fields.
     pub r#type: SumType,
     /// Parent struct of the field, e.g. `parent.field`
-    pub parent: Option<Ptr<Struct>>,
+    pub parent: Option<SelectorFieldBinding>,
     pub binding: Option<SelectorFieldBinding>,
 }
 
