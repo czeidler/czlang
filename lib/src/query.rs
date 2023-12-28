@@ -6,7 +6,7 @@ use crate::{
     },
     semantics::{
         types::SumType, ExpressionSemantics, FunctionCallSemantics, PackageContentSemantics,
-        PackageSemanticAnalyzer, SelectorFieldSemantics, TypeBinding, TypeQueryContext,
+        PackageSemanticAnalyzer, SelectorFieldSemantics, TypeBinding,
     },
     types::Ptr,
 };
@@ -24,7 +24,7 @@ pub enum QueryResult {
     StructFieldDeclaration(Ptr<Struct>, Field),
     StructFieldInitialization(Ptr<Struct>, Field),
     /// the found SelectorField and the SelectorFieldSemantics
-    SelectorField((SelectorField, SelectorFieldSemantics)),
+    SelectorField((Ptr<Block>, SelectorField, SelectorFieldSemantics)),
 }
 
 pub fn find_in_file(
@@ -219,37 +219,20 @@ fn find_in_expression(
             None
         }
         ExpressionType::StructInitialization(struct_init) => {
+            let Some(struct_dec) = analyzer
+                .query_struct_initialization(&block.block, &struct_init)
+                .and_then(|r| r.binding)
+                .and_then(|binding| match binding {
+                    TypeBinding::Struct(struct_dec) => Some(struct_dec),
+                    _ => None,
+                }) else {
+                return None;
+            };
+
             if struct_init.name_node.contains(position) {
-                return analyzer
-                    .query_struct_initialization(
-                        TypeQueryContext::Function(block.block.fun().signature.clone()),
-                        &struct_init,
-                        &struct_init.name,
-                    )
-                    .and_then(|r| r.binding)
-                    .and_then(|binding| match binding {
-                        TypeBinding::Struct(struct_dec) => {
-                            Some(QueryResult::StructIdentifier(struct_dec.clone()))
-                        }
-                        _ => None,
-                    });
+                return Some(QueryResult::StructIdentifier(struct_dec));
             }
             for field in &struct_init.fields {
-                let Some(struct_dec) = analyzer
-                    .query_struct_initialization(
-                        TypeQueryContext::Function(block.block.fun().signature.clone()),
-                        &struct_init,
-                        &struct_init.name,
-                    )
-                    .and_then(|r| r.binding)
-                    .and_then(|binding| match binding {
-                        TypeBinding::Struct(struct_dec) => {
-                            Some(struct_dec)
-                        }
-                        _ => None,
-                    }) else {
-                    continue;
-                };
                 if field.name_node.contains(position) {
                     if let Some(f) = analyzer.query_struct_field_initializer(block.block, &field) {
                         return Some(QueryResult::StructFieldInitialization(struct_dec, f));
@@ -362,7 +345,11 @@ fn find_in_selector_field(
         return None;
     };
 
-    return Some(QueryResult::SelectorField((selector_field.clone(), result)));
+    return Some(QueryResult::SelectorField((
+        block.block.clone(),
+        selector_field.clone(),
+        result,
+    )));
 }
 
 fn find_completions_in_if(

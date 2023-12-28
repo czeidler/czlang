@@ -55,6 +55,7 @@ pub struct StructInitialization {
 pub enum SelectorFieldType {
     Identifier(String),
     Call(FunctionCall),
+    StructInit(StructInitialization),
 }
 
 impl SelectorFieldType {
@@ -62,6 +63,7 @@ impl SelectorFieldType {
         match self {
             SelectorFieldType::Identifier(id) => id.clone(),
             SelectorFieldType::Call(call) => call.name.clone(),
+            SelectorFieldType::StructInit(st) => st.name.clone(),
         }
     }
 }
@@ -289,6 +291,9 @@ fn parse_selector_field(
     let field = match field.kind() {
         "identifier" => SelectorFieldType::Identifier(node_text(&field, context)?),
         "function_call" => SelectorFieldType::Call(parse_function_call(context, &field, block)?),
+        "struct_initialization" => {
+            SelectorFieldType::StructInit(parse_struct_initialization(context, &field, block)?)
+        }
         _ => return None,
     };
     Some(SelectorField {

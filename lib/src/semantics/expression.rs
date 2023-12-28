@@ -2,9 +2,10 @@ use std::collections::HashMap;
 
 use crate::{
     ast::{
-        BinaryExpression, BinaryOperator, EitherCheckExpression, Expression, ExpressionType, Field,
-        IfAlternative, IfExpression, LangError, NodeData, PipeExpression, SelectorExpression,
-        SelectorFieldType, StringTemplatePart, StructFieldInitialization, UnaryOperator,
+        self, BinaryExpression, BinaryOperator, EitherCheckExpression, Expression, ExpressionType,
+        Field, IfAlternative, IfExpression, LangError, NodeData, PipeExpression, RefType,
+        SelectorExpression, SelectorFieldType, StringTemplatePart, StructFieldInitialization,
+        UnaryOperator,
     },
     semantics::{
         FunctionCallBinding, IdentifierBinding, IfExpressionSemantics, PipeSemantics,
@@ -529,7 +530,13 @@ impl PackageSemanticAnalyzer {
 
                         found_field.types.clone()
                     }
-                    SelectorFieldBinding::Package(_) => todo!(),
+                    SelectorFieldBinding::Package(_) => {
+                        self.errors.push(LangError::type_error(
+                            &field.node,
+                            format!("Unexpected identifier"),
+                        ));
+                        return None;
+                    }
                 },
                 SelectorFieldType::Call(call) => {
                     match &current_binding {
@@ -549,8 +556,26 @@ impl PackageSemanticAnalyzer {
                                 .map(|r| r.types.clone())
                                 .unwrap_or(vec![])
                         }
-                        SelectorFieldBinding::Package(_) => todo!(),
+                        SelectorFieldBinding::Package(pkg) => {
+                            let Some(fun) = self.validate_pkg_fun_call(call, pkg) else {
+                                return None;
+                            };
+                            fun.signature
+                                .return_type
+                                .as_ref()
+                                .map(|r| r.types.clone())
+                                .unwrap_or(vec![])
+                        }
                     }
+                }
+                SelectorFieldType::StructInit(struct_init) => {
+                    let Some(_) = self.query_struct_initialization(&context.block, struct_init) else {
+                        return None;
+                    };
+                    vec![RefType::value(
+                        struct_init.node.clone(),
+                        ast::Type::Identifier(struct_init.name.clone()),
+                    )]
                 }
             };
             let field_types =

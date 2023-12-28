@@ -641,6 +641,9 @@ impl RustTranspiler {
                 SelectorFieldType::Call(call) => {
                     self.transpile_method_call(analyzer, call, block, writer);
                 }
+                SelectorFieldType::StructInit(struct_init) => {
+                    self.transpile_struct_init(analyzer, struct_init, block, writer)
+                }
             };
 
             if let (Some(field_err), Some(expr_target_err)) =

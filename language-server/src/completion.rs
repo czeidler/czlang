@@ -59,7 +59,7 @@ pub fn dot_completion(
                 IdentifierBinding::Package(_) => {}
             }
         }
-        QueryResult::SelectorField((_, field_semantics)) => {
+        QueryResult::SelectorField((_, _, field_semantics)) => {
             if let Some(binding) = field_semantics.binding {
                 match binding {
                     SelectorFieldBinding::Struct(struct_dec) => {

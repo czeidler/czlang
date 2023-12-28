@@ -14,7 +14,7 @@ use czlanglib::{
     query::{find_in_file, QueryResult},
     semantics::{
         types::types_to_string, IdentifierBinding, PackageSemanticAnalyzer, SelectorFieldBinding,
-        TypeQueryContext,
+        TypeBinding, TypeQueryContext,
     },
     types::Ptr,
     vfs::DiskFS,
@@ -424,7 +424,7 @@ impl Server {
                     format!("{} {}", field.name, types_to_string(types.types()))
                 }
                 QueryResult::SelectorField(result) => {
-                    format!("field {}", types_to_string(result.1.r#type.types()))
+                    format!("field {}", types_to_string(result.2.r#type.types()))
                 }
                 QueryResult::StructIdentifier(struct_dec) => {
                     format!("struct {}", struct_dec.name)
@@ -487,10 +487,10 @@ impl Server {
                         return None;
                     }
                 }
-                QueryResult::SelectorField(result) => {
-                    match result.0.field {
+                QueryResult::SelectorField((block, field, field_semantics)) => {
+                    match field.field {
                         SelectorFieldType::Identifier(identifier) => {
-                            let parent = match result.1.parent {
+                            let parent = match field_semantics.parent {
                                 Some(parent) => parent,
                                 None => return None,
                             };
@@ -505,10 +505,19 @@ impl Server {
                                         return None;
                                     }
                                 }
-                                SelectorFieldBinding::Package(_) => return None, // TODO
+                                SelectorFieldBinding::Package(_) => return None,
                             }
                         }
-                        SelectorFieldType::Call(_) => return None, // TODO
+                        SelectorFieldType::Call(_) => return None,
+                        SelectorFieldType::StructInit(struct_init) => {
+                            let Some(binding) = package.query_struct_initialization(&block, &struct_init).and_then(|s| s.binding) else {
+                                return None;
+                            };
+                            match binding {
+                                TypeBinding::Struct(st) => st.name_node.clone(),
+                                TypeBinding::StructTypeArgument(_) => return None,
+                            }
+                        }
                     }
                 }
                 QueryResult::StructFieldInitialization(_, field) => field.name_node,

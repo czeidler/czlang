@@ -38,7 +38,7 @@ fun main() {
         let mut analyzer = PackageSemanticAnalyzer::new(root_package_path(), files);
         let result = find_in_file(&mut analyzer, &file, SourcePosition::new(17, 24)).unwrap();
         match result {
-            QueryResult::SelectorField((_, semantics)) => {
+            QueryResult::SelectorField((_, _, semantics)) => {
                 assert!(semantics.binding.is_some());
             }
             _ => assert!(false, "selector field expected"),

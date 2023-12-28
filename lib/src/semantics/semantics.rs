@@ -408,15 +408,14 @@ impl PackageSemanticAnalyzer {
 
     pub fn query_struct_initialization(
         &mut self,
-        context: TypeQueryContext,
+        block: &Block,
         struct_init: &StructInitialization,
-        identifier: &String,
     ) -> Option<TypeIdentifierSemantics> {
         if let Some(s) = self.type_identifiers.get(&struct_init.node.id()) {
             return Some(s.clone());
         }
 
-        self.bind_type_identifier(&context, &struct_init.node, identifier);
+        self.query_fun(&block.fun());
 
         self.type_identifiers
             .get(&struct_init.node.id())
@@ -541,6 +540,7 @@ impl PackageSemanticAnalyzer {
         }
     }
 
+    /// Queries all ast RefTypes and maps them to a SumType
     pub fn query_types(&mut self, context: &TypeQueryContext, types: &Vec<RefType>) -> SumType {
         SumType::from_types(
             &types
@@ -752,6 +752,7 @@ impl PackageSemanticAnalyzer {
             .unwrap_or_default()
     }
 
+    /// Bind a string identifier to the actual type
     pub(crate) fn bind_type_identifier(
         &mut self,
         context: &TypeQueryContext,
@@ -782,6 +783,7 @@ impl PackageSemanticAnalyzer {
             TypeQueryContext::Function(_) => {}
             TypeQueryContext::StructMethodReceiver => {}
         }
+
         let file = self.query_package_content();
         let Some(struct_def) = file.structs.get(identifier).map(|s| s.clone()) else {
             self.errors.push(LangError::type_error(
@@ -790,7 +792,7 @@ impl PackageSemanticAnalyzer {
             ));
             return None;
         };
-        // Just make struct is in the system
+        // Just make sure the struct is in the system
         self.query_struct(&struct_def);
 
         let binding = Some(TypeBinding::Struct(struct_def));
@@ -1074,8 +1076,19 @@ impl PackageSemanticAnalyzer {
         return None;
     }
 
+    pub(crate) fn validate_pkg_fun_call(
+        &mut self,
+        call: &FunctionCall,
+        pkg: &PackageContentSemantics,
+    ) -> Option<Ptr<Function>> {
+        pkg.functions.get(&call.name).map(|f| f.clone())
+        // TODO validate parameters
+    }
+
     pub(crate) fn validate_fun_call(&mut self, call: &FunctionCall) -> FunctionCallSemantics {
         let binding = self.lookup_function_declaration(call);
+
+        // TODO validate parameters
 
         let semantics = FunctionCallSemantics { binding };
         let existing = self
@@ -1124,6 +1137,9 @@ impl PackageSemanticAnalyzer {
         call: &FunctionCall,
     ) -> MethodCallSemantics {
         let binding = self.lookup_struct_method(receiver, call);
+
+        // TODO validate parameters
+
         let semantics = MethodCallSemantics { binding };
         let existing = self.method_calls.insert(call.node.id(), semantics.clone());
         assert!(existing.is_none());
