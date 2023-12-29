@@ -146,8 +146,8 @@ impl PackageSemanticAnalyzer {
             .types
             .as_ref()
             .map(|types| {
-                self.bind_types(
-                    TypeQueryContext::Function(block.fun().signature.clone()),
+                self.query_types(
+                    &TypeQueryContext::Function(block.fun().signature.clone()),
                     types,
                 )
             })

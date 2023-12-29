@@ -532,26 +532,15 @@ impl PackageSemanticAnalyzer {
 
     /// Queries all ast RefTypes and maps them to a SumType
     pub fn query_types(&mut self, context: &TypeQueryContext, types: &Vec<RefType>) -> SumType {
-        SumType::from_types(
-            &types
-                .iter()
-                .map(|it| self.bind_ref_type(context, it))
-                .filter_map(|it| it)
-                .collect(),
-        )
-    }
-
-    pub(crate) fn bind_types(
-        &mut self,
-        context: TypeQueryContext,
-        types: &Vec<RefType>,
-    ) -> SumType {
         let Some(node_id) = types.get(0).map(|t| t.node.id()) else {
             return SumType::empty();
         };
+        if let Some(existing) = self.types.get(&node_id) {
+            return existing.clone();
+        }
         let mut result_types = vec![];
         for ast_type in types {
-            let Some(t) = self.bind_ref_type(&context, ast_type) else {
+            let Some(t) = self.bind_ref_type(context, ast_type) else {
                 continue;
             };
             if result_types.iter().find(|v| *v == &t).is_none() {
@@ -565,7 +554,6 @@ impl PackageSemanticAnalyzer {
         }
 
         let result_types = SumType::new(result_types);
-
         let existing = self.types.insert(node_id, result_types.clone());
         assert!(existing.is_none());
 
@@ -638,7 +626,7 @@ impl PackageSemanticAnalyzer {
             return Some(s.clone());
         }
 
-        Some(self.bind_types(TypeQueryContext::Function(signature.clone()), &param.types))
+        Some(self.query_types(&TypeQueryContext::Function(signature.clone()), &param.types))
     }
 
     pub fn query_return_type(&mut self, signature: &FunctionSignature) -> Option<SumType> {
@@ -652,8 +640,8 @@ impl PackageSemanticAnalyzer {
             return Some(s.clone());
         }
 
-        Some(self.bind_types(
-            TypeQueryContext::Function(signature.clone()),
+        Some(self.query_types(
+            &TypeQueryContext::Function(signature.clone()),
             &return_type.types,
         ))
     }
@@ -666,7 +654,7 @@ impl PackageSemanticAnalyzer {
             return Some(s.clone());
         }
 
-        Some(self.bind_types(TypeQueryContext::Struct(st.clone()), &field.types))
+        Some(self.query_types(&TypeQueryContext::Struct(st.clone()), &field.types))
     }
 
     /// node_id is the node id of the identifier expression
