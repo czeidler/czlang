@@ -6,7 +6,7 @@ use crate::{
     },
     semantics::{
         types::SumType, ExpressionSemantics, FunctionCallSemantics, PackageContentSemantics,
-        PackageSemanticAnalyzer, SelectorFieldSemantics, TypeBinding,
+        PackageSemanticAnalyzer, SelectorFieldSemantics,
     },
     types::Ptr,
 };
@@ -220,12 +220,7 @@ fn find_in_expression(
         }
         ExpressionType::StructInitialization(struct_init) => {
             let Some(struct_dec) = analyzer
-                .query_struct_initialization(&block.block, &struct_init)
-                .and_then(|r| r.binding)
-                .and_then(|binding| match binding {
-                    TypeBinding::Struct(struct_dec) => Some(struct_dec),
-                    _ => None,
-                }) else {
+                .query_struct_initialization(&block.block, &struct_init) else {
                 return None;
             };
 

@@ -14,7 +14,7 @@ use czlanglib::{
     query::{find_in_file, QueryResult},
     semantics::{
         types::types_to_string, IdentifierBinding, PackageSemanticAnalyzer, SelectorFieldBinding,
-        TypeBinding, TypeQueryContext,
+        TypeQueryContext,
     },
     types::Ptr,
     vfs::DiskFS,
@@ -510,13 +510,10 @@ impl Server {
                         }
                         SelectorFieldType::Call(_) => return None,
                         SelectorFieldType::StructInit(struct_init) => {
-                            let Some(binding) = package.query_struct_initialization(&block, &struct_init).and_then(|s| s.binding) else {
+                            let Some(st) = package.query_struct_initialization(&block, &struct_init) else {
                                 return None;
                             };
-                            match binding {
-                                TypeBinding::Struct(st) => st.name_node.clone(),
-                                TypeBinding::StructTypeArgument(_) => return None,
-                            }
+                            st.name_node.clone()
                         }
                     }
                 }
@@ -562,6 +559,9 @@ impl Server {
                 }
                 QueryResult::Parameter(_, par) => {
                     project.query_usage(&mut package, par.name_node.id())
+                }
+                QueryResult::StructDeclaration(st) => {
+                    project.query_usage(&mut package, st.name_node.id())
                 }
 
                 _ => return None,

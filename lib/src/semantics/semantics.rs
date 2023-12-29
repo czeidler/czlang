@@ -233,13 +233,13 @@ pub struct PackageSemanticAnalyzer {
     package_semantics: Option<Ptr<PackageContentSemantics>>,
     /// struct declarations
     pub structs: HashMap<NodeId, StructSemantics>,
+    /// Bindings to the struct declaration that have been initialized
+    pub(crate) struct_inits: HashMap<NodeId, Option<Ptr<Struct>>>,
 
     /// Just keeps track of validated imports
     imports: HashSet<NodeId>,
     /// Just keeps track of analyzed/checked functions
     fun_symbols: HashSet<NodeId>,
-    /// Bindings for an type identifier, e.g. a struct name
-    pub(crate) type_identifiers: HashMap<NodeId, TypeIdentifierSemantics>,
     /// Validated SumType for type nodes
     types: HashMap<NodeId, SumType>,
     pub(crate) if_expressions: HashMap<NodeId, IfExpressionSemantics>,
@@ -270,9 +270,9 @@ impl PackageSemanticAnalyzer {
             errors: Vec::new(),
 
             structs: HashMap::new(),
+            struct_inits: HashMap::new(),
             imports: HashSet::new(),
             fun_symbols: HashSet::new(),
-            type_identifiers: HashMap::new(),
             types: HashMap::new(),
             if_expressions: HashMap::new(),
             expressions: HashMap::new(),
@@ -410,19 +410,20 @@ impl PackageSemanticAnalyzer {
         &mut self,
         block: &Block,
         struct_init: &StructInitialization,
-    ) -> Option<TypeIdentifierSemantics> {
-        if let Some(s) = self.type_identifiers.get(&struct_init.node.id()) {
-            return Some(s.clone());
+    ) -> Option<Ptr<Struct>> {
+        if let Some(s) = self.struct_inits.get(&struct_init.node.id()) {
+            return s.clone();
         }
 
         self.query_fun(&block.fun());
 
-        self.type_identifiers
+        self.struct_inits
             .get(&struct_init.node.id())
-            .map(|s| s.clone())
+            .and_then(|s| s.clone())
     }
 
-    fn query_type(
+    /// Only binds non-trivial types such as type identifiers
+    fn bind_type(
         &mut self,
         context: &TypeQueryContext,
         node: &NodeData,
@@ -442,7 +443,7 @@ impl PackageSemanticAnalyzer {
                     array
                         .types
                         .iter()
-                        .map(|it| self.query_ref_type(context, it))
+                        .map(|it| self.bind_ref_type(context, it))
                         .filter_map(|it| it)
                         .collect(),
                 ),
@@ -453,7 +454,7 @@ impl PackageSemanticAnalyzer {
                     slice
                         .types
                         .iter()
-                        .map(|it| self.query_ref_type(context, it))
+                        .map(|it| self.bind_ref_type(context, it))
                         .filter_map(|it| it)
                         .collect(),
                 ),
@@ -462,37 +463,26 @@ impl PackageSemanticAnalyzer {
                 SumType::from_types(
                     &value
                         .iter()
-                        .map(|it| self.query_ref_type(context, it))
+                        .map(|it| self.bind_ref_type(context, it))
                         .filter_map(|it| it)
                         .collect(),
                 ),
                 SumType::from_types(
                     &err.iter()
-                        .map(|it| self.query_ref_type(context, it))
+                        .map(|it| self.bind_ref_type(context, it))
                         .filter_map(|it| it)
                         .collect(),
                 ),
             ),
             ast::Type::Identifier(ident) => {
-                if let Some(s) = self.type_identifiers.get(&node.id()) {
-                    return s.binding.as_ref().map(|b| match b {
+                return self
+                    .lookup_type_identifier(context, &node, ident)
+                    .map(|binding| match binding {
                         TypeBinding::Struct(st) => Type::Struct(st.clone()),
                         TypeBinding::StructTypeArgument(arg) => {
                             Type::StructTypeArgument(arg.clone())
                         }
                     });
-                }
-
-                self.bind_type_identifier(context, &node, ident);
-
-                return self.type_identifiers.get(&node.id()).and_then(|s| {
-                    s.binding.as_ref().map(|b| match b {
-                        TypeBinding::Struct(st) => Type::Struct(st.clone()),
-                        TypeBinding::StructTypeArgument(arg) => {
-                            Type::StructTypeArgument(arg.clone())
-                        }
-                    })
-                });
             }
             ast::Type::Closure(closure) => Type::Closure(Ptr::new(ClosureType {
                 context: closure.context.as_ref().and_then(|c| {
@@ -508,7 +498,7 @@ impl PackageSemanticAnalyzer {
                                 ));
                             }
                             let t = &types[0];
-                            ClosureContext::Type(self.query_type(context, &t.node, &t.r#type)?)
+                            ClosureContext::Type(self.bind_type(context, &t.node, &t.r#type)?)
                         }
                     })
                 }),
@@ -526,17 +516,17 @@ impl PackageSemanticAnalyzer {
         Some(t)
     }
 
-    /// Query the matching Type.
-    /// Binds and caches identifier if needed.
-    pub fn query_ref_type(&mut self, context: &TypeQueryContext, r#type: &RefType) -> Option<Type> {
+    /// Binds the matching Type.
+    /// Simple types are mapped on the fly while identifier are bound and cached.
+    fn bind_ref_type(&mut self, context: &TypeQueryContext, r#type: &RefType) -> Option<Type> {
         if r#type.is_reference {
-            let main_type = self.query_type(context, &r#type.node, &r#type.r#type)?;
+            let main_type = self.bind_type(context, &r#type.node, &r#type.r#type)?;
             Some(Type::RefType(SRefType {
                 is_mut: r#type.is_mut,
                 r#type: Ptr::new(main_type),
             }))
         } else {
-            self.query_type(context, &r#type.node, &r#type.r#type)
+            self.bind_type(context, &r#type.node, &r#type.r#type)
         }
     }
 
@@ -545,10 +535,95 @@ impl PackageSemanticAnalyzer {
         SumType::from_types(
             &types
                 .iter()
-                .map(|it| self.query_ref_type(context, it))
+                .map(|it| self.bind_ref_type(context, it))
                 .filter_map(|it| it)
                 .collect(),
         )
+    }
+
+    pub(crate) fn bind_types(
+        &mut self,
+        context: TypeQueryContext,
+        types: &Vec<RefType>,
+    ) -> SumType {
+        let Some(node_id) = types.get(0).map(|t| t.node.id()) else {
+            return SumType::empty();
+        };
+        let mut result_types = vec![];
+        for ast_type in types {
+            let Some(t) = self.bind_ref_type(&context, ast_type) else {
+                continue;
+            };
+            if result_types.iter().find(|v| *v == &t).is_none() {
+                result_types.push(t.clone());
+            } else {
+                self.errors.push(LangError::type_error(
+                    &ast_type.node,
+                    format!("Duplicated type: {:?}", t),
+                ))
+            }
+        }
+
+        let result_types = SumType::new(result_types);
+
+        let existing = self.types.insert(node_id, result_types.clone());
+        assert!(existing.is_none());
+
+        // Add sum type
+        if result_types.len() > 1 {
+            self.sum_types
+                .insert(result_types.sum_type_name(), result_types.clone());
+        }
+        // Add sum type if type is an Either type
+        if let Some((value, err)) = result_types.as_either() {
+            if value.len() > 1 {
+                self.sum_types.insert(value.sum_type_name(), value);
+            }
+            if err.len() > 1 {
+                self.sum_types.insert(err.sum_type_name(), err);
+            }
+        }
+
+        result_types
+    }
+
+    /// Bind a string identifier to the actual type
+    pub(crate) fn lookup_type_identifier(
+        &mut self,
+        context: &TypeQueryContext,
+        node: &NodeData,
+        identifier: &String,
+    ) -> Option<TypeBinding> {
+        match context {
+            TypeQueryContext::Struct(struct_def) => {
+                if let Some(type_params) = struct_def.type_params.as_ref() {
+                    for arg in type_params {
+                        if match &arg.r#type {
+                            TypeParamType::Identifier(id) => id == identifier,
+                            TypeParamType::GenericTypeParam(id, _) => id == identifier,
+                        } {
+                            let binding = Some(TypeBinding::StructTypeArgument(arg.clone()));
+
+                            return binding;
+                        }
+                    }
+                }
+            }
+            TypeQueryContext::Function(_) => {}
+            TypeQueryContext::StructMethodReceiver => {}
+        }
+
+        let file = self.query_package_content();
+        let Some(struct_def) = file.structs.get(identifier).map(|s| s.clone()) else {
+            self.errors.push(LangError::type_error(
+                node,
+                format!("Can't resolve type identifier: {:?}", identifier),
+            ));
+            return None;
+        };
+
+        let binding = Some(TypeBinding::Struct(struct_def));
+        binding
     }
 
     pub fn query_parameter_type(
@@ -556,62 +631,42 @@ impl PackageSemanticAnalyzer {
         signature: &FunctionSignature,
         param: &Parameter,
     ) -> Option<SumType> {
-        if let Some(s) = self.types.get(&param.node.id()) {
+        let Some(node_id) = param.types.get(0).map(|t| t.node.id()) else {
+            return None;
+        };
+        if let Some(s) = self.types.get(&node_id) {
             return Some(s.clone());
         }
 
-        Some(self.bind_types(
-            TypeQueryContext::Function(signature.clone()),
-            param.node.id(),
-            &param.types,
-        ))
+        Some(self.bind_types(TypeQueryContext::Function(signature.clone()), &param.types))
     }
 
     pub fn query_return_type(&mut self, signature: &FunctionSignature) -> Option<SumType> {
         let Some(return_type) = &signature.return_type else {
             return None;
         };
-        if let Some(s) = self.types.get(&return_type.node.id()) {
+        let Some(node_id) = return_type.types.get(0).map(|t| t.node.id()) else {
+            return None;
+        };
+        if let Some(s) = self.types.get(&node_id) {
             return Some(s.clone());
         }
 
         Some(self.bind_types(
             TypeQueryContext::Function(signature.clone()),
-            return_type.node.id(),
             &return_type.types,
         ))
     }
 
-    /// Queries the validated, declared variable type
-    pub fn query_variable_type(
-        &mut self,
-        fun: &Ptr<Function>,
-        var: &VarDeclaration,
-    ) -> Option<SumType> {
-        let Some(var_types) = &var.types else {
+    pub fn query_field_type(&mut self, st: &Ptr<Struct>, field: &Field) -> Option<SumType> {
+        let Some(node_id) = field.types.get(0).map(|t| t.node.id()) else {
             return None;
         };
-        if let Some(s) = self.types.get(&var.node.id()) {
+        if let Some(s) = self.types.get(&node_id) {
             return Some(s.clone());
         }
 
-        Some(self.bind_types(
-            TypeQueryContext::Function(fun.signature.clone()),
-            var.node.id(),
-            var_types,
-        ))
-    }
-
-    pub fn query_field_type(&mut self, st: &Ptr<Struct>, field: &Field) -> Option<SumType> {
-        if let Some(s) = self.types.get(&field.node.id()) {
-            return Some(s.clone());
-        }
-
-        Some(self.bind_types(
-            TypeQueryContext::Struct(st.clone()),
-            field.node.id(),
-            &field.types,
-        ))
+        Some(self.bind_types(TypeQueryContext::Struct(st.clone()), &field.types))
     }
 
     /// node_id is the node id of the identifier expression
@@ -750,104 +805,6 @@ impl PackageSemanticAnalyzer {
             .get(&node_id)
             .map(|it| it.clone())
             .unwrap_or_default()
-    }
-
-    /// Bind a string identifier to the actual type
-    pub(crate) fn bind_type_identifier(
-        &mut self,
-        context: &TypeQueryContext,
-        node: &NodeData,
-        identifier: &String,
-    ) -> Option<TypeBinding> {
-        match context {
-            TypeQueryContext::Struct(struct_def) => {
-                if let Some(type_params) = struct_def.type_params.as_ref() {
-                    for arg in type_params {
-                        if match &arg.r#type {
-                            TypeParamType::Identifier(id) => id == identifier,
-                            TypeParamType::GenericTypeParam(id, _) => id == identifier,
-                        } {
-                            let binding = Some(TypeBinding::StructTypeArgument(arg.clone()));
-                            let existing = self.type_identifiers.insert(
-                                node.id(),
-                                TypeIdentifierSemantics {
-                                    binding: binding.clone(),
-                                },
-                            );
-                            assert!(existing.is_none());
-                            return binding;
-                        }
-                    }
-                }
-            }
-            TypeQueryContext::Function(_) => {}
-            TypeQueryContext::StructMethodReceiver => {}
-        }
-
-        let file = self.query_package_content();
-        let Some(struct_def) = file.structs.get(identifier).map(|s| s.clone()) else {
-            self.errors.push(LangError::type_error(
-                node,
-                format!("Can't resolve type identifier: {:?}", identifier),
-            ));
-            return None;
-        };
-        // Just make sure the struct is in the system
-        self.query_struct(&struct_def);
-
-        let binding = Some(TypeBinding::Struct(struct_def));
-        let existing = self.type_identifiers.insert(
-            node.id(),
-            TypeIdentifierSemantics {
-                binding: binding.clone(),
-            },
-        );
-        assert!(existing.is_none());
-        binding
-    }
-
-    fn bind_types(
-        &mut self,
-        context: TypeQueryContext,
-        node_id: NodeId,
-        types: &Vec<RefType>,
-    ) -> SumType {
-        let mut result_types = vec![];
-        for ast_type in types {
-            let Some(t) = self.query_ref_type(&context, ast_type) else {
-                continue;
-            };
-            if result_types.iter().find(|v| *v == &t).is_none() {
-                result_types.push(t.clone());
-            } else {
-                self.errors.push(LangError::type_error(
-                    &ast_type.node,
-                    format!("Duplicated type: {:?}", t),
-                ))
-            }
-        }
-
-        let result_types = SumType::new(result_types);
-
-        let existing = self.types.insert(node_id, result_types.clone());
-        assert!(existing.is_none());
-
-        // Add sum type
-        if result_types.len() > 1 {
-            self.sum_types
-                .insert(result_types.sum_type_name(), result_types.clone());
-        }
-        // Add sum type if type is an Either type
-        if let Some((value, err)) = result_types.as_either() {
-            if value.len() > 1 {
-                self.sum_types.insert(value.sum_type_name(), value);
-            }
-            if err.len() > 1 {
-                self.sum_types.insert(err.sum_type_name(), err);
-            }
-        }
-
-        result_types
     }
 
     /// If a variable type narrowed down the type of an expression, back propagated this up to previous usage.
@@ -1162,7 +1119,7 @@ impl PackageSemanticAnalyzer {
                 // should not happen!
                 continue;
             };
-            let Some(receiver_type) = self.query_ref_type(&TypeQueryContext::StructMethodReceiver, &method_receiver.types[0]) else {
+            let Some(receiver_type) = self.bind_ref_type(&TypeQueryContext::StructMethodReceiver, &method_receiver.types[0]) else {
                 continue;
             };
 

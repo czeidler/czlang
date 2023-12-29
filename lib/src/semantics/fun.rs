@@ -51,18 +51,19 @@ impl PackageSemanticAnalyzer {
             ));
             return None;
         }
-        let t = receiver.types.get(0).unwrap();
 
-        let Some(receiver_type) = self.query_ref_type(&TypeQueryContext::StructMethodReceiver, t) else {
+        let receiver_types =
+            self.query_types(&TypeQueryContext::StructMethodReceiver, &receiver.types);
+        let Some(receiver_type) = receiver_types.as_type() else {
             self.errors.push(LangError::type_error(
                 &receiver.node,
-                format!("Invalid receiver type: {:?}", t.r#type),
+                format!("Invalid receiver type: {:?}", receiver.types.get(0)),
             ));
             return None;
         };
         let base_receiver_type = match receiver_type {
             Type::RefType(ref_type) => ref_type.r#type.as_ref().clone(),
-            _ => receiver_type,
+            _ => receiver_type.clone(),
         };
         let st = match base_receiver_type {
             Type::Struct(st) => st,

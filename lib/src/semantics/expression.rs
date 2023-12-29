@@ -5,7 +5,7 @@ use crate::{
         self, BinaryExpression, BinaryOperator, EitherCheckExpression, Expression, ExpressionType,
         Field, IfAlternative, IfExpression, LangError, NodeData, PipeExpression, RefType,
         SelectorExpression, SelectorFieldType, StringTemplatePart, StructFieldInitialization,
-        UnaryOperator,
+        StructInitialization, UnaryOperator,
     },
     semantics::{
         FunctionCallBinding, IdentifierBinding, IfExpressionSemantics, PipeSemantics,
@@ -270,65 +270,10 @@ impl PackageSemanticAnalyzer {
                 ExpressionSemantics::resolved_types(self.query_return_type(&fun_signature))
             }
             ExpressionType::StructInitialization(struct_init) => {
-                let Some(binding) = self.bind_type_identifier(&TypeQueryContext::from_block(&context.block), &struct_init.name_node, &struct_init.name) else {
-                    // Error belongs to the type identifier, just return None here
-                    return Ok(None);
+                let Some(sem) = self.validate_struct_initialization( context, flow, is_assignment, struct_init)? else {
+                    return Ok(None)
                 };
-                let struct_dec = match binding {
-                    TypeBinding::Struct(struct_dec) => struct_dec,
-                    TypeBinding::StructTypeArgument(_) => {
-                        return Err(LangError::type_error(
-                            &struct_init.node,
-                            "Unsupported...".to_string(),
-                        ))
-                    }
-                };
-                let mut expected_fields =
-                    struct_dec.fields.iter().fold(HashMap::new(), |mut set, f| {
-                        set.insert(f.name.clone(), f.clone());
-                        set
-                    });
-                for field in &struct_init.fields {
-                    let Some(field_type) = self.validate_expression( flow, context, &field.value, is_assignment).into_types() else {
-                        continue;
-                    };
-
-                    let Some(struct_field) = expected_fields.remove(&field.name) else {
-                        self.errors.push(LangError::type_error(
-                            &field.node,
-                            "Field not in struct".to_string(),
-                        ));
-                        continue;
-                    };
-
-                    self.bind_struct_field_initialization(field, &struct_field);
-
-                    let struct_field_type = self
-                        .query_field_type(&struct_dec, &struct_field)
-                        .unwrap_or(SumType::empty());
-                    let overlap = intersection(&field_type, &struct_field_type);
-                    if overlap.is_none() {
-                        self.errors.push(LangError::type_error(
-                            &field.node,
-                            format!(
-                                "Incompatible field types: field == {:?}, expr == {:?}",
-                                types_to_string(struct_field_type.types()),
-                                types_to_string(field_type.types()),
-                            ),
-                        ));
-                        continue;
-                    }
-                }
-                if !expected_fields.is_empty() {
-                    self.errors.push(LangError::type_error(
-                        &struct_init.node,
-                        format!("Missing fields: {:?}", expected_fields),
-                    ));
-                };
-
-                ExpressionSemantics::resolved_types(Some(SumType::from_type(Type::Struct(
-                    struct_dec,
-                ))))
+                sem
             }
             ExpressionType::SelectorExpression(select) => ExpressionSemantics::resolved_types(
                 self.validate_selector_expression(flow, context, select, is_assignment),
@@ -430,6 +375,80 @@ impl PackageSemanticAnalyzer {
         let references = self.usages.entry(id).or_default();
         assert!(!references.contains(reference));
         references.push(reference.clone());
+    }
+
+    fn validate_struct_initialization(
+        &mut self,
+        context: &ExpContext,
+        flow: &mut CurrentFlowContainer,
+        is_assignment: bool,
+        struct_init: &StructInitialization,
+    ) -> Result<Option<ExpressionSemantics>, LangError> {
+        let Some(binding) = self.lookup_type_identifier(&TypeQueryContext::from_block(&context.block), &struct_init.name_node, &struct_init.name) else {
+            // Error belongs to the type identifier, just return None here
+            return Ok(None);
+        };
+        let struct_dec = match binding {
+            TypeBinding::Struct(struct_dec) => struct_dec,
+            TypeBinding::StructTypeArgument(_) => {
+                return Err(LangError::type_error(
+                    &struct_init.node,
+                    "Unsupported...".to_string(),
+                ))
+            }
+        };
+        let existing = self
+            .struct_inits
+            .insert(struct_init.node.id(), Some(struct_dec.clone()));
+        assert!(existing.is_none());
+        let references = self.usages.entry(struct_dec.name_node.id()).or_default();
+        assert!(!references.contains(&struct_init.name_node));
+        references.push(struct_init.name_node.clone());
+
+        let mut expected_fields = struct_dec.fields.iter().fold(HashMap::new(), |mut set, f| {
+            set.insert(f.name.clone(), f.clone());
+            set
+        });
+        for field in &struct_init.fields {
+            let Some(field_type) = self.validate_expression( flow, context, &field.value, is_assignment).into_types() else {
+                continue;
+            };
+
+            let Some(struct_field) = expected_fields.remove(&field.name) else {
+                self.errors.push(LangError::type_error(
+                    &field.node,
+                    "Field not in struct".to_string(),
+                ));
+                continue;
+            };
+
+            self.bind_struct_field_initialization(field, &struct_field);
+
+            let struct_field_type = self
+                .query_field_type(&struct_dec, &struct_field)
+                .unwrap_or(SumType::empty());
+            let overlap = intersection(&field_type, &struct_field_type);
+            if overlap.is_none() {
+                self.errors.push(LangError::type_error(
+                    &field.node,
+                    format!(
+                        "Incompatible field types: field == {:?}, expr == {:?}",
+                        types_to_string(struct_field_type.types()),
+                        types_to_string(field_type.types()),
+                    ),
+                ));
+                continue;
+            }
+        }
+        if !expected_fields.is_empty() {
+            self.errors.push(LangError::type_error(
+                &struct_init.node,
+                format!("Missing fields: {:?}", expected_fields),
+            ));
+        };
+        Ok(Some(ExpressionSemantics::resolved_types(Some(
+            SumType::from_type(Type::Struct(struct_dec)),
+        ))))
     }
 
     fn bind_struct_field_initialization(

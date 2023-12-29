@@ -4,7 +4,7 @@ use crate::{
     ast::{
         AssignmentStatement, Block, LangError, Loop, ReturnStatement, Statement, VarDeclaration,
     },
-    semantics::{types_to_string, ExpContext, VarDeclarationSemantics},
+    semantics::{types_to_string, ExpContext, TypeQueryContext, VarDeclarationSemantics},
     types::Ptr,
 };
 
@@ -142,8 +142,15 @@ impl PackageSemanticAnalyzer {
         block: &Ptr<Block>,
         var_declaration: Ptr<VarDeclaration>,
     ) {
-        let mut var_types = self
-            .query_variable_type(&block.fun(), &var_declaration)
+        let mut var_types = var_declaration
+            .types
+            .as_ref()
+            .map(|types| {
+                self.bind_types(
+                    TypeQueryContext::Function(block.fun().signature.clone()),
+                    types,
+                )
+            })
             .unwrap_or(SumType::empty());
 
         let expr = self
