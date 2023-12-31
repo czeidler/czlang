@@ -8,8 +8,8 @@ use crate::{
         StructInitialization, UnaryOperator,
     },
     semantics::{
-        FunctionCallBinding, IdentifierBinding, IfExpressionSemantics, PipeSemantics,
-        SelectorFieldBinding, SelectorFieldSemantics, Type,
+        IdentifierBinding, IfExpressionSemantics, PipeSemantics, SelectorFieldBinding,
+        SelectorFieldSemantics, Type,
     },
     types::Ptr,
 };
@@ -221,10 +221,7 @@ impl PackageSemanticAnalyzer {
             }
             ExpressionType::FunctionCall(fun_call) => {
                 let fun_declaration = match self.validate_fun_call(&fun_call).binding {
-                    Some(fun) => {
-                        self.bind_fun_call_usage(&fun_call.name_node, &fun);
-                        fun
-                    }
+                    Some(fun) => fun,
                     None => {
                         return Err(LangError::type_error(
                             &expression.node,
@@ -1047,16 +1044,6 @@ impl PackageSemanticAnalyzer {
             }
         }
         Some(result)
-    }
-
-    fn bind_fun_call_usage(&mut self, reference: &NodeData, binding: &FunctionCallBinding) {
-        let id = match binding {
-            FunctionCallBinding::Function(fun) => fun.signature.name_node.id(),
-            FunctionCallBinding::Buildin(_) => return,
-        };
-        let references = self.usages.entry(id).or_default();
-        assert!(!references.contains(reference));
-        references.push(reference.clone());
     }
 
     fn bind_pipe(&mut self, node: &NodeData, pipe_arg: &Option<SumType>) {

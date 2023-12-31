@@ -1042,19 +1042,48 @@ impl PackageSemanticAnalyzer {
         return None;
     }
 
+    fn bind_fun_call_usage(&mut self, call_name_node: &NodeData, binding: &FunctionCallBinding) {
+        let id = match binding {
+            FunctionCallBinding::Function(fun) => fun.signature.name_node.id(),
+            FunctionCallBinding::Buildin(_) => return,
+        };
+        let references = self.usages.entry(id).or_default();
+        assert!(!references.contains(call_name_node));
+        references.push(call_name_node.clone());
+    }
+
     pub(crate) fn validate_pkg_fun_call(
         &mut self,
         call: &FunctionCall,
         pkg: &PackageContentSemantics,
     ) -> Option<Ptr<Function>> {
-        pkg.functions.get(&call.name).map(|f| f.clone())
+        let fun = pkg.functions.get(&call.name).map(|f| f.clone());
+
         // TODO validate parameters
+
+        let binding = fun
+            .as_ref()
+            .map(|fun| FunctionCallBinding::Function(fun.clone()));
+        if let Some(binding) = binding.as_ref() {
+            self.bind_fun_call_usage(&call.name_node.clone(), binding);
+        }
+
+        let semantics = FunctionCallSemantics { binding };
+        let existing = self
+            .function_calls
+            .insert(call.node.id(), semantics.clone());
+        assert!(existing.is_none());
+
+        fun
     }
 
     pub(crate) fn validate_fun_call(&mut self, call: &FunctionCall) -> FunctionCallSemantics {
         let binding = self.lookup_function_declaration(call);
 
         // TODO validate parameters
+        if let Some(binding) = binding.as_ref() {
+            self.bind_fun_call_usage(&call.name_node.clone(), binding);
+        }
 
         let semantics = FunctionCallSemantics { binding };
         let existing = self
