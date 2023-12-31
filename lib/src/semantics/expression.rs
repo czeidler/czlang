@@ -2,9 +2,9 @@ use std::collections::HashMap;
 
 use crate::{
     ast::{
-        self, BinaryExpression, BinaryOperator, EitherCheckExpression, Expression, ExpressionType,
-        Field, IfAlternative, IfExpression, LangError, NodeData, PipeExpression, RefType,
-        SelectorExpression, SelectorFieldType, StringTemplatePart, StructFieldInitialization,
+        BinaryExpression, BinaryOperator, EitherCheckExpression, Expression, ExpressionType, Field,
+        IfAlternative, IfExpression, LangError, NodeData, PipeExpression, SelectorExpression,
+        SelectorFieldType, StringTemplatePart, Struct, StructFieldInitialization,
         StructInitialization, UnaryOperator,
     },
     semantics::{
@@ -19,8 +19,8 @@ use super::{
         apply_inverse_narrowing, apply_narrowing, merge_narrowed_flows, CurrentFlowContainer,
         FlowContainer,
     },
-    intersection, types_to_string, ExpContext, ExpressionSemantics, PackageSemanticAnalyzer,
-    SArray, SSlice, SumType, TypeBinding, TypeNarrowing, TypeQueryContext,
+    intersection, types_to_string, ExpContext, ExpressionSemantics, PackageContentSemantics,
+    PackageSemanticAnalyzer, SArray, SSlice, SumType, TypeNarrowing, TypeQueryContext,
 };
 
 impl PackageSemanticAnalyzer {
@@ -377,26 +377,14 @@ impl PackageSemanticAnalyzer {
         references.push(reference.clone());
     }
 
-    fn validate_struct_initialization(
+    fn bind_struct_initialization(
         &mut self,
-        context: &ExpContext,
-        flow: &mut CurrentFlowContainer,
-        is_assignment: bool,
         struct_init: &StructInitialization,
-    ) -> Result<Option<ExpressionSemantics>, LangError> {
-        let Some(binding) = self.lookup_type_identifier(&TypeQueryContext::from_block(&context.block), &struct_init.name_node, &struct_init.name) else {
-            // Error belongs to the type identifier, just return None here
-            return Ok(None);
+    ) -> Option<Ptr<Struct>> {
+        let Some(struct_dec) = self.lookup_struct(  &struct_init.name) else {
+            return None;
         };
-        let struct_dec = match binding {
-            TypeBinding::Struct(struct_dec) => struct_dec,
-            TypeBinding::StructTypeArgument(_) => {
-                return Err(LangError::type_error(
-                    &struct_init.node,
-                    "Unsupported...".to_string(),
-                ))
-            }
-        };
+
         let existing = self
             .struct_inits
             .insert(struct_init.node.id(), Some(struct_dec.clone()));
@@ -404,6 +392,44 @@ impl PackageSemanticAnalyzer {
         let references = self.usages.entry(struct_dec.name_node.id()).or_default();
         assert!(!references.contains(&struct_init.name_node));
         references.push(struct_init.name_node.clone());
+
+        Some(struct_dec)
+    }
+
+    /// For example, `pkg.MyStruct {}`
+    fn bind_pkg_struct_initialization(
+        &mut self,
+        pkg: &PackageContentSemantics,
+        struct_init: &StructInitialization,
+    ) -> Option<Ptr<Struct>> {
+        let Some(struct_dec) = pkg.structs.get(&struct_init.name) else {
+            return None;
+        };
+
+        let existing = self
+            .struct_inits
+            .insert(struct_init.node.id(), Some(struct_dec.clone()));
+        assert!(existing.is_none());
+        let references = self.usages.entry(struct_dec.name_node.id()).or_default();
+        assert!(!references.contains(&struct_init.name_node));
+        references.push(struct_init.name_node.clone());
+
+        Some(struct_dec.clone())
+    }
+
+    fn validate_struct_initialization(
+        &mut self,
+        context: &ExpContext,
+        flow: &mut CurrentFlowContainer,
+        is_assignment: bool,
+        struct_init: &StructInitialization,
+    ) -> Result<Option<ExpressionSemantics>, LangError> {
+        let Some(struct_dec) = self.bind_struct_initialization(&struct_init) else {
+            return Err(LangError::type_error(
+                &struct_init.name_node,
+                format!("Can't resolve struct identifier: {:?}", &struct_init.name),
+            ));
+        };
 
         let mut expected_fields = struct_dec.fields.iter().fold(HashMap::new(), |mut set, f| {
             set.insert(f.name.clone(), f.clone());
@@ -547,7 +573,10 @@ impl PackageSemanticAnalyzer {
                                 return None;
                             };
 
-                        found_field.types.clone()
+                        self.query_types(
+                            &TypeQueryContext::from_block(&context.block),
+                            &found_field.types,
+                        )
                     }
                     SelectorFieldBinding::Package(_) => {
                         self.errors.push(LangError::type_error(
@@ -568,37 +597,51 @@ impl PackageSemanticAnalyzer {
                                 ));
                                 return None;
                             };
-                            method
-                                .signature
-                                .return_type
-                                .as_ref()
-                                .map(|r| r.types.clone())
-                                .unwrap_or(vec![])
+                            if let Some(return_types) = &method.signature.return_type {
+                                self.query_types(
+                                    &TypeQueryContext::from_block(&context.block),
+                                    &return_types.types,
+                                )
+                            } else {
+                                SumType::empty()
+                            }
                         }
                         SelectorFieldBinding::Package(pkg) => {
                             let Some(fun) = self.validate_pkg_fun_call(call, pkg) else {
                                 return None;
                             };
-                            fun.signature
-                                .return_type
-                                .as_ref()
-                                .map(|r| r.types.clone())
-                                .unwrap_or(vec![])
+
+                            if let Some(return_type) = &fun.signature.return_type {
+                                self.query_types(
+                                    &TypeQueryContext::from_block(&context.block),
+                                    &return_type.types,
+                                )
+                            } else {
+                                SumType::empty()
+                            }
                         }
                     }
                 }
-                SelectorFieldType::StructInit(struct_init) => {
-                    let Some(_) = self.query_struct_initialization(&context.block, struct_init) else {
+                SelectorFieldType::StructInit(struct_init) => match &current_binding {
+                    SelectorFieldBinding::Struct(_) => {
+                        self.errors.push(LangError::type_error(
+                            &field.node,
+                            format!("Unexpected struct initialization"),
+                        ));
                         return None;
-                    };
-                    vec![RefType::value(
-                        struct_init.node.clone(),
-                        ast::Type::Identifier(struct_init.name.clone()),
-                    )]
-                }
+                    }
+                    SelectorFieldBinding::Package(package) => {
+                        let Some(st) = self.bind_pkg_struct_initialization(package, struct_init) else {
+                            self.errors.push(LangError::type_error(
+                                &struct_init.name_node,
+                                format!("Struct not found"),
+                            ));
+                            return None;
+                        };
+                        SumType::from_type(Type::Struct(st))
+                    }
+                },
             };
-            let field_types =
-                self.query_types(&TypeQueryContext::from_block(&context.block), &field_types);
 
             let semantics = self.bind_selector_field(
                 &field.node,

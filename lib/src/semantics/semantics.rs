@@ -601,8 +601,7 @@ impl PackageSemanticAnalyzer {
             TypeQueryContext::StructMethodReceiver => {}
         }
 
-        let file = self.query_package_content();
-        let Some(struct_def) = file.structs.get(identifier).map(|s| s.clone()) else {
+        let Some(struct_def) = self.lookup_struct(identifier) else {
             self.errors.push(LangError::type_error(
                 node,
                 format!("Can't resolve type identifier: {:?}", identifier),
@@ -612,6 +611,28 @@ impl PackageSemanticAnalyzer {
 
         let binding = Some(TypeBinding::Struct(struct_def));
         binding
+    }
+
+    pub(crate) fn lookup_struct(&mut self, identifier: &String) -> Option<Ptr<Struct>> {
+        let content = self.query_package_content();
+        if let Some(struct_def) = content.structs.get(identifier) {
+            return Some(struct_def.clone());
+        };
+
+        for import in &content.imports {
+            match &import.name {
+                ImportName::Dot => {}
+                _ => continue,
+            };
+            let Some(dependency) = self.dependencies.get(&import.path) else {
+                continue;
+            };
+            if let Some(struct_def) = dependency.structs.get(identifier) {
+                return Some(struct_def.clone());
+            };
+        }
+
+        None
     }
 
     pub fn query_parameter_type(
