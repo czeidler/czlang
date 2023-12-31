@@ -13,8 +13,8 @@ use czlanglib::{
     project::{FileChange, Project},
     query::{find_in_file, QueryResult},
     semantics::{
-        types::types_to_string, IdentifierBinding, PackageSemanticAnalyzer, SelectorFieldBinding,
-        TypeQueryContext,
+        types::types_to_string, FunctionCallBinding, IdentifierBinding, PackageSemanticAnalyzer,
+        SelectorFieldBinding, TypeQueryContext,
     },
     types::Ptr,
     vfs::DiskFS,
@@ -423,8 +423,31 @@ impl Server {
                     let types = package.query_types(&TypeQueryContext::Struct(str), &field.types);
                     format!("{} {}", field.name, types_to_string(types.types()))
                 }
-                QueryResult::SelectorField(result) => {
-                    format!("field {}", types_to_string(result.2.r#type.types()))
+                QueryResult::SelectorField((block, field, sem)) => {
+                    if let Some(parent) = sem.parent {
+                        match parent {
+                            SelectorFieldBinding::Struct(_) => {
+                                format!("field {}", types_to_string(sem.r#type.types()))
+                            }
+                            SelectorFieldBinding::Package(_) => match field.field {
+                                SelectorFieldType::Identifier(_) => return None,
+                                SelectorFieldType::Call(call) => {
+                                    let Some(fun) = package.query_function_call(&block, &call).and_then(|f| f.binding) else {
+                                        return None;
+                                    };
+                                    format_fun_signature(&mut package, fun.as_function_signature().clone())
+                                }
+                                SelectorFieldType::StructInit(struct_init) => {
+                                    let Some(struct_dec) = package.query_struct_initialization(&block, &struct_init) else {
+                                        return None;
+                                    };
+                                    format!("struct {}", struct_dec.name)
+                                }
+                            },
+                        }
+                    } else {
+                        format!("field {}", types_to_string(sem.r#type.types()))
+                    }
                 }
                 QueryResult::StructIdentifier(struct_dec) => {
                     format!("struct {}", struct_dec.name)
@@ -508,7 +531,15 @@ impl Server {
                                 SelectorFieldBinding::Package(_) => return None,
                             }
                         }
-                        SelectorFieldType::Call(_) => return None,
+                        SelectorFieldType::Call(call) => {
+                            let Some(binding) = package.query_function_call(&block, &call).and_then(|f| f.binding) else {
+                                return None;
+                            };
+                            match binding {
+                                FunctionCallBinding::Function(fun) => fun.signature.name_node.clone(),
+                                FunctionCallBinding::Buildin(_) => return None,
+                            }
+                        },
                         SelectorFieldType::StructInit(struct_init) => {
                             let Some(st) = package.query_struct_initialization(&block, &struct_init) else {
                                 return None;
@@ -520,6 +551,7 @@ impl Server {
                 QueryResult::StructFieldInitialization(_, field) => field.name_node,
                 QueryResult::VarDeclaration(_, var) => var.name_node.clone(),
                 QueryResult::Parameter(_, param) => param.name_node,
+                QueryResult::StructDeclaration(st) => st.name_node.clone(),
                 _ => return None,
             };
             let target_range = Range::new(
