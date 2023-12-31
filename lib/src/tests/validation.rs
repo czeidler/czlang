@@ -458,4 +458,40 @@ fun main() { test() }
         assert_eq!(errors.len(), 1);
         assert!(errors[0].msg.contains("not found"));
     }
+
+    #[test]
+    fn validate_pkg_field_selector() {
+        let main = PathBuf::new();
+        let mut files = HashMap::new();
+        files.insert(
+            main.join("package1").join("package1.cz"),
+            r#"
+            struct PkgTest {
+                value i32
+            }
+
+            fun package1() bool {
+                return false
+            }
+            "#
+            .to_string(),
+        );
+        files.insert(
+            main.join("main.cz"),
+            r#"
+            import "package1"
+
+            fun main() {
+                var test = package1.package1()
+                var sts = package1.PkgTest {
+                    value = 1
+                }
+            }
+            "#
+            .to_string(),
+        );
+        let project = validate_project_files(files, main);
+        let errors = project.current_errors();
+        assert_eq!(errors.len(), 0);
+    }
 }
