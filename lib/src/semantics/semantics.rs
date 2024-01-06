@@ -4,8 +4,9 @@ use std::{
 };
 
 use super::{
+    flow_container::CurrentFlowContainer,
     types::{intersection, SArray, SRefType, SSlice, SumType, Type},
-    ClosureContext, ClosureType,
+    types_to_string, ClosureContext, ClosureType,
 };
 use crate::{
     ast::{
@@ -51,6 +52,8 @@ pub enum TypeQueryContext {
     Function(FunctionSignature),
     /// Context of the receiver of a struct method definition, e.g. (self &MyStruct)method()
     StructMethodReceiver,
+    /// A parameter type
+    Parameter,
 }
 
 impl TypeQueryContext {
@@ -599,6 +602,7 @@ impl PackageSemanticAnalyzer {
             }
             TypeQueryContext::Function(_) => {}
             TypeQueryContext::StructMethodReceiver => {}
+            TypeQueryContext::Parameter => {}
         }
 
         let Some(struct_def) = self.lookup_struct(identifier) else {
@@ -1052,19 +1056,59 @@ impl PackageSemanticAnalyzer {
         references.push(call_name_node.clone());
     }
 
+    fn validate_call_parameters(
+        &mut self,
+        call: &FunctionCall,
+        binding: &FunctionCallBinding,
+        flow: &mut CurrentFlowContainer,
+        context: &ExpContext,
+    ) {
+        let signature = binding.as_function_signature();
+        if call.arguments.len() != signature.parameters.len() {
+            self.errors.push(LangError::type_error(
+                &call.node,
+                format!(
+                    "Expected {} arguments but got {}",
+                    signature.parameters.len(),
+                    call.arguments.len()
+                ),
+            ));
+        }
+        for (arg_expr, param) in call.arguments.iter().zip(signature.parameters.iter()) {
+            let arg_sem = self.validate_expression(flow, context, arg_expr, false);
+            let arg_types = arg_sem.into_types().unwrap_or(SumType::new(vec![]));
+
+            let Some(param_types) = self.query_parameter_type(signature, param) else {
+                continue;
+            };
+            let Some(overlap) = intersection(&param_types, &arg_types ) else {
+                self.errors.push(LangError::type_error(
+                    &arg_expr.node,
+                    format!(
+                        "Incompatible parameter type. Expected {} but got {}",
+                        types_to_string(&param_types.types()),
+                        types_to_string(&arg_types.types()),
+                    ),
+                ));
+                return;
+            };
+            self.back_propagate_types(&context.block, arg_expr, &overlap);
+        }
+    }
+
     pub(crate) fn validate_pkg_fun_call(
         &mut self,
         call: &FunctionCall,
         pkg: &PackageContentSemantics,
+        flow: &mut CurrentFlowContainer,
+        context: &ExpContext,
     ) -> Option<Ptr<Function>> {
         let fun = pkg.functions.get(&call.name).map(|f| f.clone());
-
-        // TODO validate parameters
-
         let binding = fun
             .as_ref()
             .map(|fun| FunctionCallBinding::Function(fun.clone()));
         if let Some(binding) = binding.as_ref() {
+            self.validate_call_parameters(call, binding, flow, context);
             self.bind_fun_call_usage(&call.name_node.clone(), binding);
         }
 
@@ -1077,11 +1121,16 @@ impl PackageSemanticAnalyzer {
         fun
     }
 
-    pub(crate) fn validate_fun_call(&mut self, call: &FunctionCall) -> FunctionCallSemantics {
+    pub(crate) fn validate_fun_call(
+        &mut self,
+        call: &FunctionCall,
+        flow: &mut CurrentFlowContainer,
+        context: &ExpContext,
+    ) -> FunctionCallSemantics {
         let binding = self.lookup_function_declaration(call);
 
-        // TODO validate parameters
         if let Some(binding) = binding.as_ref() {
+            self.validate_call_parameters(call, binding, flow, context);
             self.bind_fun_call_usage(&call.name_node.clone(), binding);
         }
 
@@ -1130,10 +1179,16 @@ impl PackageSemanticAnalyzer {
         &mut self,
         receiver: &Ptr<Struct>,
         call: &FunctionCall,
+        flow: &mut CurrentFlowContainer,
+        context: &ExpContext,
     ) -> MethodCallSemantics {
         let binding = self.lookup_struct_method(receiver, call);
 
-        // TODO validate parameters
+        if let Some(fun) = binding.as_ref() {
+            let binding = &FunctionCallBinding::Function(fun.clone());
+            self.validate_call_parameters(call, binding, flow, context);
+            self.bind_fun_call_usage(&call.name_node.clone(), binding);
+        }
 
         let semantics = MethodCallSemantics { binding };
         let existing = self.method_calls.insert(call.node.id(), semantics.clone());

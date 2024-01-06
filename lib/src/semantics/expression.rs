@@ -220,7 +220,8 @@ impl PackageSemanticAnalyzer {
                 }))))
             }
             ExpressionType::FunctionCall(fun_call) => {
-                let fun_declaration = match self.validate_fun_call(&fun_call).binding {
+                let fun_declaration = match self.validate_fun_call(&fun_call, flow, context).binding
+                {
                     Some(fun) => fun,
                     None => {
                         return Err(LangError::type_error(
@@ -230,40 +231,6 @@ impl PackageSemanticAnalyzer {
                     }
                 };
                 let fun_signature = fun_declaration.as_function_signature();
-
-                if fun_signature.parameters.len() != fun_call.arguments.len() {
-                    return Err(LangError::type_error(
-                        &expression.node,
-                        format!(
-                            "Expected {} arguments but found {}",
-                            fun_signature.parameters.len(),
-                            fun_call.arguments.len()
-                        ),
-                    ));
-                }
-
-                for (i, parameter) in fun_signature.parameters.iter().enumerate() {
-                    let arg = fun_call.arguments.get(i).unwrap();
-                    let arg_types = self
-                        .validate_expression(flow, context, arg, true)
-                        .into_types()
-                        .unwrap_or(SumType::empty());
-                    let parameter_type = self
-                        .query_parameter_type(&context.block.fun().signature, parameter)
-                        .unwrap_or(SumType::empty());
-                    let Some(intersection) = intersection(&arg_types, &parameter_type) else {
-                        return Err(LangError::type_error(
-                            &arg.node,
-                            format!(
-                                "{:?}: Argument has invalid type {:?}; but expected {:?}",
-                                fun_call.name, arg_types, parameter.types
-                            ),
-                        ));
-                    };
-
-                    self.back_propagate_types(&context.block, arg, &intersection);
-                }
-
                 ExpressionSemantics::resolved_types(self.query_return_type(&fun_signature))
             }
             ExpressionType::StructInitialization(struct_init) => {
@@ -587,7 +554,7 @@ impl PackageSemanticAnalyzer {
                     match &current_binding {
                         SelectorFieldBinding::Struct(st) => {
                             // TODO: support generic struct instances
-                            let Some(method) = self.validate_method_call(&st, call).binding else {
+                            let Some(method) = self.validate_method_call(&st, call, flow, context).binding else {
                                 self.errors.push(LangError::type_error(
                                     &field.node,
                                     format!("Not a struct method: {}", call.name),
@@ -604,7 +571,7 @@ impl PackageSemanticAnalyzer {
                             }
                         }
                         SelectorFieldBinding::Package(pkg) => {
-                            let Some(fun) = self.validate_pkg_fun_call(call, pkg) else {
+                            let Some(fun) = self.validate_pkg_fun_call(call, pkg, flow, context) else {
                                 return None;
                             };
 
