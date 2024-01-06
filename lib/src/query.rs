@@ -33,7 +33,7 @@ pub fn find_in_file(
     position: SourcePosition,
 ) -> Option<QueryResult> {
     let package = analyzer.query_package_content();
-    for (_, fun) in &package.functions {
+    for fun in package.functions.values().chain(package.methods.iter()) {
         if fun.body_node.file_id != file.file_id {
             continue;
         }

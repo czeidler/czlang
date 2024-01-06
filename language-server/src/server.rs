@@ -427,8 +427,22 @@ impl Server {
                     if let Some(parent) = sem.parent {
                         match parent {
                             SelectorFieldBinding::Struct(_) => {
-                                format!("field {}", types_to_string(sem.r#type.types()))
-                            }
+                                match field.field {
+                                    SelectorFieldType::Identifier(_) => return None,
+                                    SelectorFieldType::Call(call) => {
+                                        let Some(fun) = package.query_function_call(&block, &call).and_then(|f| f.binding) else {
+                                            return None;
+                                        };
+                                        format_fun_signature(&mut package, fun.as_function_signature().clone())
+                                    },
+                                    SelectorFieldType::StructInit(struct_init) => {
+                                        let Some(struct_dec) = package.query_struct_initialization(&block, &struct_init) else {
+                                            return None;
+                                        };
+                                        format!("struct {}", struct_dec.name)
+                                    }
+                                }
+                            },
                             SelectorFieldBinding::Package(_) => match field.field {
                                 SelectorFieldType::Identifier(_) => return None,
                                 SelectorFieldType::Call(call) => {
@@ -454,7 +468,7 @@ impl Server {
                 }
                 QueryResult::StructFieldInitialization(str, field) => {
                     let types = package.query_types(&TypeQueryContext::Struct(str), &field.types);
-                    format!("field {}", types_to_string(types.types()))
+                    format!("struct {}", types_to_string(types.types()))
                 }
                 QueryResult::Literal(types) => {
                     format!("literal {}", types_to_string(&types.types()))
@@ -511,12 +525,13 @@ impl Server {
                     }
                 }
                 QueryResult::SelectorField((block, field, field_semantics)) => {
+                    let parent = match field_semantics.parent {
+                        Some(parent) => parent,
+                        None => return None,
+                    };
                     match field.field {
                         SelectorFieldType::Identifier(identifier) => {
-                            let parent = match field_semantics.parent {
-                                Some(parent) => parent,
-                                None => return None,
-                            };
+
 
                             match parent {
                                 SelectorFieldBinding::Struct(st) => {
@@ -532,13 +547,24 @@ impl Server {
                             }
                         }
                         SelectorFieldType::Call(call) => {
-                            let Some(binding) = package.query_function_call(&block, &call).and_then(|f| f.binding) else {
-                                return None;
-                            };
-                            match binding {
-                                FunctionCallBinding::Function(fun) => fun.signature.name_node.clone(),
-                                FunctionCallBinding::Buildin(_) => return None,
+                            match parent {
+                                SelectorFieldBinding::Struct(_) => {
+                                    let Some(fun) = package.query_method_call(&block, &call).and_then(|f| f.binding) else {
+                                        return None;
+                                    };
+                                    fun.signature.name_node.clone()
+                                },
+                                SelectorFieldBinding::Package(_) => {
+                                    let Some(binding) = package.query_function_call(&block, &call).and_then(|f| f.binding) else {
+                                        return None;
+                                    };
+                                    match binding {
+                                        FunctionCallBinding::Function(fun) => fun.signature.name_node.clone(),
+                                        FunctionCallBinding::Buildin(_) => return None,
+                                    }
+                                },
                             }
+
                         },
                         SelectorFieldType::StructInit(struct_init) => {
                             let Some(st) = package.query_struct_initialization(&block, &struct_init) else {
