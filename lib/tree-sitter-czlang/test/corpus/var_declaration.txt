@@ -97,3 +97,39 @@ fun x() i32 {
     )
   )
 )
+
+
+==================
+Variable reference
+==================
+
+fun x() i32 {
+  var test mut = 5
+  var ref = &test
+  var mutRef = &mut test
+}
+
+---
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameter_list)
+    (primitive_type)
+    (block
+      (var_declaration
+        (identifier)
+        (int_literal))
+      (var_declaration
+        (identifier)
+        (unary_expression
+          (identifier)))
+      (var_declaration
+        (identifier)
+        (unary_expression
+          (identifier)
+        )
+      )
+    )
+  )
+)

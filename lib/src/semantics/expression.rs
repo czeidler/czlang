@@ -156,6 +156,18 @@ impl PackageSemanticAnalyzer {
                         .map(|types| types.apply_reference());
                     semantics
                 }
+                UnaryOperator::MutReference => {
+                    let mut semantics =
+                        self.validate_expression(flow, context, &unary.operand, is_assignment);
+
+                    semantics.resolved_types = semantics
+                        .resolved_types
+                        .map(|types| types.apply_mut_reference());
+                    semantics.narrowed_types = semantics
+                        .narrowed_types
+                        .map(|types| types.apply_mut_reference());
+                    semantics
+                }
 
                 UnaryOperator::TypeOf => return Ok(None),
             },

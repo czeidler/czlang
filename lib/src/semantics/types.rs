@@ -57,6 +57,19 @@ impl Type {
             }),
         }
     }
+
+    pub fn mut_reference(r#type: Type) -> Type {
+        match r#type {
+            Type::RefType(r) => Type::RefType(SRefType {
+                is_mut: true,
+                r#type: r.r#type,
+            }),
+            _ => Type::RefType(SRefType {
+                is_mut: true,
+                r#type: Ptr::new(r#type),
+            }),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -133,6 +146,13 @@ impl SumType {
         self.types
             .iter()
             .map(|it| Type::reference(it.clone()))
+            .collect()
+    }
+
+    pub fn apply_mut_reference(&self) -> SumType {
+        self.types
+            .iter()
+            .map(|it| Type::mut_reference(it.clone()))
             .collect()
     }
 

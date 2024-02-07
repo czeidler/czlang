@@ -1924,6 +1924,10 @@
                 },
                 {
                   "type": "STRING",
+                  "value": "&mut"
+                },
+                {
+                  "type": "STRING",
                   "value": "typeof"
                 }
               ]

@@ -4846,6 +4846,10 @@
             "named": false
           },
           {
+            "type": "&mut",
+            "named": false
+          },
+          {
             "type": "-",
             "named": false
           },

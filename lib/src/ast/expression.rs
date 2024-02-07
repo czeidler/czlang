@@ -152,6 +152,7 @@ pub enum UnaryOperator {
     Not,
     /// &
     Reference,
+    MutReference,
     TypeOf,
 }
 
