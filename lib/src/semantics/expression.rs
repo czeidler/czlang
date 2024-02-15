@@ -148,18 +148,31 @@ impl PackageSemanticAnalyzer {
                     let mut semantics =
                         self.validate_expression(flow, context, &unary.operand, is_assignment);
 
+                    if let Some(IdentifierBinding::Package(_)) = semantics.binding {
+                        return Err(LangError::type_error(
+                            &expression.node,
+                            "Can't take a reference from a package".to_string(),
+                        ));
+                    }
                     semantics.resolved_types = semantics
                         .resolved_types
                         .map(|types| types.apply_reference());
                     semantics.narrowed_types = semantics
                         .narrowed_types
                         .map(|types| types.apply_reference());
+
                     semantics
                 }
                 UnaryOperator::MutReference => {
                     let mut semantics =
                         self.validate_expression(flow, context, &unary.operand, is_assignment);
 
+                    if let Some(IdentifierBinding::Package(_)) = semantics.binding {
+                        return Err(LangError::type_error(
+                            &expression.node,
+                            "Can't take a reference from a package".to_string(),
+                        ));
+                    }
                     semantics.resolved_types = semantics
                         .resolved_types
                         .map(|types| types.apply_mut_reference());
