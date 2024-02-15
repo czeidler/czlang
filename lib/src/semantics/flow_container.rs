@@ -9,18 +9,6 @@ pub struct CurrentFlowContainer {
     pub flow: Ptr<FlowContainer>,
 }
 
-impl CurrentFlowContainer {
-    pub fn fork(&self) -> Self {
-        CurrentFlowContainer {
-            flow: Ptr::new(FlowContainer {
-                parent: Some(self.flow.clone()),
-                vars: HashMap::new(),
-                returned: None,
-            }),
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct FlowContainer {
     pub parent: Option<Ptr<FlowContainer>>,

@@ -254,13 +254,10 @@ impl PackageSemanticAnalyzer {
             ExpressionType::SelectorExpression(select) => ExpressionSemantics::resolved_types(
                 self.validate_selector_expression(flow, context, select, is_assignment),
             ),
-            ExpressionType::Block(block) => {
-                let mut flow = flow.fork();
-                match self.validate_block(&mut flow, block, is_assignment) {
-                    Some(s) => s,
-                    None => return Ok(None),
-                }
-            }
+            ExpressionType::Block(block) => match self.validate_block(flow, block, is_assignment) {
+                Some(s) => s,
+                None => return Ok(None),
+            },
             ExpressionType::If(if_expression) => ExpressionSemantics::resolved_types(
                 self.validate_if_expression(flow, context, if_expression, is_assignment),
             ),

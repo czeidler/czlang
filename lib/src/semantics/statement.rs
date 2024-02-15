@@ -132,8 +132,7 @@ impl PackageSemanticAnalyzer {
                 }
             }
         }
-        let mut flow = flow.fork();
-        self.validate_block(&mut flow, &loop_statement.body, false);
+        self.validate_block(flow, &loop_statement.body, false);
     }
 
     fn validate_var_declaration(
