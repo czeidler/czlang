@@ -6,15 +6,14 @@ use crate::{
 };
 
 use super::{
-    flow_container::CurrentFlowContainer, BlockSemantics, ExpressionSemantics,
-    PackageSemanticAnalyzer,
+    flow_container::AnalysisState, BlockSemantics, ExpressionSemantics, PackageSemanticAnalyzer,
 };
 
 impl PackageSemanticAnalyzer {
     /// Returns the ExpressionSemantics of the last statement (if it was an expression)
     pub(crate) fn validate_block(
         &mut self,
-        flow: &mut CurrentFlowContainer,
+        flow: &mut AnalysisState,
         block: &Ptr<Block>,
         is_assignment: bool,
     ) -> Option<ExpressionSemantics> {

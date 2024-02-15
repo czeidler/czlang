@@ -4,8 +4,8 @@ use crate::types::Ptr;
 
 use super::{SumType, Type, TypeNarrowing};
 
-/// Wrapper to mutate the current flow container
-pub struct CurrentFlowContainer {
+/// Contains the state of fun analysis
+pub struct AnalysisState {
     pub flow: Ptr<FlowContainer>,
 }
 

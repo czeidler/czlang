@@ -4,7 +4,7 @@ use crate::{
 };
 
 use super::{
-    flow_container::{CurrentFlowContainer, FlowContainer},
+    flow_container::{AnalysisState, FlowContainer},
     PackageSemanticAnalyzer, StructImplementation, Type, TypeQueryContext,
 };
 
@@ -28,7 +28,7 @@ impl PackageSemanticAnalyzer {
             }
         }
 
-        let mut flow_container = CurrentFlowContainer {
+        let mut flow_container = AnalysisState {
             flow: FlowContainer::start_flow(),
         };
         self.validate_block(&mut flow_container, &fun.body(), false);

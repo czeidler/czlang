@@ -9,7 +9,7 @@ use crate::{
 };
 
 use super::{
-    flow_container::{CurrentFlowContainer, FlowContainer},
+    flow_container::{AnalysisState, FlowContainer},
     intersection, BlockSemantics, ExpressionSemantics, PackageSemanticAnalyzer, SumType,
 };
 
@@ -17,7 +17,7 @@ impl PackageSemanticAnalyzer {
     /// If statement is an expression this method returns the ExpressionSemantics None.
     pub(crate) fn validate_statement(
         &mut self,
-        flow: &mut CurrentFlowContainer,
+        flow: &mut AnalysisState,
         block: &Ptr<Block>,
         statement: &Statement,
         is_assignment: bool,
@@ -69,7 +69,7 @@ impl PackageSemanticAnalyzer {
 
     fn validate_loop(
         &mut self,
-        flow: &mut CurrentFlowContainer,
+        flow: &mut AnalysisState,
         block: &Ptr<Block>,
         loop_statement: &Loop,
     ) {
@@ -137,7 +137,7 @@ impl PackageSemanticAnalyzer {
 
     fn validate_var_declaration(
         &mut self,
-        flow: &mut CurrentFlowContainer,
+        flow: &mut AnalysisState,
         block: &Ptr<Block>,
         var_declaration: Ptr<VarDeclaration>,
     ) {
@@ -213,7 +213,7 @@ impl PackageSemanticAnalyzer {
 
     fn validate_assignment(
         &mut self,
-        flow: &mut CurrentFlowContainer,
+        flow: &mut AnalysisState,
         block: &Ptr<Block>,
         assignment: &AssignmentStatement,
     ) {
@@ -252,7 +252,7 @@ impl PackageSemanticAnalyzer {
 
     fn validate_return_statement(
         &mut self,
-        flow: &mut CurrentFlowContainer,
+        flow: &mut AnalysisState,
         block: &Ptr<Block>,
         ret: &ReturnStatement,
     ) -> ExpressionSemantics {

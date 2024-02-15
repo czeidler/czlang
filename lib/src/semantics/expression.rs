@@ -16,7 +16,7 @@ use crate::{
 
 use super::{
     flow_container::{
-        apply_inverse_narrowing, apply_narrowing, merge_narrowed_flows, CurrentFlowContainer,
+        apply_inverse_narrowing, apply_narrowing, merge_narrowed_flows, AnalysisState,
         FlowContainer,
     },
     intersection, types_to_string, ExpContext, ExpressionSemantics, PackageContentSemantics,
@@ -30,7 +30,7 @@ impl PackageSemanticAnalyzer {
     /// * is_assignment: If the expression is expected to return a value, e.g. from a block
     pub(crate) fn validate_expression(
         &mut self,
-        flow: &mut CurrentFlowContainer,
+        flow: &mut AnalysisState,
         context: &ExpContext,
         expression: &Expression,
         is_assignment: bool,
@@ -59,7 +59,7 @@ impl PackageSemanticAnalyzer {
     /// Helper method: validates the expression without binding it
     fn check_expression_semantics(
         &mut self,
-        flow: &mut CurrentFlowContainer,
+        flow: &mut AnalysisState,
         context: &ExpContext,
         expression: &Expression,
         is_assignment: bool,
@@ -406,7 +406,7 @@ impl PackageSemanticAnalyzer {
     fn validate_struct_initialization(
         &mut self,
         context: &ExpContext,
-        flow: &mut CurrentFlowContainer,
+        flow: &mut AnalysisState,
         is_assignment: bool,
         struct_init: &StructInitialization,
     ) -> Result<Option<ExpressionSemantics>, LangError> {
@@ -479,7 +479,7 @@ impl PackageSemanticAnalyzer {
 
     fn validate_expression_list(
         &mut self,
-        flow: &mut CurrentFlowContainer,
+        flow: &mut AnalysisState,
         context: &ExpContext,
         expressions: &Vec<Expression>,
     ) -> Vec<Type> {
@@ -503,7 +503,7 @@ impl PackageSemanticAnalyzer {
     /// Returns the type of the expression
     fn validate_selector_expression(
         &mut self,
-        flow: &mut CurrentFlowContainer,
+        flow: &mut AnalysisState,
         context: &ExpContext,
         select: &SelectorExpression,
         is_assignment: bool,
@@ -747,7 +747,7 @@ impl PackageSemanticAnalyzer {
     /// Returns the overall expression type if all branches have a block return
     fn validate_if_expression(
         &mut self,
-        flow: &mut CurrentFlowContainer,
+        flow: &mut AnalysisState,
         context: &ExpContext,
         if_expression: &Ptr<IfExpression>,
         is_assignment: bool,
@@ -858,7 +858,7 @@ impl PackageSemanticAnalyzer {
 
     fn validate_either_check_expression(
         &mut self,
-        flow: &mut CurrentFlowContainer,
+        flow: &mut AnalysisState,
         context: &ExpContext,
         check: &EitherCheckExpression,
     ) -> Option<TypeNarrowing> {
@@ -901,7 +901,7 @@ impl PackageSemanticAnalyzer {
 
     fn validate_typeof_expression(
         &mut self,
-        flow: &mut CurrentFlowContainer,
+        flow: &mut AnalysisState,
         context: &ExpContext,
         expression: &BinaryExpression,
     ) -> Option<TypeNarrowing> {
@@ -1047,7 +1047,7 @@ impl PackageSemanticAnalyzer {
 
     fn validate_pipe(
         &mut self,
-        flow: &mut CurrentFlowContainer,
+        flow: &mut AnalysisState,
         context: &ExpContext,
         is_assignment: bool,
         expression: &Expression,

@@ -4,7 +4,7 @@ use std::{
 };
 
 use super::{
-    flow_container::CurrentFlowContainer,
+    flow_container::AnalysisState,
     types::{intersection, SArray, SRefType, SSlice, SumType, Type},
     types_to_string, ClosureContext, ClosureType,
 };
@@ -1060,7 +1060,7 @@ impl PackageSemanticAnalyzer {
         &mut self,
         call: &FunctionCall,
         binding: &FunctionCallBinding,
-        flow: &mut CurrentFlowContainer,
+        flow: &mut AnalysisState,
         context: &ExpContext,
     ) {
         let signature = binding.as_function_signature();
@@ -1100,7 +1100,7 @@ impl PackageSemanticAnalyzer {
         &mut self,
         call: &FunctionCall,
         pkg: &PackageContentSemantics,
-        flow: &mut CurrentFlowContainer,
+        flow: &mut AnalysisState,
         context: &ExpContext,
     ) -> Option<Ptr<Function>> {
         let fun = pkg.functions.get(&call.name).map(|f| f.clone());
@@ -1124,7 +1124,7 @@ impl PackageSemanticAnalyzer {
     pub(crate) fn validate_fun_call(
         &mut self,
         call: &FunctionCall,
-        flow: &mut CurrentFlowContainer,
+        flow: &mut AnalysisState,
         context: &ExpContext,
     ) -> FunctionCallSemantics {
         let binding = self.lookup_function_declaration(call);
@@ -1179,7 +1179,7 @@ impl PackageSemanticAnalyzer {
         &mut self,
         receiver: &Ptr<Struct>,
         call: &FunctionCall,
-        flow: &mut CurrentFlowContainer,
+        flow: &mut AnalysisState,
         context: &ExpContext,
     ) -> MethodCallSemantics {
         let binding = self.lookup_struct_method(receiver, call);
