@@ -447,6 +447,7 @@ fn parse_unary_expression(
         "-" => UnaryOperator::Minus,
         "!" => UnaryOperator::Not,
         "&" => UnaryOperator::Reference,
+        "&mut" => UnaryOperator::MutReference,
         "typeof" => UnaryOperator::TypeOf,
         unknown => {
             log::error!("Unknown unary operator: {}", unknown);

@@ -152,14 +152,15 @@ impl PackageSemanticAnalyzer {
             })
             .unwrap_or(SumType::empty());
 
-        let expr = self
-            .validate_expression(
-                flow,
-                &ExpContext::new(block, None),
-                &var_declaration.value,
-                true,
-            )
-            .into_types()
+        let expr_semantics = self.validate_expression(
+            flow,
+            &ExpContext::new(block, None),
+            &var_declaration.value,
+            true,
+        );
+        let expr = expr_semantics
+            .types()
+            .clone()
             .unwrap_or(SumType::new(vec![]));
         if var_types.types().is_empty() {
             var_types = expr
@@ -196,6 +197,8 @@ impl PackageSemanticAnalyzer {
             ));
             return;
         }
+
+        self.borrow_var_assignment(flow, &var_declaration, &expr_semantics);
     }
 
     /// Return false if var was already bound

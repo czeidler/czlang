@@ -6,6 +6,7 @@ use crate::{
 
 mod query;
 mod rust_transpiler;
+mod validate_borrow;
 mod validate_generics;
 mod validation;
 
