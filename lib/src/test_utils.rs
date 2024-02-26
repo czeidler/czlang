@@ -8,8 +8,12 @@ use std::{
 };
 
 use crate::{
-    ast::root_package_path, project::Project, rust_transpiler::transpile_project,
-    semantics::PackageSemanticAnalyzer, types::Ptr, vfs::MemoryFS,
+    ast::{root_package_path, LangError},
+    project::Project,
+    rust_transpiler::transpile_project,
+    semantics::PackageSemanticAnalyzer,
+    types::Ptr,
+    vfs::MemoryFS,
 };
 
 pub fn create_project(test_dir: &str, file_content: &str) {
@@ -51,6 +55,20 @@ pub fn validate_project_files(files: HashMap<PathBuf, String>, project_path: Pat
     let mut project = Project::new(Box::new(vfs), project_path);
     project.validate_package(&root_package_path()).unwrap();
     project
+}
+
+/// Validate a project with expected error
+pub fn validate_err_project(
+    test_dir: &str,
+    file_content: &str,
+) -> Result<Vec<LangError>, anyhow::Error> {
+    let project_dir = PathBuf::from_str(test_dir).unwrap();
+    let main_file_path = project_dir.join("main.cz");
+    let mut files = HashMap::new();
+    files.insert(main_file_path.clone(), file_content.to_string());
+    let project = validate_project_files(files, project_dir);
+    let errors = project.current_errors();
+    Ok(errors)
 }
 
 pub fn validate_project(
