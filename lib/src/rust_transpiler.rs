@@ -393,7 +393,7 @@ impl RustTranspiler {
                     UnaryOperator::Minus => "-",
                     UnaryOperator::Not => "!",
                     UnaryOperator::Reference => "&",
-                    UnaryOperator::MutReference => "&mut",
+                    UnaryOperator::MutReference => "&mut ",
                     UnaryOperator::TypeOf => "",
                 };
                 writer.write(op);
