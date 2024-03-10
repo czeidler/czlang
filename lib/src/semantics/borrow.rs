@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    ast::{Block, LangError, NodeId, VarDeclaration},
+    ast::{LangError, NodeId, VarDeclaration},
     types::Ptr,
 };
 
@@ -134,11 +134,11 @@ impl PackageSemanticAnalyzer {
         }
     }
 
-    pub(crate) fn borrow_enter_block(&mut self, flow: &mut AnalysisState, block: &Ptr<Block>) {
+    pub(crate) fn borrow_enter_block(&mut self, flow: &mut AnalysisState) {
         flow.borrow.new_scope();
     }
 
-    pub(crate) fn borrow_leave_block(&mut self, flow: &mut AnalysisState, block: &Ptr<Block>) {
+    pub(crate) fn borrow_leave_block(&mut self, flow: &mut AnalysisState) {
         flow.borrow.merge_top()
     }
 }

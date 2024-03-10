@@ -17,7 +17,7 @@ impl PackageSemanticAnalyzer {
         block: &Ptr<Block>,
         is_assignment: bool,
     ) -> Option<ExpressionSemantics> {
-        self.borrow_enter_block(flow, block);
+        self.borrow_enter_block(flow);
         let mut last_statement: Option<Statement> = None;
         let mut last_statement_type: Option<ExpressionSemantics> = None;
         let mut returned = false;
@@ -61,7 +61,7 @@ impl PackageSemanticAnalyzer {
                 ));
             }
         }
-        self.borrow_leave_block(flow, block);
+        self.borrow_leave_block(flow);
         last_statement_type
     }
 
