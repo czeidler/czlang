@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    ast::{LangError, NodeId, VarDeclaration},
+    ast::{Block, LangError, NodeId, VarDeclaration},
     types::Ptr,
 };
 
@@ -47,9 +47,14 @@ impl BorrowStack {
         let removed = self.stack.pop().unwrap();
         let last = self.stack.len() - 1;
         let top = self.stack.get_mut(last).unwrap();
-        for (key, mut value) in removed {
+        for (key, value) in removed {
             let entry = top.entry(key).or_default();
-            entry.append(&mut value);
+            for v in value {
+                match &v.r#type {
+                    BorrowType::Borrow => {}
+                    BorrowType::Moved => entry.push(v),
+                };
+            }
         }
     }
 }
@@ -127,5 +132,13 @@ impl PackageSemanticAnalyzer {
                 });
             }
         }
+    }
+
+    pub(crate) fn borrow_enter_block(&mut self, flow: &mut AnalysisState, block: &Ptr<Block>) {
+        flow.borrow.new_scope();
+    }
+
+    pub(crate) fn borrow_leave_block(&mut self, flow: &mut AnalysisState, block: &Ptr<Block>) {
+        flow.borrow.merge_top()
     }
 }
