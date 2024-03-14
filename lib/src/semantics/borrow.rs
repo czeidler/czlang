@@ -104,8 +104,15 @@ impl PackageSemanticAnalyzer {
             // TODO impl selector fields for partial borrows
             if let Type::RefType(reference) = t {
                 for entry in entries.iter() {
-                    let BorrowType::Borrow = entry.r#type else {
-                        continue;
+                    match entry.r#type {
+                        BorrowType::Borrow => {}
+                        BorrowType::Moved => {
+                            self.errors.push(LangError::type_error(
+                                &var_declaration.value.node,
+                                format!("Variable moved",),
+                            ));
+                            continue;
+                        }
                     };
                     if entry.is_mut {
                         self.errors.push(LangError::type_error(
