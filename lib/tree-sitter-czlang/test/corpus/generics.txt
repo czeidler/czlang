@@ -16,7 +16,7 @@ struct Test2<T, T2<T3>> {
     (struct_declaration
         (identifier)
         (type_params
-            (identifier)
+            (type_param (identifier))
         )
         (field_declaration_list
             (field_definition
@@ -28,12 +28,12 @@ struct Test2<T, T2<T3>> {
     (struct_declaration
         (identifier)
         (type_params
-            (identifier)
-            (generic_type_param
-                (identifier)
-                (type_params
-                    (identifier)
-                )
+            (type_param (identifier))
+            (type_param
+              (identifier)
+              (type_params
+                  (type_param (identifier))
+              )
             )
         )
         (field_declaration_list
@@ -67,7 +67,7 @@ fun main() {
       (function_definition
         (identifier)
         (type_params
-          (identifier))
+          (type_param (identifier)))
         (parameter_list
           (parameter
             (identifier)
@@ -113,31 +113,28 @@ fun (&MyStruct<u8> impl MyInterface<bool>).test() {
   (interface_declaration
     (identifier)
     (type_params
-      (identifier))
+      (type_param (identifier)))
     (method_spec
       (identifier)
       (self_parameter_list)
       (identifier)))
   (struct_impl_interface
-    (generic_type
-      (identifier)
-      (type_arguments
-        (primitive_type)))
-    (generic_type
-      (identifier)
-      (type_arguments
-        (primitive_type))))
+    (identifier)
+    (type_arguments
+      (primitive_type))
+    (identifier)
+    (type_arguments
+      (primitive_type)))
   (method_definition
     (receiver
       (reference_type
-        (generic_type
-          (identifier)
-          (type_arguments
-            (primitive_type))))
-      (generic_type
         (identifier)
         (type_arguments
-          (primitive_type))))
+          (primitive_type)))
+        (identifier)
+        (type_arguments
+          (primitive_type))
+    )
     (identifier)
     (parameter_list)
     (block)

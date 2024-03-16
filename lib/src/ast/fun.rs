@@ -4,7 +4,7 @@ use crate::{tree_sitter::find_node, types::Ptr};
 
 use super::{
     child_by_field, node_text, parse_block, parse_type_param, parse_types, Block, BlockParent,
-    BlockType, FileContext, NodeData, RefType, SourceSpan, TypeParamType,
+    BlockType, FileContext, NodeData, RefType, SourceSpan, TypeParam,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -17,7 +17,7 @@ pub struct ReturnType {
 pub struct Receiver {
     pub node: NodeData,
     pub types: Vec<RefType>,
-    pub interface: Option<TypeParamType>,
+    pub interface: Option<TypeParam>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]

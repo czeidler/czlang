@@ -1,5 +1,5 @@
 use crate::{
-    ast::{PackagePath, Struct, TypeParam, TypeParamType},
+    ast::{PackagePath, Struct, TypeParam},
     types::Ptr,
 };
 use std::{fmt, slice::Iter, vec::IntoIter};
@@ -408,19 +408,18 @@ pub fn types_to_string(types: &Vec<Type>) -> String {
 
 impl fmt::Display for TypeParam {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.r#type {
-            TypeParamType::Identifier(ident) => write!(f, "{}", ident),
-            TypeParamType::GenericTypeParam(ident, args) => {
-                write!(f, "{}<", ident)?;
-                for (i, arg) in args.iter().enumerate() {
-                    if i != 0 {
-                        write!(f, ", ")?;
-                    }
-                    arg.fmt(f)?;
+        write!(f, "{}", self.identifier)?;
+        if !self.type_params.is_empty() {
+            write!(f, "<")?;
+            for (i, arg) in self.type_params.iter().enumerate() {
+                if i != 0 {
+                    write!(f, ", ")?;
                 }
-                write!(f, ">")
+                arg.fmt(f)?;
             }
+            write!(f, ">")?;
         }
+        Ok(())
     }
 }
 

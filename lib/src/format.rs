@@ -1,5 +1,5 @@
 use crate::{
-    ast::{FunctionSignature, Parameter, Receiver, TypeParamType, VarDeclaration},
+    ast::{FunctionSignature, Parameter, Receiver, TypeParam, VarDeclaration},
     semantics::{
         types::{types_to_string, SumType},
         PackageSemanticAnalyzer, TypeQueryContext,
@@ -24,18 +24,17 @@ pub fn format_param(
     )
 }
 
-pub fn format_type_param_type(type_param: &TypeParamType) -> String {
-    match type_param {
-        TypeParamType::Identifier(ident) => ident.clone(),
-        TypeParamType::GenericTypeParam(ident, type_params) => {
-            let type_params = type_params
-                .iter()
-                .map(|it| format_type_param_type(&it.r#type))
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!("{}<{}>", ident, type_params)
-        }
+pub fn format_type_param_type(type_param: &TypeParam) -> String {
+    if type_param.type_params.is_empty() {
+        return type_param.identifier.clone();
     }
+    let type_params = type_param
+        .type_params
+        .iter()
+        .map(|it| format_type_param_type(&it))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("{}<{}>", type_param.identifier, type_params)
 }
 
 pub fn format_receiver(analyzer: &mut PackageSemanticAnalyzer, receiver: &Receiver) -> String {

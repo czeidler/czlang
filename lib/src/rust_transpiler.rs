@@ -7,8 +7,7 @@ use crate::ast::{
     ExpressionType, Field, Function, FunctionCall, FunctionSignature, FunctionTrait, IfAlternative,
     IfExpression, Loop, Parameter, PipeExpression, Receiver, ReturnErrorPipeExpression,
     SelectorExpression, SelectorFieldType, SliceExpression, Statement, StringTemplatePart, Struct,
-    StructFieldInitialization, StructInitialization, TypeParam, TypeParamType, UnaryOperator,
-    VarDeclaration,
+    StructFieldInitialization, StructInitialization, TypeParam, UnaryOperator, VarDeclaration,
 };
 use crate::buildin::Buildins;
 use crate::project::Project;
@@ -138,21 +137,16 @@ impl RustTranspiler {
     }
 
     fn transpile_type_arg(&self, type_arg: &TypeParam, writer: &mut Writer) {
-        match &type_arg.r#type {
-            TypeParamType::Identifier(ident) => {
-                writer.write(&ident);
-            }
-            TypeParamType::GenericTypeParam(ident, args) => {
-                writer.write(&ident);
-                writer.write("<");
-                for (i, arg) in args.iter().enumerate() {
-                    if i != 0 {
-                        writer.write(", ");
-                    }
-                    self.transpile_type_arg(arg, writer);
+        writer.write(&type_arg.identifier);
+        if !type_arg.type_params.is_empty() {
+            writer.write("<");
+            for (i, arg) in type_arg.type_params.iter().enumerate() {
+                if i != 0 {
+                    writer.write(", ");
                 }
-                writer.write(">");
+                self.transpile_type_arg(arg, writer);
             }
+            writer.write(">");
         }
     }
 
@@ -1385,17 +1379,16 @@ impl RustTranspiler {
     }
 
     fn transpile_type_param(&self, param: &TypeParam) -> String {
-        match &param.r#type {
-            TypeParamType::Identifier(identifier) => identifier.clone(),
-            TypeParamType::GenericTypeParam(identifier, params) => {
-                let parts = params
-                    .iter()
-                    .map(|p| self.transpile_type_param(p))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                format!("{}<{}>", identifier, parts)
-            }
+        if param.type_params.is_empty() {
+            return param.identifier.clone();
         }
+        let parts = param
+            .type_params
+            .iter()
+            .map(|p| self.transpile_type_param(p))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("{}<{}>", param.identifier, parts)
     }
 
     fn transpile_struct(

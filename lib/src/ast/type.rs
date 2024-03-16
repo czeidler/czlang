@@ -90,15 +90,9 @@ impl RefType {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TypeParam {
     pub node: NodeData,
-    pub r#type: TypeParamType,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum TypeParamType {
-    /// Simple type parameter
-    Identifier(String),
-    /// identifier + type params, e.g. IdentType<string, bool>
-    GenericTypeParam(String, Vec<TypeParam>),
+    pub identifier_node: NodeData,
+    pub identifier: String,
+    pub type_params: Vec<TypeParam>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -224,25 +218,22 @@ pub(crate) fn parse_types<'a>(context: &Ptr<FileContext>, node: &Node<'a>) -> Op
 pub(crate) fn parse_type_param<'a>(
     context: &Ptr<FileContext>,
     node: &Node<'a>,
-) -> Option<TypeParamType> {
-    let t = match node.kind() {
-        "identifier" => {
-            let type_text = node_text(&node, context)?;
-            TypeParamType::Identifier(type_text)
-        }
-        "generic_type_param" => {
-            let identifier_node = child_by_field(&node, "type")?;
-            let identifier = node_text(&identifier_node, context)?;
-            let type_arguments = child_by_field(&node, "type_arguments")?;
-            let parameters = parse_type_params(context, &type_arguments);
-            TypeParamType::GenericTypeParam(identifier, parameters)
-        }
-        _ => {
-            log::error!("Unsupported type param type: {}", node.kind());
-            return None;
-        }
+) -> Option<TypeParam> {
+    let identifier_node = child_by_field(&node, "identifier")?;
+    let identifier = node_text(&identifier_node, context)?;
+
+    let type_params = if let Some(type_arguments) = child_by_field(&node, "type_params") {
+        parse_type_params(context, &type_arguments)
+    } else {
+        vec![]
     };
-    Some(t)
+
+    Some(TypeParam {
+        node: context.node_data(node),
+        identifier,
+        identifier_node: context.node_data(&identifier_node),
+        type_params,
+    })
 }
 
 pub(crate) fn parse_type_params<'a>(context: &Ptr<FileContext>, node: &Node<'a>) -> Vec<TypeParam> {
@@ -250,10 +241,7 @@ pub(crate) fn parse_type_params<'a>(context: &Ptr<FileContext>, node: &Node<'a>)
     let mut cursor = node.walk();
     for type_node in node.children_by_field_name("type", &mut cursor) {
         if let Some(t) = parse_type_param(context, &type_node) {
-            output.push(TypeParam {
-                node: context.node_data(&type_node),
-                r#type: t,
-            });
+            output.push(t);
         }
     }
     output

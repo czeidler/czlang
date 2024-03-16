@@ -48,16 +48,15 @@ fun f2<T>(arg fun (&MyType<T>).(a i32) bool | u32) {
       (function_definition
         (identifier)
         (type_params
-          (identifier))
+          (type_param (identifier)))
         (parameter_list
           (parameter
             (identifier)
             (closure_type
               (reference_type
-                (generic_type
-                  (identifier)
-                  (type_arguments
-                    (identifier))))
+                (identifier)
+                (type_arguments
+                  (identifier)))
               (parameter_list
                 (parameter
                   (identifier)

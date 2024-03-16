@@ -212,7 +212,7 @@
     "named": true,
     "fields": {
       "element": {
-        "multiple": false,
+        "multiple": true,
         "required": true,
         "types": [
           {
@@ -225,10 +225,6 @@
           },
           {
             "type": "error_type",
-            "named": true
-          },
-          {
-            "type": "generic_type",
             "named": true
           },
           {
@@ -257,6 +253,20 @@
           },
           {
             "type": "sum_type",
+            "named": true
+          },
+          {
+            "type": "type_arguments",
+            "named": true
+          }
+        ]
+      },
+      "identifier": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
             "named": true
           }
         ]
@@ -355,6 +365,16 @@
           },
           {
             "type": "unary_expression",
+            "named": true
+          }
+        ]
+      },
+      "type_arguments": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "type_arguments",
             "named": true
           }
         ]
@@ -954,6 +974,16 @@
           }
         ]
       },
+      "identifier": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
       "parameters": {
         "multiple": false,
         "required": true,
@@ -965,7 +995,7 @@
         ]
       },
       "result": {
-        "multiple": false,
+        "multiple": true,
         "required": false,
         "types": [
           {
@@ -978,10 +1008,6 @@
           },
           {
             "type": "error_type",
-            "named": true
-          },
-          {
-            "type": "generic_type",
             "named": true
           },
           {
@@ -1010,12 +1036,16 @@
           },
           {
             "type": "sum_type",
+            "named": true
+          },
+          {
+            "type": "type_arguments",
             "named": true
           }
         ]
       },
       "type": {
-        "multiple": false,
+        "multiple": true,
         "required": false,
         "types": [
           {
@@ -1028,10 +1058,6 @@
           },
           {
             "type": "error_type",
-            "named": true
-          },
-          {
-            "type": "generic_type",
             "named": true
           },
           {
@@ -1060,6 +1086,20 @@
           },
           {
             "type": "sum_type",
+            "named": true
+          },
+          {
+            "type": "type_arguments",
+            "named": true
+          }
+        ]
+      },
+      "type_arguments": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "type_arguments",
             "named": true
           }
         ]
@@ -1637,10 +1677,6 @@
             "named": true
           },
           {
-            "type": "generic_type",
-            "named": true
-          },
-          {
             "type": "identifier",
             "named": true
           },
@@ -1676,10 +1712,6 @@
         "types": [
           {
             "type": "array_type",
-            "named": true
-          },
-          {
-            "type": "generic_type",
             "named": true
           },
           {
@@ -1848,6 +1880,16 @@
     "type": "field_definition",
     "named": true,
     "fields": {
+      "identifier": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
       "name": {
         "multiple": false,
         "required": true,
@@ -1859,7 +1901,7 @@
         ]
       },
       "type": {
-        "multiple": false,
+        "multiple": true,
         "required": true,
         "types": [
           {
@@ -1872,10 +1914,6 @@
           },
           {
             "type": "error_type",
-            "named": true
-          },
-          {
-            "type": "generic_type",
             "named": true
           },
           {
@@ -1904,6 +1942,20 @@
           },
           {
             "type": "sum_type",
+            "named": true
+          },
+          {
+            "type": "type_arguments",
+            "named": true
+          }
+        ]
+      },
+      "type_arguments": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "type_arguments",
             "named": true
           }
         ]
@@ -2320,6 +2372,16 @@
           }
         ]
       },
+      "identifier": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
       "name": {
         "multiple": false,
         "required": true,
@@ -2341,7 +2403,7 @@
         ]
       },
       "result": {
-        "multiple": false,
+        "multiple": true,
         "required": false,
         "types": [
           {
@@ -2354,10 +2416,6 @@
           },
           {
             "type": "error_type",
-            "named": true
-          },
-          {
-            "type": "generic_type",
             "named": true
           },
           {
@@ -2387,68 +2445,26 @@
           {
             "type": "sum_type",
             "named": true
-          }
-        ]
-      },
-      "type_params": {
-        "multiple": false,
-        "required": false,
-        "types": [
-          {
-            "type": "type_params",
-            "named": true
-          }
-        ]
-      }
-    }
-  },
-  {
-    "type": "generic_type",
-    "named": true,
-    "fields": {
-      "type": {
-        "multiple": false,
-        "required": true,
-        "types": [
-          {
-            "type": "identifier",
-            "named": true
           },
           {
-            "type": "qualified_type",
+            "type": "type_arguments",
             "named": true
           }
         ]
       },
       "type_arguments": {
         "multiple": false,
-        "required": true,
+        "required": false,
         "types": [
           {
             "type": "type_arguments",
             "named": true
           }
         ]
-      }
-    }
-  },
-  {
-    "type": "generic_type_param",
-    "named": true,
-    "fields": {
-      "type": {
-        "multiple": false,
-        "required": true,
-        "types": [
-          {
-            "type": "identifier",
-            "named": true
-          }
-        ]
       },
-      "type_arguments": {
+      "type_params": {
         "multiple": false,
-        "required": true,
+        "required": false,
         "types": [
           {
             "type": "type_params",
@@ -2795,6 +2811,16 @@
           }
         ]
       },
+      "identifier": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
       "name": {
         "multiple": false,
         "required": true,
@@ -2826,7 +2852,7 @@
         ]
       },
       "result": {
-        "multiple": false,
+        "multiple": true,
         "required": false,
         "types": [
           {
@@ -2839,10 +2865,6 @@
           },
           {
             "type": "error_type",
-            "named": true
-          },
-          {
-            "type": "generic_type",
             "named": true
           },
           {
@@ -2872,11 +2894,15 @@
           {
             "type": "sum_type",
             "named": true
+          },
+          {
+            "type": "type_arguments",
+            "named": true
           }
         ]
       },
       "type_arguments": {
-        "multiple": false,
+        "multiple": true,
         "required": false,
         "types": [
           {
@@ -2891,6 +2917,16 @@
     "type": "method_spec",
     "named": true,
     "fields": {
+      "identifier": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
       "name": {
         "multiple": false,
         "required": true,
@@ -2912,7 +2948,7 @@
         ]
       },
       "result": {
-        "multiple": false,
+        "multiple": true,
         "required": false,
         "types": [
           {
@@ -2925,10 +2961,6 @@
           },
           {
             "type": "error_type",
-            "named": true
-          },
-          {
-            "type": "generic_type",
             "named": true
           },
           {
@@ -2958,6 +2990,10 @@
           {
             "type": "sum_type",
             "named": true
+          },
+          {
+            "type": "type_arguments",
+            "named": true
           }
         ]
       },
@@ -2967,6 +3003,16 @@
         "types": [
           {
             "type": "self_parameter",
+            "named": true
+          }
+        ]
+      },
+      "type_arguments": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "type_arguments",
             "named": true
           }
         ]
@@ -2982,6 +3028,16 @@
     "type": "parameter",
     "named": true,
     "fields": {
+      "identifier": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
       "mutable": {
         "multiple": false,
         "required": false,
@@ -3003,7 +3059,7 @@
         ]
       },
       "type": {
-        "multiple": false,
+        "multiple": true,
         "required": true,
         "types": [
           {
@@ -3016,10 +3072,6 @@
           },
           {
             "type": "error_type",
-            "named": true
-          },
-          {
-            "type": "generic_type",
             "named": true
           },
           {
@@ -3048,6 +3100,20 @@
           },
           {
             "type": "sum_type",
+            "named": true
+          },
+          {
+            "type": "type_arguments",
+            "named": true
+          }
+        ]
+      },
+      "type_arguments": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "type_arguments",
             "named": true
           }
         ]
@@ -3177,8 +3243,18 @@
     "type": "parenthesized_type",
     "named": true,
     "fields": {
-      "type": {
+      "identifier": {
         "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "type": {
+        "multiple": true,
         "required": true,
         "types": [
           {
@@ -3191,10 +3267,6 @@
           },
           {
             "type": "error_type",
-            "named": true
-          },
-          {
-            "type": "generic_type",
             "named": true
           },
           {
@@ -3223,6 +3295,20 @@
           },
           {
             "type": "sum_type",
+            "named": true
+          },
+          {
+            "type": "type_arguments",
+            "named": true
+          }
+        ]
+      },
+      "type_arguments": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "type_arguments",
             "named": true
           }
         ]
@@ -3440,7 +3526,7 @@
     "type": "qualified_type",
     "named": true,
     "fields": {
-      "name": {
+      "identifier": {
         "multiple": false,
         "required": true,
         "types": [
@@ -3466,14 +3552,20 @@
     "type": "receiver",
     "named": true,
     "fields": {
-      "interface": {
-        "multiple": false,
+      "identifier": {
+        "multiple": true,
         "required": false,
         "types": [
           {
-            "type": "generic_type",
+            "type": "identifier",
             "named": true
-          },
+          }
+        ]
+      },
+      "interface": {
+        "multiple": true,
+        "required": false,
+        "types": [
           {
             "type": "identifier",
             "named": true
@@ -3481,11 +3573,15 @@
           {
             "type": "qualified_type",
             "named": true
+          },
+          {
+            "type": "type_arguments",
+            "named": true
           }
         ]
       },
       "type": {
-        "multiple": false,
+        "multiple": true,
         "required": true,
         "types": [
           {
@@ -3498,10 +3594,6 @@
           },
           {
             "type": "error_type",
-            "named": true
-          },
-          {
-            "type": "generic_type",
             "named": true
           },
           {
@@ -3531,6 +3623,20 @@
           {
             "type": "sum_type",
             "named": true
+          },
+          {
+            "type": "type_arguments",
+            "named": true
+          }
+        ]
+      },
+      "type_arguments": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "type_arguments",
+            "named": true
           }
         ]
       }
@@ -3540,6 +3646,16 @@
     "type": "reference_type",
     "named": true,
     "fields": {
+      "identifier": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
       "reference": {
         "multiple": false,
         "required": true,
@@ -3555,7 +3671,7 @@
         ]
       },
       "type": {
-        "multiple": false,
+        "multiple": true,
         "required": true,
         "types": [
           {
@@ -3568,10 +3684,6 @@
           },
           {
             "type": "error_type",
-            "named": true
-          },
-          {
-            "type": "generic_type",
             "named": true
           },
           {
@@ -3600,6 +3712,20 @@
           },
           {
             "type": "sum_type",
+            "named": true
+          },
+          {
+            "type": "type_arguments",
+            "named": true
+          }
+        ]
+      },
+      "type_arguments": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "type_arguments",
             "named": true
           }
         ]
@@ -4320,7 +4446,7 @@
     "named": true,
     "fields": {
       "element": {
-        "multiple": false,
+        "multiple": true,
         "required": true,
         "types": [
           {
@@ -4333,10 +4459,6 @@
           },
           {
             "type": "error_type",
-            "named": true
-          },
-          {
-            "type": "generic_type",
             "named": true
           },
           {
@@ -4365,6 +4487,30 @@
           },
           {
             "type": "sum_type",
+            "named": true
+          },
+          {
+            "type": "type_arguments",
+            "named": true
+          }
+        ]
+      },
+      "identifier": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "type_arguments": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "type_arguments",
             "named": true
           }
         ]
@@ -4471,53 +4617,34 @@
   {
     "type": "struct_impl_interface",
     "named": true,
-    "fields": {},
+    "fields": {
+      "identifier": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "type_arguments": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "type_arguments",
+            "named": true
+          }
+        ]
+      }
+    },
     "children": {
       "multiple": true,
-      "required": true,
+      "required": false,
       "types": [
         {
-          "type": "array_type",
-          "named": true
-        },
-        {
-          "type": "closure_type",
-          "named": true
-        },
-        {
-          "type": "error_type",
-          "named": true
-        },
-        {
-          "type": "generic_type",
-          "named": true
-        },
-        {
-          "type": "identifier",
-          "named": true
-        },
-        {
-          "type": "parenthesized_type",
-          "named": true
-        },
-        {
-          "type": "primitive_type",
-          "named": true
-        },
-        {
           "type": "qualified_type",
-          "named": true
-        },
-        {
-          "type": "reference_type",
-          "named": true
-        },
-        {
-          "type": "slice_type",
-          "named": true
-        },
-        {
-          "type": "sum_type",
           "named": true
         }
       ]
@@ -4553,8 +4680,18 @@
     "type": "sum_type",
     "named": true,
     "fields": {
+      "identifier": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
       "left": {
-        "multiple": false,
+        "multiple": true,
         "required": true,
         "types": [
           {
@@ -4567,10 +4704,6 @@
           },
           {
             "type": "error_type",
-            "named": true
-          },
-          {
-            "type": "generic_type",
             "named": true
           },
           {
@@ -4599,12 +4732,16 @@
           },
           {
             "type": "sum_type",
+            "named": true
+          },
+          {
+            "type": "type_arguments",
             "named": true
           }
         ]
       },
       "right": {
-        "multiple": false,
+        "multiple": true,
         "required": true,
         "types": [
           {
@@ -4617,10 +4754,6 @@
           },
           {
             "type": "error_type",
-            "named": true
-          },
-          {
-            "type": "generic_type",
             "named": true
           },
           {
@@ -4649,6 +4782,20 @@
           },
           {
             "type": "sum_type",
+            "named": true
+          },
+          {
+            "type": "type_arguments",
+            "named": true
+          }
+        ]
+      },
+      "type_arguments": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "type_arguments",
             "named": true
           }
         ]
@@ -4659,6 +4806,16 @@
     "type": "type_arguments",
     "named": true,
     "fields": {
+      "identifier": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
       "type": {
         "multiple": true,
         "required": true,
@@ -4676,10 +4833,6 @@
             "named": true
           },
           {
-            "type": "generic_type",
-            "named": true
-          },
-          {
             "type": "identifier",
             "named": true
           },
@@ -4705,6 +4858,46 @@
           },
           {
             "type": "sum_type",
+            "named": true
+          },
+          {
+            "type": "type_arguments",
+            "named": true
+          }
+        ]
+      },
+      "type_arguments": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "type_arguments",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "type_param",
+    "named": true,
+    "fields": {
+      "identifier": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "type_params": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "type_params",
             "named": true
           }
         ]
@@ -4720,11 +4913,7 @@
         "required": true,
         "types": [
           {
-            "type": "generic_type_param",
-            "named": true
-          },
-          {
-            "type": "identifier",
+            "type": "type_param",
             "named": true
           }
         ]
@@ -4865,6 +5054,16 @@
     "type": "var_declaration",
     "named": true,
     "fields": {
+      "identifier": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
       "mutable": {
         "multiple": false,
         "required": false,
@@ -4886,7 +5085,7 @@
         ]
       },
       "type": {
-        "multiple": false,
+        "multiple": true,
         "required": false,
         "types": [
           {
@@ -4899,10 +5098,6 @@
           },
           {
             "type": "error_type",
-            "named": true
-          },
-          {
-            "type": "generic_type",
             "named": true
           },
           {
@@ -4931,6 +5126,20 @@
           },
           {
             "type": "sum_type",
+            "named": true
+          },
+          {
+            "type": "type_arguments",
+            "named": true
+          }
+        ]
+      },
+      "type_arguments": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "type_arguments",
             "named": true
           }
         ]

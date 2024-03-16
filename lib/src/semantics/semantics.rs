@@ -14,7 +14,7 @@ use crate::{
         FunctionCall, FunctionSignature, IfAlternative, IfExpression, Import, ImportName,
         LangError, NodeData, NodeId, PackagePath, Parameter, RefType, SelectorExpression,
         SelectorField, Struct, StructFieldInitialization, StructInitialization, TypeParam,
-        TypeParamType, VarDeclaration,
+        VarDeclaration,
     },
     buildin::Buildins,
     types::Ptr,
@@ -589,10 +589,7 @@ impl PackageSemanticAnalyzer {
             TypeQueryContext::Struct(struct_def) => {
                 if let Some(type_params) = struct_def.type_params.as_ref() {
                     for arg in type_params {
-                        if match &arg.r#type {
-                            TypeParamType::Identifier(id) => id == identifier,
-                            TypeParamType::GenericTypeParam(id, _) => id == identifier,
-                        } {
+                        if &arg.identifier == identifier {
                             let binding = Some(TypeBinding::StructTypeArgument(arg.clone()));
 
                             return binding;
