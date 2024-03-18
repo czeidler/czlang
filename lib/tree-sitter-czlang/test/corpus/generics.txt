@@ -119,21 +119,31 @@ fun (&MyStruct<u8> impl MyInterface<bool>).test() {
       (self_parameter_list)
       (identifier)))
   (struct_impl_interface
-    (identifier)
-    (type_arguments
-      (primitive_type))
-    (identifier)
-    (type_arguments
-      (primitive_type)))
+    (generic_identifier
+      (identifier)
+      (type_arguments
+        (primitive_type))
+    )
+    (generic_identifier
+      (identifier)
+      (type_arguments
+        (primitive_type))
+    )
+  )
   (method_definition
     (receiver
       (reference_type
-        (identifier)
-        (type_arguments
-          (primitive_type)))
+        (generic_identifier
+          (identifier)
+          (type_arguments
+            (primitive_type))
+        )
+      )
+      (generic_identifier
         (identifier)
         (type_arguments
           (primitive_type))
+      )
     )
     (identifier)
     (parameter_list)
