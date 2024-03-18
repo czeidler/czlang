@@ -10,6 +10,7 @@ impl PackageSemanticAnalyzer {
         let mut functions = HashMap::new();
         let mut structs = HashMap::new();
         let mut methods = Vec::new();
+        let mut struct_impls = Vec::new();
         for (_, file) in &self.files {
             for child in file.children() {
                 match child {
@@ -51,6 +52,7 @@ impl PackageSemanticAnalyzer {
                             imports.push(import);
                         }
                     }
+                    RootSymbol::StructImpl(struct_impl) => struct_impls.push(struct_impl),
                 }
             }
         }
@@ -60,6 +62,7 @@ impl PackageSemanticAnalyzer {
             structs,
             methods,
             imports,
+            struct_impls,
         }
     }
 }

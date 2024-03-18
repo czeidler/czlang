@@ -1,6 +1,7 @@
 use crate::types::Ptr;
 
 use super::{
+    implement::{parse_struct_impl, StructImplement},
     parse_fun, parse_import, parse_method, parse_struct, FileContext, Function, Import, Struct,
 };
 
@@ -8,6 +9,7 @@ pub enum RootSymbol {
     Function(Ptr<Function>),
     Struct(Ptr<Struct>),
     Import(Import),
+    StructImpl(StructImplement),
 }
 
 pub trait FileTrait {
@@ -67,6 +69,13 @@ impl Iterator for FileSymbolIterator {
                         return Some(RootSymbol::Import(import_declaration));
                     } else {
                         log::error!("Invalid import_declaration: {:?}", child);
+                    }
+                }
+                "struct_impl_interface" => {
+                    if let Some(struct_impl) = parse_struct_impl(&self.file, &child) {
+                        return Some(RootSymbol::StructImpl(struct_impl));
+                    } else {
+                        log::error!("Invalid struct_impl_interface: {:?}", child);
                     }
                 }
                 _ => {}

@@ -10,6 +10,13 @@ use super::{
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct IdentifierType {
+    pub identifier: String,
+    pub package: Option<String>,
+    pub type_arguments: Vec<Type>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Type {
     Null,
     Str,
@@ -19,7 +26,7 @@ pub enum Type {
     I8,
     U32,
     I32,
-    Identifier(String),
+    Identifier(IdentifierType),
     Array(Array),
     Slice(Slice),
     /// For example, for nullable or error types
@@ -123,7 +130,66 @@ pub struct ClosureType {
     pub return_type: Option<ReturnType>,
 }
 
+fn parse_type_arguments(context: &Ptr<FileContext>, type_arguments: &Node) -> Vec<Type> {
+    let mut output = vec![];
+    let mut cursor = type_arguments.walk();
+    for type_node in type_arguments.children_by_field_name("type", &mut cursor) {
+        if let Some(t) = parse_type(context, &type_node) {
+            output.push(t);
+        }
+    }
+    output
+}
+
+pub(crate) fn parse_identifier_type(
+    context: &Ptr<FileContext>,
+    node: &Node,
+) -> Option<IdentifierType> {
+    let t = match node.kind() {
+        "identifier" => {
+            let identifier = node_text(&node, context)?;
+            IdentifierType {
+                identifier,
+                package: None,
+                type_arguments: vec![],
+            }
+        }
+        "qualified_type" => {
+            let package = child_by_field(&node, "package")?;
+            let package = node_text(&package, context)?;
+            let identifier = child_by_field(&node, "identifier")?;
+            let identifier = node_text(&identifier, context)?;
+            IdentifierType {
+                identifier,
+                package: Some(package),
+                type_arguments: vec![],
+            }
+        }
+        "generic_identifier" => {
+            let package = if let Some(package) = child_by_field(&node, "package") {
+                Some(node_text(&package, context)?)
+            } else {
+                None
+            };
+            let identifier = child_by_field(&node, "identifier")?;
+            let identifier = node_text(&identifier, context)?;
+            let type_arguments = child_by_field(&node, "type_arguments")?;
+            let type_arguments = parse_type_arguments(context, &type_arguments);
+            IdentifierType {
+                identifier,
+                package,
+                type_arguments,
+            }
+        }
+        _ => return None,
+    };
+    Some(t)
+}
+
 fn parse_type<'a>(context: &Ptr<FileContext>, node: &Node<'a>) -> Option<Type> {
+    if let Some(identifier_type) = parse_identifier_type(context, node) {
+        return Some(Type::Identifier(identifier_type));
+    };
     let t = match node.kind() {
         "primitive_type" => {
             let type_text = node_text(&node, context)?;
@@ -140,10 +206,6 @@ fn parse_type<'a>(context: &Ptr<FileContext>, node: &Node<'a>) -> Option<Type> {
                     return None;
                 }
             }
-        }
-        "identifier" => {
-            let type_text = node_text(&node, context)?;
-            Type::Identifier(type_text)
         }
         "array_type" => Type::Array(parse_array(context, &node)?),
         "slice_type" => Type::Slice(parse_slice(context, &node)?),

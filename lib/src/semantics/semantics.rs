@@ -10,11 +10,11 @@ use super::{
 };
 use crate::{
     ast::{
-        self, Block, BlockParent, Expression, ExpressionType, Field, FileContext, Function,
-        FunctionCall, FunctionSignature, IfAlternative, IfExpression, Import, ImportName,
-        LangError, NodeData, NodeId, PackagePath, Parameter, RefType, SelectorExpression,
-        SelectorField, Struct, StructFieldInitialization, StructInitialization, TypeParam,
-        VarDeclaration,
+        self, implement::StructImplement, Block, BlockParent, Expression, ExpressionType, Field,
+        FileContext, Function, FunctionCall, FunctionSignature, IfAlternative, IfExpression,
+        Import, ImportName, LangError, NodeData, NodeId, PackagePath, Parameter, RefType,
+        SelectorExpression, SelectorField, Struct, StructFieldInitialization, StructInitialization,
+        TypeParam, VarDeclaration,
     },
     buildin::Buildins,
     types::Ptr,
@@ -43,6 +43,7 @@ pub struct PackageContentSemantics {
     /// Struct methods declarations
     pub methods: Vec<Ptr<Function>>,
     pub structs: HashMap<String, Ptr<Struct>>,
+    pub struct_impls: Vec<StructImplement>,
 }
 
 /// Context in which a type is used, e.g. needed to resolve generic types
@@ -479,7 +480,7 @@ impl PackageSemanticAnalyzer {
             ),
             ast::Type::Identifier(ident) => {
                 return self
-                    .lookup_type_identifier(context, &node, ident)
+                    .lookup_type_identifier(context, &node, &ident.identifier)
                     .map(|binding| match binding {
                         TypeBinding::Struct(st) => Type::Struct(st.clone()),
                         TypeBinding::StructTypeArgument(arg) => {

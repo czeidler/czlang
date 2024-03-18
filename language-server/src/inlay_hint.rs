@@ -142,6 +142,7 @@ pub fn inlay_hints(
             }
             RootSymbol::Struct(_) => continue,
             RootSymbol::Import(_) => continue,
+            RootSymbol::StructImpl(_) => continue,
         }
     }
     hints
