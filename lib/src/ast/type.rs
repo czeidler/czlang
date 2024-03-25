@@ -13,7 +13,7 @@ use super::{
 pub struct IdentifierType {
     pub identifier: String,
     pub package: Option<String>,
-    pub type_arguments: Vec<Type>,
+    pub type_arguments: Vec<Vec<RefType>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -130,11 +130,11 @@ pub struct ClosureType {
     pub return_type: Option<ReturnType>,
 }
 
-fn parse_type_arguments(context: &Ptr<FileContext>, type_arguments: &Node) -> Vec<Type> {
+fn parse_type_arguments(context: &Ptr<FileContext>, type_arguments: &Node) -> Vec<Vec<RefType>> {
     let mut output = vec![];
     let mut cursor = type_arguments.walk();
     for type_node in type_arguments.children_by_field_name("type", &mut cursor) {
-        if let Some(t) = parse_type(context, &type_node) {
+        if let Some(t) = parse_types(context, &type_node) {
             output.push(t);
         }
     }

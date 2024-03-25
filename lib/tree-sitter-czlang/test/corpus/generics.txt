@@ -114,7 +114,7 @@ fun (&MyStruct<u8> impl MyInterface<bool>).test() {
     (identifier)
     (type_params
       (type_param (identifier)))
-    (method_spec
+    (method_declaration
       (identifier)
       (self_parameter_list)
       (identifier)))

@@ -1,5 +1,8 @@
 use crate::{
-    ast::{FunctionSignature, Parameter, Receiver, TypeParam, VarDeclaration},
+    ast::{
+        implement::StructImplement, FunctionSignature, IdentifierType, Parameter, Receiver,
+        TypeParam, VarDeclaration,
+    },
     semantics::{
         types::{types_to_string, SumType},
         PackageSemanticAnalyzer, TypeQueryContext,
@@ -73,4 +76,40 @@ pub fn format_fun_signature(
         "fun {}{}({}){}",
         receiver, signature.name, params, return_type
     )
+}
+
+pub fn format_identifier_type(
+    analyzer: &mut PackageSemanticAnalyzer,
+    t: &IdentifierType,
+) -> String {
+    let id = if let Some(package) = &t.package {
+        format!("{}.{}", package, t.identifier)
+    } else {
+        t.identifier.clone()
+    };
+    let arguments = if t.type_arguments.is_empty() {
+        "".to_string()
+    } else {
+        let join = t
+            .type_arguments
+            .iter()
+            .map(|it: &Vec<crate::ast::RefType>| {
+                let types = analyzer.query_types(&TypeQueryContext::Root, it);
+                format!("{}", types_to_string(types.types()))
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("<{}>", join)
+    };
+
+    format!("{}{}", id, arguments)
+}
+
+pub fn format_struct_impl(
+    analyzer: &mut PackageSemanticAnalyzer,
+    struct_impl: &StructImplement,
+) -> String {
+    let st = format_identifier_type(analyzer, &struct_impl.st);
+    let interface = format_identifier_type(analyzer, &struct_impl.interface);
+    format!("{} impl {}", st, interface)
 }

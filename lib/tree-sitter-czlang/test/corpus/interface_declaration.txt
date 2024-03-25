@@ -17,7 +17,7 @@ interface TestStruct {
 (source_file
   (interface_declaration
     (identifier)
-    (method_spec
+    (method_declaration
         (identifier)
         (self_parameter_list
         (parameter
@@ -26,29 +26,29 @@ interface TestStruct {
         (parameter
             (identifier)
             (primitive_type))))
-    (method_spec
+    (method_declaration
         (identifier)
         (self_parameter_list))
-    (method_spec
+    (method_declaration
         (identifier)
         (self_parameter_list)
         (primitive_type))
-    (method_spec
+    (method_declaration
         (identifier)
         (self_parameter_list)
         (identifier))
-    (method_spec
+    (method_declaration
         (identifier)
         (self_parameter_list
             (self_parameter)
             (parameter
                 (identifier)
                 (primitive_type))))
-    (method_spec
+    (method_declaration
         (identifier)
         (self_parameter_list
             (self_parameter)))
-    (method_spec
+    (method_declaration
         (identifier)
         (self_parameter_list
             (self_parameter)

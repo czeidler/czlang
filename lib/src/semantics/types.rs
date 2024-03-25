@@ -1,5 +1,5 @@
 use crate::{
-    ast::{PackagePath, Struct, TypeParam},
+    ast::{Interface, PackagePath, Struct, TypeParam},
     types::Ptr,
 };
 use std::{fmt, slice::Iter, vec::IntoIter};
@@ -39,9 +39,12 @@ pub enum Type {
     Either(SumType, SumType),
 
     /// For example, an identifier resolved to a struct definition
+    /// TODO add resolved type parameters
     Struct(Ptr<Struct>),
     /// For example, an identifier pointing to a struct type parameter
+    /// TODO add actual types this TypeParam resolves to
     StructTypeArgument(TypeParam),
+    Interface(Ptr<Interface>),
 
     Closure(Ptr<ClosureType>),
     Package(PackagePath),
@@ -271,6 +274,7 @@ impl SumType {
                     continue;
                 }
                 Type::Package(_) => todo!(),
+                Type::Interface(_) => todo!(),
             };
             name += part;
         }
@@ -352,6 +356,7 @@ fn is_number(types: &Type) -> bool {
         Type::StructTypeArgument(_) => false,
         Type::Closure(_) => false,
         Type::Package(_) => false,
+        Type::Interface(_) => false,
     }
 }
 
@@ -374,6 +379,7 @@ fn is_integer(types: &Type) -> bool {
         Type::StructTypeArgument(_) => false,
         Type::Closure(_) => false,
         Type::Package(_) => false,
+        Type::Interface(_) => false,
     }
 }
 
@@ -483,6 +489,7 @@ impl fmt::Display for Type {
                 return ref_type.r#type.fmt(f);
             }
             Type::Struct(s) => write!(f, "{}", s.name),
+            Type::Interface(interface) => write!(f, "{}", interface.name),
             Type::StructTypeArgument(type_param) => type_param.fmt(f),
             Type::Closure(closure) => {
                 write!(f, "fun ")?;

@@ -2,7 +2,7 @@ use tree_sitter::Node;
 
 use crate::types::Ptr;
 
-use super::{child_by_field, parse_identifier_type, FileContext, IdentifierType};
+use super::{child_by_field, parse_identifier_type, FileContext, IdentifierType, NodeData};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum ImportName {
@@ -20,6 +20,7 @@ pub fn root_package_path() -> PackagePath {
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct StructImplement {
+    pub node: NodeData,
     pub st: IdentifierType,
     pub interface: IdentifierType,
 }
@@ -33,5 +34,9 @@ pub fn parse_struct_impl<'a>(
 
     let st = parse_identifier_type(context, &st)?;
     let interface = parse_identifier_type(context, &interface)?;
-    Some(StructImplement { st, interface })
+    Some(StructImplement {
+        node: context.node_data(node),
+        st,
+        interface,
+    })
 }

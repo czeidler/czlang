@@ -10,7 +10,8 @@ impl PackageSemanticAnalyzer {
         let mut functions = HashMap::new();
         let mut structs = HashMap::new();
         let mut methods = Vec::new();
-        let mut struct_impls = Vec::new();
+        let mut struct_impls = HashMap::new();
+        let mut interfaces = HashMap::new();
         for (_, file) in &self.files {
             for child in file.children() {
                 match child {
@@ -52,7 +53,26 @@ impl PackageSemanticAnalyzer {
                             imports.push(import);
                         }
                     }
-                    RootSymbol::StructImpl(struct_impl) => struct_impls.push(struct_impl),
+                    RootSymbol::StructImpl(struct_impl) => {
+                        let entry: &mut Vec<_> =
+                            struct_impls.entry(struct_impl.st.clone()).or_default();
+                        if let Some(_) = entry.iter().find(|it| it == &&struct_impl) {
+                            self.errors.push(LangError::type_error(
+                                &struct_impl.node,
+                                format!("Duplicated impl statement"), // TODO: be more detailed
+                            ))
+                        }
+                        entry.push(struct_impl)
+                    }
+                    RootSymbol::Interface(interface) => {
+                        let existed = interfaces.insert(interface.name.clone(), interface.clone());
+                        if existed.is_some() {
+                            self.errors.push(LangError::type_error(
+                                &interface.name_node,
+                                format!("Duplicated interface definition: {:?}", interface.name),
+                            ))
+                        }
+                    }
                 }
             }
         }
@@ -63,6 +83,7 @@ impl PackageSemanticAnalyzer {
             methods,
             imports,
             struct_impls,
+            interfaces,
         }
     }
 }

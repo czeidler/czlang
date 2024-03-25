@@ -11,10 +11,10 @@ use super::{
 use crate::{
     ast::{
         self, implement::StructImplement, Block, BlockParent, Expression, ExpressionType, Field,
-        FileContext, Function, FunctionCall, FunctionSignature, IfAlternative, IfExpression,
-        Import, ImportName, LangError, NodeData, NodeId, PackagePath, Parameter, RefType,
-        SelectorExpression, SelectorField, Struct, StructFieldInitialization, StructInitialization,
-        TypeParam, VarDeclaration,
+        FileContext, Function, FunctionCall, FunctionSignature, IdentifierType, IfAlternative,
+        IfExpression, Import, ImportName, Interface, LangError, NodeData, NodeId, PackagePath,
+        Parameter, RefType, SelectorExpression, SelectorField, Struct, StructFieldInitialization,
+        StructInitialization, TypeParam, VarDeclaration,
     },
     buildin::Buildins,
     types::Ptr,
@@ -43,12 +43,16 @@ pub struct PackageContentSemantics {
     /// Struct methods declarations
     pub methods: Vec<Ptr<Function>>,
     pub structs: HashMap<String, Ptr<Struct>>,
-    pub struct_impls: Vec<StructImplement>,
+    /// Struct type -> list of implemented interfaces
+    pub struct_impls: HashMap<IdentifierType, Vec<StructImplement>>,
+    pub interfaces: HashMap<String, Ptr<Interface>>,
 }
 
 /// Context in which a type is used, e.g. needed to resolve generic types
 #[derive(Debug, Clone)]
 pub enum TypeQueryContext {
+    /// Top level statement
+    Root,
     Struct(Ptr<Struct>),
     Function(FunctionSignature),
     /// Context of the receiver of a struct method definition, e.g. (self &MyStruct)method()
@@ -192,6 +196,7 @@ pub struct StructSemantics {
 pub enum TypeBinding {
     Struct(Ptr<Struct>),
     StructTypeArgument(TypeParam),
+    Interface(Ptr<Interface>),
 }
 
 #[derive(Debug, Clone)]
@@ -486,6 +491,7 @@ impl PackageSemanticAnalyzer {
                         TypeBinding::StructTypeArgument(arg) => {
                             Type::StructTypeArgument(arg.clone())
                         }
+                        TypeBinding::Interface(interface) => Type::Interface(interface.clone()),
                     });
             }
             ast::Type::Closure(closure) => Type::Closure(Ptr::new(ClosureType {
@@ -601,18 +607,22 @@ impl PackageSemanticAnalyzer {
             TypeQueryContext::Function(_) => {}
             TypeQueryContext::StructMethodReceiver => {}
             TypeQueryContext::Parameter => {}
+            TypeQueryContext::Root => {}
         }
 
-        let Some(struct_def) = self.lookup_struct(identifier) else {
-            self.errors.push(LangError::type_error(
-                node,
-                format!("Can't resolve type identifier: {:?}", identifier),
-            ));
-            return None;
+        if let Some(struct_def) = self.lookup_struct(identifier) {
+            return Some(TypeBinding::Struct(struct_def));
         };
 
-        let binding = Some(TypeBinding::Struct(struct_def));
-        binding
+        if let Some(interface) = self.lookup_interface(identifier) {
+            return Some(TypeBinding::Interface(interface));
+        }
+
+        self.errors.push(LangError::type_error(
+            node,
+            format!("Can't resolve type identifier: {:?}", identifier),
+        ));
+        return None;
     }
 
     pub(crate) fn lookup_struct(&mut self, identifier: &String) -> Option<Ptr<Struct>> {
@@ -631,6 +641,28 @@ impl PackageSemanticAnalyzer {
             };
             if let Some(struct_def) = dependency.structs.get(identifier) {
                 return Some(struct_def.clone());
+            };
+        }
+
+        None
+    }
+
+    pub(crate) fn lookup_interface(&mut self, identifier: &String) -> Option<Ptr<Interface>> {
+        let content = self.query_package_content();
+        if let Some(interface) = content.interfaces.get(identifier) {
+            return Some(interface.clone());
+        };
+
+        for import in &content.imports {
+            match &import.name {
+                ImportName::Dot => {}
+                _ => continue,
+            };
+            let Some(dependency) = self.dependencies.get(&import.path) else {
+                continue;
+            };
+            if let Some(interface) = dependency.interfaces.get(identifier) {
+                return Some(interface.clone());
             };
         }
 

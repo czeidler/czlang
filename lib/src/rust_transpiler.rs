@@ -118,6 +118,10 @@ fn type_to_enum_variant(t: &Type) -> String {
             name
         }
         Type::Package(_) => todo!(),
+        Type::Interface(interface) => {
+            // TODO include type args
+            interface.name.clone()
+        }
     }
 }
 
@@ -213,6 +217,10 @@ impl RustTranspiler {
                 writer.write(&name);
                 return;
             }
+            Type::Interface(interface) => {
+                writer.write(&interface.name);
+                return;
+            }
         };
         writer.write(text);
     }
@@ -242,6 +250,7 @@ impl RustTranspiler {
             Type::StructTypeArgument(_) => todo!(),
             Type::Closure(_) => todo!(),
             Type::Package(_) => todo!(),
+            Type::Interface(interface) => return interface.name.clone(),
         };
         t.to_string()
     }
