@@ -6,7 +6,7 @@ use std::{
 use super::{
     flow_container::AnalysisState,
     types::{intersection, SArray, SRefType, SSlice, SumType, Type},
-    types_to_string, ClosureContext, ClosureType,
+    types_to_string, ClosureContext, ClosureType, SInterface,
 };
 use crate::{
     ast::{
@@ -431,6 +431,25 @@ impl PackageSemanticAnalyzer {
             .and_then(|s| s.clone())
     }
 
+    fn bind_type_identifier(
+        &mut self,
+        context: &TypeQueryContext,
+        node: &NodeData,
+        ident: &IdentifierType,
+    ) -> Option<Type> {
+        self.lookup_type_identifier(context, node, &ident.identifier)
+            .map(|binding| match binding {
+                TypeBinding::Struct(st) => Type::Struct(st.clone()),
+                TypeBinding::StructTypeArgument(arg) => Type::StructTypeArgument(arg.clone()),
+                TypeBinding::Interface(interface) => Type::Interface((
+                    interface.clone(),
+                    SInterface {
+                        name: interface.name.clone(),
+                    },
+                )),
+            })
+    }
+
     /// Only binds non-trivial types such as type identifiers
     fn bind_type(
         &mut self,
@@ -484,15 +503,7 @@ impl PackageSemanticAnalyzer {
                 ),
             ),
             ast::Type::Identifier(ident) => {
-                return self
-                    .lookup_type_identifier(context, &node, &ident.identifier)
-                    .map(|binding| match binding {
-                        TypeBinding::Struct(st) => Type::Struct(st.clone()),
-                        TypeBinding::StructTypeArgument(arg) => {
-                            Type::StructTypeArgument(arg.clone())
-                        }
-                        TypeBinding::Interface(interface) => Type::Interface(interface.clone()),
-                    });
+                return self.bind_type_identifier(context, node, ident);
             }
             ast::Type::Closure(closure) => Type::Closure(Ptr::new(ClosureType {
                 context: closure.context.as_ref().and_then(|c| {
@@ -710,6 +721,73 @@ impl PackageSemanticAnalyzer {
         }
 
         Some(self.query_types(&TypeQueryContext::Struct(st.clone()), &field.types))
+    }
+
+    /// Queries the interfaces a certain type implements
+    pub fn query_type_interfaces(&mut self, t: &Type) -> Vec<SInterface> {
+        match t {
+            Type::Null => base_type_interfaces(),
+            Type::Str => vec![],
+            Type::String => base_type_interfaces(),
+            Type::Bool => base_type_interfaces(),
+            Type::U8 => base_type_interfaces(),
+            Type::I8 => base_type_interfaces(),
+            Type::U32 => base_type_interfaces(),
+            Type::I32 => base_type_interfaces(),
+            Type::Array(_) => vec![],
+            Type::Slice(_) => vec![],
+            Type::Unresolved(_) => vec![],
+            Type::RefType(_) => vec![],
+            Type::Either(_, _) => vec![],
+            Type::Struct(st) => {
+                let package = self.query_package_content();
+                for (_, implements) in &package.struct_impls {
+                    let Some(found_struct) = package.structs.get(&st.name) else {
+                        continue;
+                    };
+                    if found_struct != st {
+                        continue;
+                    }
+                    return implements
+                        .iter()
+                        .filter_map(|implement| {
+                            let interface = self
+                                .lookup_type_identifier(
+                                    &TypeQueryContext::Root,
+                                    &implement.node,
+                                    &implement.interface.identifier,
+                                )
+                                .and_then(|binding| match binding {
+                                    TypeBinding::Struct(_) => {
+                                        self.errors.push(LangError::type_error(
+                                            &implement.node,
+                                            "Interface expected but found type struct".to_string(),
+                                        ));
+                                        None
+                                    }
+                                    TypeBinding::StructTypeArgument(_) => {
+                                        self.errors.push(LangError::type_error(
+                                            &implement.node,
+                                            "Interface expected but found type argument"
+                                                .to_string(),
+                                        ));
+                                        None
+                                    }
+                                    TypeBinding::Interface(interface) => Some(SInterface {
+                                        name: interface.name.clone(),
+                                    }),
+                                });
+                            interface
+                        })
+                        .collect();
+                }
+                vec![]
+            }
+            Type::StructTypeArgument(_) => vec![],
+            Type::Interface(_) => vec![],
+            Type::Closure(_) => vec![],
+            Type::Package(_) => vec![],
+        }
     }
 
     /// node_id is the node id of the identifier expression
@@ -1262,4 +1340,10 @@ impl PackageSemanticAnalyzer {
         }
         return None;
     }
+}
+
+fn base_type_interfaces() -> Vec<SInterface> {
+    vec![SInterface {
+        name: "Copy".to_string(),
+    }]
 }

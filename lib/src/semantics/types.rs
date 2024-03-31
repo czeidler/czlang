@@ -22,6 +22,12 @@ pub struct SRefType {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct SInterface {
+    pub name: String,
+    // TODO add type params
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Type {
     Null,
     Str,
@@ -44,7 +50,7 @@ pub enum Type {
     /// For example, an identifier pointing to a struct type parameter
     /// TODO add actual types this TypeParam resolves to
     StructTypeArgument(TypeParam),
-    Interface(Ptr<Interface>),
+    Interface((Ptr<Interface>, SInterface)),
 
     Closure(Ptr<ClosureType>),
     Package(PackagePath),
@@ -489,7 +495,7 @@ impl fmt::Display for Type {
                 return ref_type.r#type.fmt(f);
             }
             Type::Struct(s) => write!(f, "{}", s.name),
-            Type::Interface(interface) => write!(f, "{}", interface.name),
+            Type::Interface(interface) => write!(f, "{}", interface.1.name),
             Type::StructTypeArgument(type_param) => type_param.fmt(f),
             Type::Closure(closure) => {
                 write!(f, "fun ")?;
