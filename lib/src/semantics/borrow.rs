@@ -31,14 +31,6 @@ impl BorrowStack {
         self.scope()
     }
 
-    /// Discard top scope, e.g. because all paths in the current scope returned from the function.
-    pub fn discard(&mut self) {
-        if self.stack.len() <= 1 {
-            panic!("Should not happen!");
-        }
-        self.stack.pop();
-    }
-
     /// Accept the top of the scope and merge it into the previous scope
     pub fn merge_top(&mut self) {
         if self.stack.len() <= 1 {
@@ -132,11 +124,15 @@ impl PackageSemanticAnalyzer {
                     r#type: BorrowType::Borrow,
                 });
             } else {
-                entries.push(Borrow {
-                    borrower: var_declaration.node.id(),
-                    is_mut: false,
-                    r#type: BorrowType::Moved,
-                });
+                let interfaces = self.query_type_interfaces(t);
+                let is_copy = interfaces.iter().find(|it| it.name == "Copy");
+                if !is_copy.is_some() {
+                    entries.push(Borrow {
+                        borrower: var_declaration.node.id(),
+                        is_mut: false,
+                        r#type: BorrowType::Moved,
+                    });
+                }
             }
         }
     }

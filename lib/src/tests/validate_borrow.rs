@@ -66,8 +66,10 @@ fun main() {
         let errors = validate_err_project(
             "test_projects/borrow_checker_move",
             r#"
+struct T {}
+
 fun main() {
-    var value i32 = 34
+    var value T = T {}
     var value2 = value
     var ref2 = &value
 }
@@ -75,10 +77,6 @@ fun main() {
         )
         .unwrap();
         assert_eq!(errors.len(), 1);
-        assert!(errors
-            .first()
-            .unwrap()
-            .msg
-            .contains("Variable moved"))
+        assert!(errors.first().unwrap().msg.contains("Variable moved"))
     }
 }
