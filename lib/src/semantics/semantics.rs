@@ -20,14 +20,21 @@ use crate::{
     types::Ptr,
 };
 
+#[derive(Debug, Clone)]
+pub struct PipeArg {
+    /// Type of the "$" variable
+    pub types: SumType,
+    pub value_origin: Vec<ValueOrigin>,
+}
+
 pub struct ExpContext {
     // For example, used to get the parent Function or to lookup local identifiers
     pub block: Ptr<Block>,
-    pub pipe_arg: Option<SumType>,
+    pub pipe_arg: Option<PipeArg>,
 }
 
 impl ExpContext {
-    pub fn new(block: &Ptr<Block>, pipe_arg: Option<SumType>) -> Self {
+    pub fn new(block: &Ptr<Block>, pipe_arg: Option<PipeArg>) -> Self {
         ExpContext {
             block: block.clone(),
             pipe_arg,
@@ -82,7 +89,7 @@ pub struct BlockSemantics {
 pub enum IdentifierBinding {
     VarDeclaration(Ptr<VarDeclaration>),
     Parameter(Parameter),
-    PipeArg(SumType),
+    PipeArg(PipeArg),
     Package(PackagePath),
 }
 
@@ -111,6 +118,15 @@ pub struct MethodCallSemantics {
     pub binding: Option<Ptr<Function>>,
 }
 
+/// The origin of a value/reference the expression is pointing to
+#[derive(Debug, Clone)]
+pub struct ValueOrigin {
+    pub origin: NodeData,
+    /// The full path from the original value
+    /// For example, for an expression value.field1.field2 the origin is value and the path is [field1, field2]
+    pub path: Vec<String>,
+}
+
 #[derive(Debug, Clone)]
 pub struct ExpressionSemantics {
     /// Either the direct type from the expression or the more refined type if the expression type was unresolved.
@@ -125,6 +141,9 @@ pub struct ExpressionSemantics {
 
     /// Binding if the expression is an identifier
     pub binding: Option<IdentifierBinding>,
+
+    /// Can be multiple origins, e.g. from if/else expression
+    pub value_origin: Vec<ValueOrigin>,
 }
 
 impl ExpressionSemantics {
@@ -134,6 +153,7 @@ impl ExpressionSemantics {
             narrowed_types: None,
             binding: None,
             is_mutable: false,
+            value_origin: vec![],
         }
     }
 
@@ -143,6 +163,7 @@ impl ExpressionSemantics {
             narrowed_types: None,
             is_mutable: false,
             binding: None,
+            value_origin: vec![],
         }
     }
 
@@ -160,6 +181,8 @@ impl ExpressionSemantics {
 pub struct VarDeclarationSemantics {
     /// Inferred variable types if var types where not declared
     pub inferred_types: Option<SumType>,
+
+    pub value_origin: Vec<ValueOrigin>,
 }
 
 #[derive(Debug, Clone)]
@@ -958,6 +981,7 @@ impl PackageSemanticAnalyzer {
                                 .entry(var_declaration.node.id())
                                 .or_insert(VarDeclarationSemantics {
                                     inferred_types: None,
+                                    value_origin: vec![],
                                 });
                             entry.inferred_types = Some(inter);
                         }

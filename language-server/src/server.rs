@@ -398,7 +398,7 @@ impl Server {
                             }
                         }
                         IdentifierBinding::PipeArg(arg) => {
-                            format!("(pipe arg) {}", types_to_string(arg.types()))
+                            format!("(pipe arg) {}", types_to_string(arg.types.types()))
                         }
                         IdentifierBinding::Package(package) => {
                             format!("(package) {:?}", package)

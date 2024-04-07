@@ -20,7 +20,8 @@ use super::{
         FlowContainer,
     },
     intersection, types_to_string, ExpContext, ExpressionSemantics, PackageContentSemantics,
-    PackageSemanticAnalyzer, SArray, SSlice, SumType, TypeNarrowing, TypeQueryContext,
+    PackageSemanticAnalyzer, PipeArg, SArray, SSlice, SumType, TypeNarrowing, TypeQueryContext,
+    ValueOrigin,
 };
 
 impl PackageSemanticAnalyzer {
@@ -89,19 +90,34 @@ impl PackageSemanticAnalyzer {
                 };
 
                 let query_context = TypeQueryContext::from_block(&context.block);
-                let (resolved_types, is_mutable) = match &binding {
-                    IdentifierBinding::VarDeclaration(var) => (
-                        Some(self.query_var_types(&query_context, &var)),
-                        var.is_mutable,
-                    ),
+                let (resolved_types, is_mutable, value_origin) = match &binding {
+                    IdentifierBinding::VarDeclaration(var) => {
+                        let var_sem = self
+                            .variable_declarations
+                            .get(&var.node.id())
+                            .unwrap()
+                            .clone();
+                        (
+                            Some(self.query_var_types(&query_context, &var)),
+                            var.is_mutable,
+                            var_sem.value_origin,
+                        )
+                    }
                     IdentifierBinding::Parameter(param) => (
                         Some(self.query_types(&query_context, &param.types)),
                         param.is_mutable,
+                        vec![ValueOrigin {
+                            origin: param.node.clone(),
+                            path: vec![],
+                        }],
                     ),
-                    IdentifierBinding::PipeArg(arg) => (Some(arg.clone()), false),
+                    IdentifierBinding::PipeArg(arg) => {
+                        (Some(arg.types.clone()), false, arg.value_origin.clone())
+                    }
                     IdentifierBinding::Package(package) => (
                         Some(SumType::from_type(Type::Package(package.clone()))),
                         false,
+                        vec![],
                     ),
                 };
                 ExpressionSemantics {
@@ -109,6 +125,7 @@ impl PackageSemanticAnalyzer {
                     narrowed_types: flow.flow.lookup(identifier),
                     is_mutable,
                     binding: Some(binding),
+                    value_origin,
                 }
             }
             ExpressionType::IntLiteral(_) => ExpressionSemantics::resolved_types(Some(
@@ -1035,11 +1052,11 @@ impl PackageSemanticAnalyzer {
         Some(result)
     }
 
-    fn bind_pipe(&mut self, node: &NodeData, pipe_arg: &Option<SumType>) {
+    fn bind_pipe(&mut self, node: &NodeData, pipe_arg: &Option<PipeArg>) {
         let existing = self.pipe_expressions.insert(
             node.id(),
             PipeSemantics {
-                pipe_argument: pipe_arg.clone(),
+                pipe_argument: pipe_arg.as_ref().map(|it| it.types.clone()),
             },
         );
         assert!(existing.is_none());
@@ -1105,7 +1122,10 @@ impl PackageSemanticAnalyzer {
             flow,
             &ExpContext {
                 block: context.block.clone(),
-                pipe_arg: Some(left_types),
+                pipe_arg: Some(PipeArg {
+                    types: left_types,
+                    value_origin: left.value_origin.clone(),
+                }),
             },
             &pipe.right,
             is_assignment,

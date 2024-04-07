@@ -186,6 +186,7 @@ impl PackageSemanticAnalyzer {
             var_declaration.node.id(),
             VarDeclarationSemantics {
                 inferred_types: Some(var_types),
+                value_origin: expr_semantics.value_origin.clone(),
             },
         );
         assert!(existing.is_none());
