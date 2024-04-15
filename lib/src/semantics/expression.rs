@@ -57,6 +57,13 @@ impl PackageSemanticAnalyzer {
         expression_semantics
     }
 
+    fn expression_value_origin(&self, expression: &Expression) -> Vec<ValueOrigin> {
+        self.expressions
+            .get(&expression.node.id())
+            .map(|it| it.value_origin.clone())
+            .unwrap_or_default()
+    }
+
     /// Helper method: validates the expression without binding it
     fn check_expression_semantics(
         &mut self,
@@ -75,7 +82,10 @@ impl PackageSemanticAnalyzer {
                         StringTemplatePart::String(_) => continue,
                     }
                 }
-                ExpressionSemantics::resolved_types(Some(SumType::from_type(Type::String)))
+                ExpressionSemantics::resolved_types(
+                    Some(SumType::from_type(Type::String)),
+                    vec![ValueOrigin::from_node(&expression.node)],
+                )
             }
 
             ExpressionType::Identifier(identifier) => {
@@ -128,21 +138,28 @@ impl PackageSemanticAnalyzer {
                     value_origin,
                 }
             }
-            ExpressionType::IntLiteral(_) => ExpressionSemantics::resolved_types(Some(
-                SumType::from_type(Type::Unresolved(vec![Type::I32, Type::U32])),
-            )),
-            ExpressionType::Null => {
-                ExpressionSemantics::resolved_types(Some(SumType::from_type(Type::Null)))
-            }
-            ExpressionType::Bool(_) => {
-                ExpressionSemantics::resolved_types(Some(SumType::from_type(Type::Bool)))
-            }
+            ExpressionType::IntLiteral(_) => ExpressionSemantics::resolved_types(
+                Some(SumType::from_type(Type::Unresolved(vec![
+                    Type::I32,
+                    Type::U32,
+                ]))),
+                vec![ValueOrigin::from_node(&expression.node)],
+            ),
+            ExpressionType::Null => ExpressionSemantics::resolved_types(
+                Some(SumType::from_type(Type::Null)),
+                vec![ValueOrigin::from_node(&expression.node)],
+            ),
+            ExpressionType::Bool(_) => ExpressionSemantics::resolved_types(
+                Some(SumType::from_type(Type::Bool)),
+                vec![ValueOrigin::from_node(&expression.node)],
+            ),
 
             ExpressionType::UnaryExpression(unary) => match unary.operator {
                 UnaryOperator::Minus => match unary.operand.r#type {
-                    ExpressionType::IntLiteral(_) => ExpressionSemantics::resolved_types(Some(
-                        SumType::from_type(Type::Unresolved(vec![Type::I32])),
-                    )),
+                    ExpressionType::IntLiteral(_) => ExpressionSemantics::resolved_types(
+                        Some(SumType::from_type(Type::Unresolved(vec![Type::I32]))),
+                        vec![ValueOrigin::from_node(&unary.operand.node)],
+                    ),
                     _ => {
                         return Err(LangError::type_error(
                             &expression.node,
@@ -239,28 +256,34 @@ impl PackageSemanticAnalyzer {
                         "Operator requires a number".to_string(),
                     ));
                 }
-                ExpressionSemantics::resolved_types(Some(overlap))
+                ExpressionSemantics::resolved_types(
+                    Some(overlap),
+                    vec![ValueOrigin::from_node(&expression.node)],
+                )
             }
             ExpressionType::ParenthesizedExpression(_) => todo!(),
-            ExpressionType::ArrayExpression(array) => {
-                ExpressionSemantics::resolved_types(Some(SumType::from_type(Type::Array(SArray {
+            ExpressionType::ArrayExpression(array) => ExpressionSemantics::resolved_types(
+                Some(SumType::from_type(Type::Array(SArray {
                     types: Ptr::new(self.validate_expression_list(
                         flow,
                         context,
                         &array.expressions,
                     )),
                     length: array.expressions.len(),
-                }))))
-            }
-            ExpressionType::SliceExpression(slice) => {
-                ExpressionSemantics::resolved_types(Some(SumType::from_type(Type::Slice(SSlice {
+                }))),
+                vec![ValueOrigin::from_node(&expression.node)],
+            ),
+            ExpressionType::SliceExpression(slice) => ExpressionSemantics::resolved_types(
+                Some(SumType::from_type(Type::Slice(SSlice {
                     types: Ptr::new(self.validate_expression_list(
                         flow,
                         context,
                         &vec![slice.operand.as_ref().clone()],
                     )),
-                }))))
-            }
+                }))),
+                // TODO: is this origin correct?
+                vec![ValueOrigin::from_node(&expression.node)],
+            ),
             ExpressionType::FunctionCall(fun_call) => {
                 let fun_declaration = match self.validate_fun_call(&fun_call, flow, context).binding
                 {
@@ -273,7 +296,10 @@ impl PackageSemanticAnalyzer {
                     }
                 };
                 let fun_signature = fun_declaration.as_function_signature();
-                ExpressionSemantics::resolved_types(self.query_return_type(&fun_signature))
+                ExpressionSemantics::resolved_types(
+                    self.query_return_type(&fun_signature),
+                    vec![ValueOrigin::from_node(&expression.node)],
+                )
             }
             ExpressionType::StructInitialization(struct_init) => {
                 let Some(sem) = self.validate_struct_initialization( context, flow, is_assignment, struct_init)? else {
@@ -281,29 +307,31 @@ impl PackageSemanticAnalyzer {
                 };
                 sem
             }
-            ExpressionType::SelectorExpression(select) => ExpressionSemantics::resolved_types(
-                self.validate_selector_expression(flow, context, select, is_assignment),
-            ),
+            ExpressionType::SelectorExpression(select) => {
+                self.validate_selector_expression(flow, context, select, is_assignment)
+            }
             ExpressionType::Block(block) => match self.validate_block(flow, block, is_assignment) {
                 Some(s) => s,
                 None => return Ok(None),
             },
             ExpressionType::If(if_expression) => ExpressionSemantics::resolved_types(
+                // TODO calculate value origin
                 self.validate_if_expression(flow, context, if_expression, is_assignment),
+                vec![],
             ),
-            ExpressionType::Pipe(pipe) => ExpressionSemantics::resolved_types(self.validate_pipe(
-                flow,
-                context,
-                is_assignment,
-                expression,
-                pipe,
-            )),
+            ExpressionType::Pipe(pipe) => ExpressionSemantics::resolved_types(
+                self.validate_pipe(flow, context, is_assignment, expression, pipe),
+                self.expression_value_origin(&pipe.right),
+            ),
             ExpressionType::ErrorExpression(error) => {
                 let err_types = self.validate_expression(flow, context, &error, is_assignment);
-                ExpressionSemantics::resolved_types(Some(SumType::from_type(Type::Either(
-                    SumType::empty(),
-                    err_types.types().unwrap_or(SumType::empty()),
-                ))))
+                ExpressionSemantics::resolved_types(
+                    Some(SumType::from_type(Type::Either(
+                        SumType::empty(),
+                        err_types.types().unwrap_or(SumType::empty()),
+                    ))),
+                    vec![ValueOrigin::from_node(&expression.node)],
+                )
             }
             ExpressionType::EitherCheck(check) => {
                 return Err(LangError::type_error(
@@ -312,7 +340,8 @@ impl PackageSemanticAnalyzer {
                 ));
             }
             ExpressionType::ReturnErrorPipe(pipe) => {
-                let semantics = self.validate_expression(flow, context, &pipe.left, is_assignment);
+                let semantics: ExpressionSemantics =
+                    self.validate_expression(flow, context, &pipe.left, is_assignment);
                 let Some(expr_types) = semantics.types() else {
                     return Err(LangError::type_error(
                         &pipe.left.node,
@@ -357,7 +386,10 @@ impl PackageSemanticAnalyzer {
                         ));
                     }
                 }
-                ExpressionSemantics::resolved_types(Some(expr_value))
+                ExpressionSemantics::resolved_types(
+                    Some(expr_value),
+                    self.expression_value_origin(expression),
+                )
             }
         };
         Ok(Some(expression_semantics))
@@ -475,9 +507,10 @@ impl PackageSemanticAnalyzer {
                 format!("Missing fields: {:?}", expected_fields),
             ));
         };
-        Ok(Some(ExpressionSemantics::resolved_types(Some(
-            SumType::from_type(Type::Struct(struct_dec)),
-        ))))
+        Ok(Some(ExpressionSemantics::resolved_types(
+            Some(SumType::from_type(Type::Struct(struct_dec))),
+            vec![ValueOrigin::from_node(&struct_init.node)],
+        )))
     }
 
     fn bind_struct_field_initialization(
@@ -524,11 +557,14 @@ impl PackageSemanticAnalyzer {
         context: &ExpContext,
         select: &SelectorExpression,
         is_assignment: bool,
-    ) -> Option<SumType> {
+    ) -> ExpressionSemantics {
         // validate root expression
-        let root_types = self
-            .validate_expression(flow, context, &select.root, is_assignment)
-            .into_types()?;
+        let root_semantics = self.validate_expression(flow, context, &select.root, is_assignment);
+        let root_origin = root_semantics.value_origin.clone();
+        let Some(root_types) = root_semantics
+            .into_types() else {
+                return ExpressionSemantics::empty();
+            };
         let semantics = self.bind_selector_field(&select.root.node, &root_types, None, None);
         let Some(binding) = semantics.binding else {
             self.errors.push(LangError::type_error(
@@ -538,7 +574,7 @@ impl PackageSemanticAnalyzer {
                     types_to_string(root_types.types())
                 ),
             ));
-            return None
+            return ExpressionSemantics::empty();
         };
         let mut current_binding = binding;
         let mut current_type = semantics.r#type;
@@ -552,7 +588,7 @@ impl PackageSemanticAnalyzer {
                         field.field.name()
                     ),
                 ));
-                return None;
+                return ExpressionSemantics::empty();
             }
             if current_struct_error.is_none() && field.optional_chaining {
                 self.errors.push(LangError::type_error(
@@ -562,7 +598,7 @@ impl PackageSemanticAnalyzer {
                         field.field.name()
                     ),
                 ));
-                return None;
+                return ExpressionSemantics::empty();
             }
 
             let field_types = match &field.field {
@@ -573,7 +609,7 @@ impl PackageSemanticAnalyzer {
                                     &field.node,
                                     format!("{} is not field of {}", field_identifier, field.field.name()),
                                 ));
-                                return None;
+                                return ExpressionSemantics::empty();
                             };
 
                         self.query_types(
@@ -586,10 +622,11 @@ impl PackageSemanticAnalyzer {
                             &field.node,
                             format!("Unexpected identifier"),
                         ));
-                        return None;
+                        return ExpressionSemantics::empty();
                     }
                 },
                 SelectorFieldType::Call(call) => {
+                    // TODO what happens to the value origin here?
                     match &current_binding {
                         SelectorFieldBinding::Struct(st) => {
                             // TODO: support generic struct instances
@@ -598,7 +635,7 @@ impl PackageSemanticAnalyzer {
                                     &field.node,
                                     format!("Not a struct method: {}", call.name),
                                 ));
-                                return None;
+                                return ExpressionSemantics::empty();
                             };
                             if let Some(return_types) = &method.signature.return_type {
                                 self.query_types(
@@ -611,7 +648,7 @@ impl PackageSemanticAnalyzer {
                         }
                         SelectorFieldBinding::Package(pkg) => {
                             let Some(fun) = self.validate_pkg_fun_call(call, pkg, flow, context) else {
-                                return None;
+                                return ExpressionSemantics::empty();
                             };
 
                             if let Some(return_type) = &fun.signature.return_type {
@@ -631,7 +668,7 @@ impl PackageSemanticAnalyzer {
                             &field.node,
                             format!("Unexpected struct initialization"),
                         ));
-                        return None;
+                        return ExpressionSemantics::empty();
                     }
                     SelectorFieldBinding::Package(package) => {
                         let Some(st) = self.bind_pkg_struct_initialization(package, struct_init) else {
@@ -639,7 +676,7 @@ impl PackageSemanticAnalyzer {
                                 &struct_init.name_node,
                                 format!("Struct not found"),
                             ));
-                            return None;
+                            return ExpressionSemantics::empty();
                         };
                         SumType::from_type(Type::Struct(st))
                     }
@@ -656,6 +693,15 @@ impl PackageSemanticAnalyzer {
                 current_binding = binding;
                 current_type = semantics.r#type;
             } else if i == select.fields.len() - 1 {
+                let value_origin_path = select.value_path().unwrap_or_default();
+                let origins = root_origin
+                    .into_iter()
+                    .map(|mut origin| {
+                        origin.path.append(&mut value_origin_path.clone());
+                        origin
+                    })
+                    .collect::<Vec<_>>();
+
                 // last selector field
                 let current_error = semantics.r#type.err();
                 if let Some(err) = current_error {
@@ -666,12 +712,18 @@ impl PackageSemanticAnalyzer {
 
                     if let Some((value, _)) = field_types.as_either() {
                         // only take value part from the either, the error part is already included in err
-                        return Some(SumType::from_type(Type::Either(value, err)));
+                        return ExpressionSemantics::resolved_types(
+                            Some(SumType::from_type(Type::Either(value, err))),
+                            origins,
+                        );
                     } else {
-                        return Some(SumType::from_type(Type::Either(field_types, err)));
+                        return ExpressionSemantics::resolved_types(
+                            Some(SumType::from_type(Type::Either(field_types, err))),
+                            origins,
+                        );
                     }
                 } else {
-                    return Some(field_types);
+                    return ExpressionSemantics::resolved_types(Some(field_types), origins);
                 }
             } else {
                 // all but the last field must be structs
@@ -679,10 +731,10 @@ impl PackageSemanticAnalyzer {
                     &field.node,
                     format!("Field doesn't point to a struct or package"),
                 ));
-                return None;
+                return ExpressionSemantics::empty();
             }
         }
-        return None;
+        return ExpressionSemantics::empty();
     }
 
     /// Takes:

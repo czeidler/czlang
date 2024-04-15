@@ -127,6 +127,15 @@ pub struct ValueOrigin {
     pub path: Vec<String>,
 }
 
+impl ValueOrigin {
+    pub fn from_node(node: &NodeData) -> ValueOrigin {
+        ValueOrigin {
+            origin: node.clone(),
+            path: vec![],
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ExpressionSemantics {
     /// Either the direct type from the expression or the more refined type if the expression type was unresolved.
@@ -157,13 +166,13 @@ impl ExpressionSemantics {
         }
     }
 
-    pub fn resolved_types(resolved_types: Option<SumType>) -> Self {
+    pub fn resolved_types(resolved_types: Option<SumType>, value_origin: Vec<ValueOrigin>) -> Self {
         ExpressionSemantics {
             resolved_types,
             narrowed_types: None,
             is_mutable: false,
             binding: None,
-            value_origin: vec![],
+            value_origin,
         }
     }
 

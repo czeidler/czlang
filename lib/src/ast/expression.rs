@@ -81,6 +81,20 @@ pub struct SelectorExpression {
     pub fields: Vec<SelectorField>,
 }
 
+impl SelectorExpression {
+    pub fn value_path(&self) -> Option<Vec<String>> {
+        let mut path = vec![];
+        for field in &self.fields {
+            match &field.field {
+                SelectorFieldType::Identifier(id) => path.push(id.clone()),
+                SelectorFieldType::Call(_) => return None,
+                SelectorFieldType::StructInit(_) => return None,
+            }
+        }
+        Some(path)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct PipeExpression {
     pub left: Box<Expression>,
@@ -122,8 +136,10 @@ pub enum ExpressionType {
     SelectorExpression(SelectorExpression),
     Block(Ptr<Block>),
     If(Ptr<IfExpression>),
+    /// E.g. _ ? false
     ErrorExpression(Box<Expression>),
     Pipe(PipeExpression),
+    /// E.g. call()?
     ReturnErrorPipe(ReturnErrorPipeExpression),
     EitherCheck(EitherCheckExpression),
 }

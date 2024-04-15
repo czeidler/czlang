@@ -11,6 +11,7 @@ use crate::{
 use super::{
     flow_container::{AnalysisState, FlowContainer},
     intersection, BlockSemantics, ExpressionSemantics, PackageSemanticAnalyzer, SumType,
+    ValueOrigin,
 };
 
 impl PackageSemanticAnalyzer {
@@ -329,6 +330,6 @@ impl PackageSemanticAnalyzer {
         if let Some(ret_value_expression) = &ret.expression {
             self.back_propagate_types(block, ret_value_expression, &overlap);
         }
-        ExpressionSemantics::resolved_types(Some(overlap))
+        ExpressionSemantics::resolved_types(Some(overlap), vec![ValueOrigin::from_node(&ret.node)])
     }
 }
