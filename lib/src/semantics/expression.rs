@@ -19,9 +19,9 @@ use super::{
         apply_inverse_narrowing, apply_narrowing, merge_narrowed_flows, AnalysisState,
         FlowContainer,
     },
-    intersection, types_to_string, ExpContext, ExpressionSemantics, PackageContentSemantics,
-    PackageSemanticAnalyzer, PipeArg, SArray, SSlice, SumType, TypeNarrowing, TypeQueryContext,
-    ValueOrigin,
+    intersection, types_to_string, ExpContext, ExpressionSemantics, OriginType,
+    PackageContentSemantics, PackageSemanticAnalyzer, PipeArg, SArray, SSlice, SumType,
+    TypeNarrowing, TypeQueryContext, ValueOrigin,
 };
 
 impl PackageSemanticAnalyzer {
@@ -84,7 +84,9 @@ impl PackageSemanticAnalyzer {
                 }
                 ExpressionSemantics::resolved_types(
                     Some(SumType::from_type(Type::String)),
-                    vec![ValueOrigin::from_node(&expression.node)],
+                    vec![ValueOrigin::from_node(OriginType::Expression(
+                        expression.node.clone(),
+                    ))],
                 )
             }
 
@@ -113,14 +115,14 @@ impl PackageSemanticAnalyzer {
                             var_sem.value_origin,
                         )
                     }
-                    IdentifierBinding::Parameter(param) => (
-                        Some(self.query_types(&query_context, &param.types)),
-                        param.is_mutable,
-                        vec![ValueOrigin {
-                            origin: param.node.clone(),
-                            path: vec![],
-                        }],
-                    ),
+                    IdentifierBinding::Parameter(param) => {
+                        let sum_type = self.query_types(&query_context, &param.types);
+                        (
+                            Some(sum_type.clone()),
+                            param.is_mutable,
+                            vec![ValueOrigin::from_node(OriginType::Parameter(param.clone()))],
+                        )
+                    }
                     IdentifierBinding::PipeArg(arg) => {
                         (Some(arg.types.clone()), false, arg.value_origin.clone())
                     }
@@ -143,22 +145,30 @@ impl PackageSemanticAnalyzer {
                     Type::I32,
                     Type::U32,
                 ]))),
-                vec![ValueOrigin::from_node(&expression.node)],
+                vec![ValueOrigin::from_node(OriginType::Expression(
+                    expression.node.clone(),
+                ))],
             ),
             ExpressionType::Null => ExpressionSemantics::resolved_types(
                 Some(SumType::from_type(Type::Null)),
-                vec![ValueOrigin::from_node(&expression.node)],
+                vec![ValueOrigin::from_node(OriginType::Expression(
+                    expression.node.clone(),
+                ))],
             ),
             ExpressionType::Bool(_) => ExpressionSemantics::resolved_types(
                 Some(SumType::from_type(Type::Bool)),
-                vec![ValueOrigin::from_node(&expression.node)],
+                vec![ValueOrigin::from_node(OriginType::Expression(
+                    expression.node.clone(),
+                ))],
             ),
 
             ExpressionType::UnaryExpression(unary) => match unary.operator {
                 UnaryOperator::Minus => match unary.operand.r#type {
                     ExpressionType::IntLiteral(_) => ExpressionSemantics::resolved_types(
                         Some(SumType::from_type(Type::Unresolved(vec![Type::I32]))),
-                        vec![ValueOrigin::from_node(&unary.operand.node)],
+                        vec![ValueOrigin::from_node(OriginType::Expression(
+                            unary.operand.node.clone(),
+                        ))],
                     ),
                     _ => {
                         return Err(LangError::type_error(
@@ -258,32 +268,40 @@ impl PackageSemanticAnalyzer {
                 }
                 ExpressionSemantics::resolved_types(
                     Some(overlap),
-                    vec![ValueOrigin::from_node(&expression.node)],
+                    vec![ValueOrigin::from_node(OriginType::Expression(
+                        expression.node.clone(),
+                    ))],
                 )
             }
             ExpressionType::ParenthesizedExpression(_) => todo!(),
-            ExpressionType::ArrayExpression(array) => ExpressionSemantics::resolved_types(
-                Some(SumType::from_type(Type::Array(SArray {
-                    types: Ptr::new(self.validate_expression_list(
-                        flow,
-                        context,
-                        &array.expressions,
-                    )),
-                    length: array.expressions.len(),
-                }))),
-                vec![ValueOrigin::from_node(&expression.node)],
-            ),
-            ExpressionType::SliceExpression(slice) => ExpressionSemantics::resolved_types(
-                Some(SumType::from_type(Type::Slice(SSlice {
-                    types: Ptr::new(self.validate_expression_list(
-                        flow,
-                        context,
-                        &vec![slice.operand.as_ref().clone()],
-                    )),
-                }))),
-                // TODO: is this origin correct?
-                vec![ValueOrigin::from_node(&expression.node)],
-            ),
+            ExpressionType::ArrayExpression(array) => {
+                let types = self.validate_expression_list(flow, context, &array.expressions);
+                ExpressionSemantics::resolved_types(
+                    Some(SumType::from_type(Type::Array(SArray {
+                        types: Ptr::new(types),
+                        length: array.expressions.len(),
+                    }))),
+                    vec![ValueOrigin::from_node(OriginType::Expression(
+                        expression.node.clone(),
+                    ))],
+                )
+            }
+            ExpressionType::SliceExpression(slice) => {
+                let types = self.validate_expression_list(
+                    flow,
+                    context,
+                    &vec![slice.operand.as_ref().clone()],
+                );
+                ExpressionSemantics::resolved_types(
+                    Some(SumType::from_type(Type::Slice(SSlice {
+                        types: Ptr::new(types),
+                    }))),
+                    // TODO: is this origin correct?
+                    vec![ValueOrigin::from_node(OriginType::Expression(
+                        slice.operand.node.clone(),
+                    ))],
+                )
+            }
             ExpressionType::FunctionCall(fun_call) => {
                 let fun_declaration = match self.validate_fun_call(&fun_call, flow, context).binding
                 {
@@ -298,7 +316,9 @@ impl PackageSemanticAnalyzer {
                 let fun_signature = fun_declaration.as_function_signature();
                 ExpressionSemantics::resolved_types(
                     self.query_return_type(&fun_signature),
-                    vec![ValueOrigin::from_node(&expression.node)],
+                    vec![ValueOrigin::from_node(OriginType::Expression(
+                        expression.node.clone(),
+                    ))],
                 )
             }
             ExpressionType::StructInitialization(struct_init) => {
@@ -330,7 +350,9 @@ impl PackageSemanticAnalyzer {
                         SumType::empty(),
                         err_types.types().unwrap_or(SumType::empty()),
                     ))),
-                    vec![ValueOrigin::from_node(&expression.node)],
+                    vec![ValueOrigin::from_node(OriginType::Expression(
+                        expression.node.clone(),
+                    ))],
                 )
             }
             ExpressionType::EitherCheck(check) => {
@@ -509,7 +531,9 @@ impl PackageSemanticAnalyzer {
         };
         Ok(Some(ExpressionSemantics::resolved_types(
             Some(SumType::from_type(Type::Struct(struct_dec))),
-            vec![ValueOrigin::from_node(&struct_init.node)],
+            vec![ValueOrigin::from_node(OriginType::Expression(
+                struct_init.node.clone(),
+            ))],
         )))
     }
 
@@ -535,10 +559,8 @@ impl PackageSemanticAnalyzer {
     ) -> Vec<Type> {
         let mut output = Vec::new();
         for expression in expressions {
-            if let Some(types) = self
-                .validate_expression(flow, context, &expression, true)
-                .into_types()
-            {
+            let sem = self.validate_expression(flow, context, &expression, true);
+            if let Some(types) = sem.into_types() {
                 for t in types {
                     if !output.contains(&t) {
                         output.push(t);
@@ -689,10 +711,7 @@ impl PackageSemanticAnalyzer {
                 Some(current_binding.clone()),
                 current_struct_error.clone(),
             );
-            if let Some(binding) = semantics.binding {
-                current_binding = binding;
-                current_type = semantics.r#type;
-            } else if i == select.fields.len() - 1 {
+            if i == select.fields.len() - 1 {
                 let value_origin_path = select.value_path().unwrap_or_default();
                 let origins = root_origin
                     .into_iter()
@@ -725,6 +744,9 @@ impl PackageSemanticAnalyzer {
                 } else {
                     return ExpressionSemantics::resolved_types(Some(field_types), origins);
                 }
+            } else if let Some(binding) = semantics.binding {
+                current_binding = binding;
+                current_type = semantics.r#type;
             } else {
                 // all but the last field must be structs
                 self.errors.push(LangError::type_error(

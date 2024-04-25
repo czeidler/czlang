@@ -79,4 +79,32 @@ fun main() {
         assert_eq!(errors.len(), 1);
         assert!(errors.first().unwrap().msg.contains("Variable moved"))
     }
+
+    #[test]
+    fn borrow_checker_partial_move() {
+        let errors = validate_err_project(
+            "test_projects/borrow_checker_partial_move",
+            r#"
+struct T {}
+struct T2 {
+    t T
+}
+
+fun main() {
+    var value = T2 {
+        t = T {}
+    }
+    var value1 = value.t
+    var value2 = value
+}
+        "#,
+        )
+        .unwrap();
+        assert_eq!(errors.len(), 1);
+        assert!(errors
+            .first()
+            .unwrap()
+            .msg
+            .contains("Variable partially moved"))
+    }
 }

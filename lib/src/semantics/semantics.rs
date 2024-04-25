@@ -118,19 +118,25 @@ pub struct MethodCallSemantics {
     pub binding: Option<Ptr<Function>>,
 }
 
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub enum OriginType {
+    Parameter(Parameter),
+    Expression(NodeData),
+}
+
 /// The origin of a value/reference the expression is pointing to
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ValueOrigin {
-    pub origin: NodeData,
+    pub origin: OriginType,
     /// The full path from the original value
     /// For example, for an expression value.field1.field2 the origin is value and the path is [field1, field2]
     pub path: Vec<String>,
 }
 
 impl ValueOrigin {
-    pub fn from_node(node: &NodeData) -> ValueOrigin {
+    pub fn from_node(origin: OriginType) -> ValueOrigin {
         ValueOrigin {
-            origin: node.clone(),
+            origin,
             path: vec![],
         }
     }
@@ -191,6 +197,7 @@ pub struct VarDeclarationSemantics {
     /// Inferred variable types if var types where not declared
     pub inferred_types: Option<SumType>,
 
+    /// For example the origin of a reference
     pub value_origin: Vec<ValueOrigin>,
 }
 

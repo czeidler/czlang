@@ -11,7 +11,6 @@ use crate::{
 use super::{
     flow_container::{AnalysisState, FlowContainer},
     intersection, BlockSemantics, ExpressionSemantics, PackageSemanticAnalyzer, SumType,
-    ValueOrigin,
 };
 
 impl PackageSemanticAnalyzer {
@@ -44,7 +43,7 @@ impl PackageSemanticAnalyzer {
                 flow.flow = Ptr::new(FlowContainer {
                     parent: Some(flow.flow.clone()),
                     vars: HashMap::new(),
-                    returned: Some(return_type.into_types().unwrap_or(SumType::empty())),
+                    returned: Some(return_type),
                 });
             }
             Statement::Loop(loop_statement) => self.validate_loop(flow, block, loop_statement),
@@ -255,12 +254,13 @@ impl PackageSemanticAnalyzer {
         // TODO: back propagation
     }
 
+    /// Returns the returned SumType
     fn validate_return_statement(
         &mut self,
         flow: &mut AnalysisState,
         block: &Ptr<Block>,
         ret: &ReturnStatement,
-    ) -> ExpressionSemantics {
+    ) -> SumType {
         let fun = block.fun();
         let (ret_types, expression) = if let Some(expression) = &ret.expression {
             let was_already_returned = flow.flow.returned.is_some();
@@ -275,7 +275,7 @@ impl PackageSemanticAnalyzer {
 
             let Some(ret_types) = ret_semantics.into_types() else {
                 // error validating the return expression
-                return ExpressionSemantics::empty();
+                return SumType::empty();
             };
             (ret_types, Some(expression))
         } else {
@@ -292,13 +292,13 @@ impl PackageSemanticAnalyzer {
                             .unwrap_or(fun.signature.node.clone()),
                         format!("Expected return type {:?}", fun.signature.return_type),
                     ));
-                    return ExpressionSemantics::empty();
+                    return SumType::empty();
                 }
                 fun_ret_type
             }
             None => {
                 if ret_types.is_empty() {
-                    return ExpressionSemantics::empty();
+                    return SumType::empty();
                 }
                 self.errors.push(LangError::type_error(
                     &expression
@@ -309,7 +309,7 @@ impl PackageSemanticAnalyzer {
                         fun.signature.return_type, ret_types,
                     ),
                 ));
-                return ExpressionSemantics::empty();
+                return SumType::empty();
             }
         };
 
@@ -325,11 +325,11 @@ impl PackageSemanticAnalyzer {
                     types_to_string(ret_types.types()),
                 ),
             ));
-            return ExpressionSemantics::empty();
+            return SumType::empty();
         };
         if let Some(ret_value_expression) = &ret.expression {
             self.back_propagate_types(block, ret_value_expression, &overlap);
         }
-        ExpressionSemantics::resolved_types(Some(overlap), vec![ValueOrigin::from_node(&ret.node)])
+        overlap
     }
 }
