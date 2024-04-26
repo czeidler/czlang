@@ -103,3 +103,43 @@ fun main() {
                 (function_call
                   (identifier)
                   (argument_list))))))))
+
+==================
+struct access 5
+==================
+
+fun main() {
+    var test = &myStruct.field1
+    var test2 = &mut myStruct.field1.field2
+}
+
+---
+
+(source_file
+  (function_definition
+    (identifier)
+    (parameter_list)
+    (block
+      (var_declaration
+        (identifier)
+        (unary_expression
+          (selector_expression
+            (identifier)
+            (selector_field
+              (identifier)))))
+      (var_declaration
+        (identifier)
+        (unary_expression
+          (selector_expression
+            (identifier)
+            (selector_field
+              (identifier))
+            (selector_field
+              (identifier)
+            )
+          )
+        )
+      )
+    )
+  )
+)
