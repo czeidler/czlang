@@ -43,6 +43,7 @@ impl BorrowStack {
             for v in value {
                 match &v.r#type {
                     BorrowType::Borrow => {}
+                    BorrowType::PartialBorrow(_) => {}
                     BorrowType::Moved => entry.push(v),
                     BorrowType::PartialMoved(_) => entry.push(v),
                 };
@@ -64,9 +65,22 @@ pub struct Borrow {
 pub enum BorrowType {
     Borrow,
     /// Field path relative to the root struct, e.g. `&struct.my.field` is is `my.field`
-    //Partial(String),
+    PartialBorrow(Vec<String>),
     Moved,
     PartialMoved(Vec<String>),
+}
+
+/// Left fully in right
+fn is_sub_path(left: &Vec<String>, right: &Vec<String>) -> bool {
+    if right.len() < left.len() {
+        return false;
+    }
+    for (i, left) in left.iter().enumerate() {
+        if left != &right[i] {
+            return false;
+        }
+    }
+    true
 }
 
 impl PackageSemanticAnalyzer {
@@ -117,8 +131,13 @@ impl PackageSemanticAnalyzer {
             if is_only_refs {
                 // TODO impl selector fields for partial borrows
                 for entry in entries.iter() {
-                    match entry.r#type {
+                    match &entry.r#type {
                         BorrowType::Borrow => {}
+                        BorrowType::PartialBorrow(path) => {
+                            if !is_sub_path(&origin.path, &path) {
+                                continue;
+                            }
+                        }
                         BorrowType::Moved => {
                             self.errors.push(LangError::type_error(
                                 &var_declaration.value.node,
@@ -126,14 +145,17 @@ impl PackageSemanticAnalyzer {
                             ));
                             continue;
                         }
-                        BorrowType::PartialMoved(_) => {
-                            self.errors.push(LangError::type_error(
-                                &var_declaration.value.node,
-                                format!("Variable partially moved",),
-                            ));
-                            continue;
+                        BorrowType::PartialMoved(path) => {
+                            if is_sub_path(&origin.path, &path) {
+                                self.errors.push(LangError::type_error(
+                                    &var_declaration.value.node,
+                                    format!("Variable partially moved",),
+                                ));
+                                continue;
+                            }
                         }
                     };
+
                     if entry.is_mut {
                         self.errors.push(LangError::type_error(
                             &var_declaration.value.node,
@@ -150,13 +172,20 @@ impl PackageSemanticAnalyzer {
                     // Don't add a new entry with the aim to keep error messages simple
                     continue;
                 }
-                entries.push(Borrow {
-                    borrower: var_declaration.node.id(),
-                    is_mut,
-                    r#type: BorrowType::Borrow,
-                });
+                if origin.path.is_empty() {
+                    entries.push(Borrow {
+                        borrower: var_declaration.node.id(),
+                        is_mut,
+                        r#type: BorrowType::Borrow,
+                    });
+                } else {
+                    entries.push(Borrow {
+                        borrower: var_declaration.node.id(),
+                        is_mut,
+                        r#type: BorrowType::PartialBorrow(origin.path.clone()),
+                    });
+                }
             } else if !is_copied {
-                // TODO impl selector fields for partial borrows
                 for entry in entries.iter() {
                     match &entry.r#type {
                         BorrowType::Borrow => {
@@ -166,6 +195,15 @@ impl PackageSemanticAnalyzer {
                             ));
                             continue;
                         }
+                        BorrowType::PartialBorrow(path) => {
+                            if is_sub_path(&origin.path, &path) {
+                                self.errors.push(LangError::type_error(
+                                    &var_declaration.value.node,
+                                    format!("Variable partially borrowed",),
+                                ));
+                                continue;
+                            }
+                        }
                         BorrowType::Moved => {
                             self.errors.push(LangError::type_error(
                                 &var_declaration.value.node,
@@ -174,19 +212,7 @@ impl PackageSemanticAnalyzer {
                             continue;
                         }
                         BorrowType::PartialMoved(path) => {
-                            // left fully in right
-                            let is_sub_part = |left: &Vec<String>, right: &Vec<String>| -> bool {
-                                if right.len() < left.len() {
-                                    return false;
-                                }
-                                for (i, left) in left.iter().enumerate() {
-                                    if left != &right[i] {
-                                        return false;
-                                    }
-                                }
-                                true
-                            };
-                            if is_sub_part(&origin.path, &path) {
+                            if is_sub_path(&origin.path, &path) {
                                 self.errors.push(LangError::type_error(
                                     &var_declaration.value.node,
                                     format!("Variable partially moved",),

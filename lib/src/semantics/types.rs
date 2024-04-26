@@ -490,7 +490,7 @@ impl fmt::Display for Type {
             Type::RefType(ref_type) => {
                 write!(f, "&")?;
                 if ref_type.is_mut {
-                    write!(f, "mut")?;
+                    write!(f, "mut ")?;
                 }
                 return ref_type.r#type.fmt(f);
             }
