@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    ast::{AssignmentStatement, LangError, NodeId, VarDeclaration},
+    ast::{LangError, NodeId, VarDeclaration},
     types::Ptr,
 };
 

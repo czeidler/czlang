@@ -334,11 +334,9 @@ impl PackageSemanticAnalyzer {
                 Some(s) => s,
                 None => return Ok(None),
             },
-            ExpressionType::If(if_expression) => ExpressionSemantics::resolved_types(
-                // TODO calculate value origin
-                self.validate_if_expression(flow, context, if_expression, is_assignment),
-                vec![],
-            ),
+            ExpressionType::If(if_expression) => {
+                self.validate_if_expression(flow, context, if_expression, is_assignment)
+            }
             ExpressionType::Pipe(pipe) => ExpressionSemantics::resolved_types(
                 self.validate_pipe(flow, context, is_assignment, expression, pipe),
                 self.expression_value_origin(&pipe.right),
@@ -846,7 +844,7 @@ impl PackageSemanticAnalyzer {
         context: &ExpContext,
         if_expression: &Ptr<IfExpression>,
         is_assignment: bool,
-    ) -> Option<SumType> {
+    ) -> ExpressionSemantics {
         let original_flow = flow.flow.clone();
 
         let narrowing =
@@ -865,7 +863,8 @@ impl PackageSemanticAnalyzer {
             } else {
                 let types = self
                     .validate_expression(flow, context, &if_expression.condition, is_assignment)
-                    .into_types()?;
+                    .into_types()
+                    .unwrap_or(SumType::empty());
                 if !types.is_bool() {
                     self.errors.push(LangError::type_error(
                         &if_expression.condition.node,
@@ -878,9 +877,7 @@ impl PackageSemanticAnalyzer {
             flow.flow = apply_narrowing(&original_flow, narrowing);
         };
 
-        let if_block_result = self
-            .validate_block(flow, &if_expression.consequence, is_assignment)
-            .and_then(|s| s.into_types());
+        let if_block_sem = self.validate_block(flow, &if_expression.consequence, is_assignment);
         let consequence_flow = flow.flow.clone();
         let Some(alternative) = &if_expression.alternative else {
             if is_assignment {
@@ -896,7 +893,7 @@ impl PackageSemanticAnalyzer {
                     flow.flow = original_flow;
                 }
             }
-            return None;
+            return ExpressionSemantics::resolved_types(None, vec![]);
         };
 
         // else or if/else case:
@@ -904,12 +901,10 @@ impl PackageSemanticAnalyzer {
             flow.flow = apply_inverse_narrowing(&original_flow, narrowing);
         }
 
-        let alternative_type = match alternative {
-            IfAlternative::Else(else_block) => self
-                .validate_block(flow, else_block, is_assignment)
-                .and_then(|s| s.into_types()),
+        let alternative_sem = match alternative {
+            IfAlternative::Else(else_block) => self.validate_block(flow, else_block, is_assignment),
             IfAlternative::If(nested_if) => {
-                self.validate_if_expression(flow, context, nested_if, is_assignment)
+                Some(self.validate_if_expression(flow, context, nested_if, is_assignment))
             }
         };
 
@@ -942,13 +937,18 @@ impl PackageSemanticAnalyzer {
             };
         };
 
-        if let Some(alternative_type) = alternative_type {
-            let mut temp = if_block_result.unwrap_or(SumType::new(vec![]));
-            temp.union(alternative_type);
-            return Some(temp);
+        if let (Some(if_block_sem), Some(mut alternative_sem)) = (&if_block_sem, alternative_sem) {
+            if let (Some(mut if_block_type), Some(alternative_type)) =
+                (if_block_sem.types(), alternative_sem.types())
+            {
+                if_block_type.union(alternative_type);
+                let mut origins = if_block_sem.value_origin.clone();
+                origins.append(&mut alternative_sem.value_origin);
+                return ExpressionSemantics::resolved_types(Some(if_block_type), origins);
+            }
         }
 
-        if_block_result
+        ExpressionSemantics::resolved_types(if_block_sem.and_then(|it| it.into_types()), vec![])
     }
 
     fn validate_either_check_expression(

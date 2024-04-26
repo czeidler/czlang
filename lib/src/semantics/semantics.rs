@@ -775,7 +775,20 @@ impl PackageSemanticAnalyzer {
             Type::I32 => base_type_interfaces(),
             Type::Array(_) => vec![],
             Type::Slice(_) => vec![],
-            Type::Unresolved(_) => vec![],
+            Type::Unresolved(types) => {
+                let is_copy = types.iter().all(|it| {
+                    self.query_type_interfaces(it)
+                        .iter()
+                        .any(|it| it.name == COPY_INTERFACE_NAME)
+                });
+                if is_copy {
+                    vec![SInterface {
+                        name: COPY_INTERFACE_NAME.to_string(),
+                    }]
+                } else {
+                    vec![]
+                }
+            }
             Type::RefType(_) => vec![],
             Type::Either(_, _) => vec![],
             Type::Struct(st) => {
@@ -1382,8 +1395,9 @@ impl PackageSemanticAnalyzer {
     }
 }
 
+const COPY_INTERFACE_NAME: &str = "Copy";
 fn base_type_interfaces() -> Vec<SInterface> {
     vec![SInterface {
-        name: "Copy".to_string(),
+        name: COPY_INTERFACE_NAME.to_string(),
     }]
 }

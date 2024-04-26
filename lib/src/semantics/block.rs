@@ -19,12 +19,12 @@ impl PackageSemanticAnalyzer {
     ) -> Option<ExpressionSemantics> {
         self.borrow_enter_block(flow);
         let mut last_statement: Option<Statement> = None;
-        let mut last_statement_type: Option<ExpressionSemantics> = None;
+        let mut last_statement_sem: Option<ExpressionSemantics> = None;
         let mut returned = false;
         let mut iter = block.statements().peekable();
         while let Some(statement) = iter.next() {
             let is_last = iter.peek().is_none();
-            let statement_type =
+            let statement_sem =
                 self.validate_statement(flow, block, &statement, is_last && is_assignment);
             if flow.flow.returned.is_some() && returned {
                 self.errors.push(LangError::type_error(
@@ -39,7 +39,7 @@ impl PackageSemanticAnalyzer {
             };
 
             if is_last {
-                last_statement_type = statement_type;
+                last_statement_sem = statement_sem;
                 last_statement = Some(statement);
             }
         }
@@ -62,7 +62,7 @@ impl PackageSemanticAnalyzer {
             }
         }
         self.borrow_leave_block(flow);
-        last_statement_type
+        last_statement_sem
     }
 
     fn bind_block_return(&mut self, block: &Ptr<Block>, last_expression: &Expression) {

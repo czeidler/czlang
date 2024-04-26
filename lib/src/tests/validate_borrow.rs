@@ -187,4 +187,29 @@ fun main() {
             .msg
             .contains("Can't take reference of mutually borrowed variable"))
     }
+
+    #[test]
+    fn simple_borrow_if_move() {
+        let errors = validate_err_project(
+            "test_projects/simple_borrow_partial_borrow_error",
+            r#"
+struct T {}
+
+fun main() {
+    var value1 = T {}
+    var value2 = T {}
+
+    var test = if true {
+        value1
+    } else {
+        value2
+    }
+    var value3 = value2
+}
+        "#,
+        )
+        .unwrap();
+        assert_eq!(errors.len(), 1);
+        assert!(errors.first().unwrap().msg.contains("Variable moved"))
+    }
 }
