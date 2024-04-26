@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    ast::{LangError, NodeId, VarDeclaration},
+    ast::{AssignmentStatement, LangError, NodeId, VarDeclaration},
     types::Ptr,
 };
 
@@ -84,6 +84,41 @@ fn is_sub_path(left: &Vec<String>, right: &Vec<String>) -> bool {
 }
 
 impl PackageSemanticAnalyzer {
+    pub(crate) fn borrow_assignment(
+        &mut self,
+        flow: &mut AnalysisState,
+        left_sem: &ExpressionSemantics,
+        right_sem: &ExpressionSemantics,
+    ) {
+        let Some(right) = right_sem.types() else {
+            return;
+        };
+        let is_only_values = right.types().iter().all(|it| match it {
+            Type::RefType(_) => false,
+            _ => true,
+        });
+        if !is_only_values {
+            return;
+        }
+        let borrow = flow.borrow.scope();
+        for origin in &left_sem.value_origin {
+            let entries = borrow.entry(origin.origin.clone()).or_default();
+            entries.retain(|entry| {
+                match &entry.r#type {
+                    BorrowType::Borrow => {}
+                    BorrowType::PartialBorrow(_) => {}
+                    BorrowType::Moved => {}
+                    BorrowType::PartialMoved(path) => {
+                        if is_sub_path(&origin.path, path) {
+                            return false;
+                        }
+                    }
+                }
+                true
+            });
+        }
+    }
+
     pub(crate) fn borrow_var_assignment(
         &mut self,
         flow: &mut AnalysisState,

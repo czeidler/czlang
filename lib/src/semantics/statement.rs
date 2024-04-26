@@ -223,9 +223,9 @@ impl PackageSemanticAnalyzer {
     ) {
         let left_sem =
             self.validate_expression(flow, &ExpContext::new(block, None), &assignment.left, false);
-        let right =
+        let right_sem =
             self.validate_expression(flow, &ExpContext::new(block, None), &assignment.right, true);
-        let (Some(left), Some(right)) = (left_sem.types(), right.types()) else {
+        let (Some(left), Some(right)) = (left_sem.types(), right_sem.types()) else {
             self.errors.push(LangError::type_error(
                 &assignment.node,
                 format!("Can't assign types"),
@@ -251,6 +251,7 @@ impl PackageSemanticAnalyzer {
                 ),
             ));
         }
+        self.borrow_assignment(flow, &left_sem, &right_sem)
         // TODO: back propagation
     }
 

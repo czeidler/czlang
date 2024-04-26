@@ -582,6 +582,7 @@ impl PackageSemanticAnalyzer {
     ) -> ExpressionSemantics {
         // validate root expression
         let root_semantics = self.validate_expression(flow, context, &select.root, is_assignment);
+        let root_mut = root_semantics.is_mutable;
         let root_origin = root_semantics.value_origin.clone();
         let Some(root_types) = root_semantics
             .into_types() else {
@@ -723,7 +724,7 @@ impl PackageSemanticAnalyzer {
 
                 // last selector field
                 let current_error = semantics.r#type.err();
-                if let Some(err) = current_error {
+                let mut sem = if let Some(err) = current_error {
                     // Add sum type
                     if err.len() > 1 {
                         self.sum_types.insert(err.sum_type_name(), err.clone());
@@ -731,19 +732,22 @@ impl PackageSemanticAnalyzer {
 
                     if let Some((value, _)) = field_types.as_either() {
                         // only take value part from the either, the error part is already included in err
-                        return ExpressionSemantics::resolved_types(
+                        ExpressionSemantics::resolved_types(
                             Some(SumType::from_type(Type::Either(value, err))),
                             origins,
-                        );
+                        )
                     } else {
-                        return ExpressionSemantics::resolved_types(
+                        ExpressionSemantics::resolved_types(
                             Some(SumType::from_type(Type::Either(field_types, err))),
                             origins,
-                        );
+                        )
                     }
                 } else {
-                    return ExpressionSemantics::resolved_types(Some(field_types), origins);
-                }
+                    ExpressionSemantics::resolved_types(Some(field_types), origins)
+                };
+                // TODO is this correct of fun calls:
+                sem.is_mutable = root_mut;
+                return sem;
             } else if let Some(binding) = semantics.binding {
                 current_binding = binding;
                 current_type = semantics.r#type;
