@@ -205,6 +205,9 @@ impl PackageSemanticAnalyzer {
                         .narrowed_types
                         .map(|types| types.apply_reference());
 
+                    for o in &mut semantics.value_origin {
+                        o.reference = true;
+                    }
                     semantics
                 }
                 UnaryOperator::MutReference => {
@@ -223,6 +226,12 @@ impl PackageSemanticAnalyzer {
                     semantics.narrowed_types = semantics
                         .narrowed_types
                         .map(|types| types.apply_mut_reference());
+
+                    for o in &mut semantics.value_origin {
+                        o.reference = true;
+                        o.mutable = true;
+                    }
+
                     semantics
                 }
 

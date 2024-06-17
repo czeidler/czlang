@@ -8,6 +8,7 @@ mod query;
 mod rust_transpiler;
 mod validate_borrow;
 mod validate_generics;
+mod validate_lifetime;
 mod validation;
 
 fn find_var(fun: &Ptr<Function>, name: &str) -> Option<Ptr<VarDeclaration>> {

@@ -251,7 +251,7 @@ impl PackageSemanticAnalyzer {
                 ),
             ));
         }
-        self.borrow_assignment(flow, &left_sem, &right_sem)
+        self.borrow_assignment(flow, &assignment.left, &left_sem, &right_sem)
         // TODO: back propagation
     }
 

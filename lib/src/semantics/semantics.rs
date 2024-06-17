@@ -124,6 +124,15 @@ pub enum OriginType {
     Expression(NodeData),
 }
 
+impl OriginType {
+    pub fn id(&self) -> NodeData {
+        match self {
+            OriginType::Parameter(p) => p.node.clone(),
+            OriginType::Expression(e) => e.clone(),
+        }
+    }
+}
+
 /// The origin of a value/reference the expression is pointing to
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ValueOrigin {
@@ -131,6 +140,11 @@ pub struct ValueOrigin {
     /// The full path from the original value
     /// For example, for an expression value.field1.field2 the origin is value and the path is [field1, field2]
     pub path: Vec<String>,
+
+    /// If origin has been referenced
+    pub reference: bool,
+    /// If origin has been mutually referenced
+    pub mutable: bool,
 }
 
 impl ValueOrigin {
@@ -138,6 +152,8 @@ impl ValueOrigin {
         ValueOrigin {
             origin,
             path: vec![],
+            reference: false,
+            mutable: false,
         }
     }
 }

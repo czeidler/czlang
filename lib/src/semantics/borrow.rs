@@ -1,62 +1,29 @@
 use std::collections::HashMap;
 
 use crate::{
-    ast::{LangError, NodeId, VarDeclaration},
+    ast::{Expression, LangError, NodeData, NodeId, VarDeclaration},
     types::Ptr,
 };
 
 use super::{
-    flow_container::AnalysisState, ExpressionSemantics, OriginType, PackageSemanticAnalyzer, Type,
+    flow_container::AnalysisState, ExpressionSemantics, IdentifierBinding, OriginType,
+    PackageSemanticAnalyzer, Type,
 };
 
-pub struct BorrowStack {
-    stack: Vec<BorrowScope>,
+/// values in the scope and which origins they borrow (list might be empty)
+pub struct ScopeValue {
+    var_node: NodeData,
+    /// Just for debugging:
+    var_name: String,
+    origins: Vec<OriginType>,
 }
 
-impl BorrowStack {
-    pub fn new() -> Self {
-        BorrowStack {
-            stack: vec![BorrowScope::new()],
-        }
-    }
-
-    pub fn scope(&mut self) -> &mut BorrowScope {
-        let last = self.stack.len() - 1;
-        self.stack.get_mut(last).unwrap()
-    }
-
-    pub fn new_scope(&mut self) -> &mut BorrowScope {
-        self.stack.push(BorrowScope::new());
-        self.scope()
-    }
-
-    /// Accept the top of the scope and merge it into the previous scope
-    pub fn merge_top(&mut self) {
-        if self.stack.len() <= 1 {
-            panic!("Should not happen!");
-        }
-        let removed = self.stack.pop().unwrap();
-        let last = self.stack.len() - 1;
-        let top = self.stack.get_mut(last).unwrap();
-        for (key, value) in removed {
-            let entry = top.entry(key).or_default();
-            for v in value {
-                match &v.r#type {
-                    BorrowType::Borrow => {}
-                    BorrowType::PartialBorrow(_) => {}
-                    BorrowType::Moved => entry.push(v),
-                    BorrowType::PartialMoved(_) => entry.push(v),
-                };
-            }
-        }
-    }
-}
-
-pub type BorrowScope = HashMap<OriginType, Vec<Borrow>>;
+pub type BorrowScope = Vec<ScopeValue>;
 
 #[derive(Debug, Clone)]
-pub struct Borrow {
+pub struct Borrower {
     pub borrower: NodeId,
+    pub borrower_name: String,
     pub is_mut: bool,
     pub r#type: BorrowType,
 }
@@ -68,6 +35,78 @@ pub enum BorrowType {
     PartialBorrow(Vec<String>),
     Moved,
     PartialMoved(Vec<String>),
+}
+
+pub struct BorrowChecker {
+    /// key: origin that is being borrowed/moved
+    /// value: list of borrowers/ BorrowType
+    borrows: HashMap<OriginType, Vec<Borrower>>,
+
+    /// Stack of scopes, current scope is on the top
+    value_scopes: Vec<BorrowScope>,
+}
+
+impl BorrowChecker {
+    pub fn new() -> Self {
+        BorrowChecker {
+            borrows: HashMap::new(),
+            value_scopes: Vec::new(),
+        }
+    }
+
+    pub fn new_scope(&mut self) {
+        self.value_scopes.push(BorrowScope::new());
+    }
+
+    pub fn add_value_to_scope(&mut self, value: ScopeValue) {
+        let Some(scope) = self.value_scopes.last_mut() else {
+            panic!("Should not happen!");
+        };
+        scope.push(value);
+    }
+
+    pub fn leave_scope(&mut self, errors: &mut Vec<LangError>) {
+        let Some(values) = self.value_scopes.pop() else {
+            panic!("Should not happen!");
+        };
+        for value in values.iter().rev() {
+            for origin in &value.origins {
+                let Some(borrows) = self.borrows.get_mut(origin) else {
+                    continue;
+                };
+                borrows.retain(|b| {
+                    if b.borrower != value.var_node.id() {
+                        return true;
+                    }
+                    match b.r#type {
+                        BorrowType::Borrow => false,
+                        BorrowType::PartialBorrow(_) => false,
+                        BorrowType::Moved => true,
+                        BorrowType::PartialMoved(_) => true,
+                    }
+                });
+                self.borrows.retain(|_, b| !b.is_empty());
+            }
+        }
+        // check if value is still borrowed after all borrows have been removed
+        for value in values.iter().rev() {
+            for origin in &value.origins {
+                if let Some(borrow) = self.borrows.get(origin) {
+                    for b in borrow {
+                        match b.r#type {
+                            BorrowType::Borrow | BorrowType::PartialBorrow(_) => {
+                                errors.push(LangError::type_error(
+                                    &origin.id(),
+                                    "Value borrowed while value goes out of scope".to_string(),
+                                ))
+                            }
+                            BorrowType::Moved | BorrowType::PartialMoved(_) => continue,
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Left fully in right
@@ -84,23 +123,15 @@ fn is_sub_path(left: &Vec<String>, right: &Vec<String>) -> bool {
 }
 
 impl PackageSemanticAnalyzer {
+    /// E.g variable = expr
     pub(crate) fn borrow_assignment(
         &mut self,
         flow: &mut AnalysisState,
+        left: &Expression,
         left_sem: &ExpressionSemantics,
         right_sem: &ExpressionSemantics,
     ) {
-        let Some(right) = right_sem.types() else {
-            return;
-        };
-        let is_only_values = right.types().iter().all(|it| match it {
-            Type::RefType(_) => false,
-            _ => true,
-        });
-        if !is_only_values {
-            return;
-        }
-        let borrow = flow.borrow.scope();
+        let borrow = &mut flow.borrow.borrows;
         for origin in &left_sem.value_origin {
             let entries = borrow.entry(origin.origin.clone()).or_default();
             entries.retain(|entry| {
@@ -117,9 +148,21 @@ impl PackageSemanticAnalyzer {
                 true
             });
         }
+
+        let Some(IdentifierBinding::VarDeclaration(var_declaration)) = &left_sem.binding else {
+            self.errors.push(LangError
+                ::type_error(
+                    &left.node,
+                    format!("Left side must be a variable",),
+                )
+            );
+            return;
+        };
+
+        self.add_borrowers(flow, var_declaration, right_sem);
     }
 
-    pub(crate) fn borrow_var_assignment(
+    fn add_borrowers(
         &mut self,
         flow: &mut AnalysisState,
         var_declaration: &Ptr<VarDeclaration>,
@@ -129,10 +172,7 @@ impl PackageSemanticAnalyzer {
             return;
         };
 
-        let is_only_refs = expr_type.types().iter().all(|it| match it {
-            Type::RefType(_) => true,
-            _ => false,
-        });
+        let is_only_refs = expr_semantics.value_origin.iter().all(|it| it.reference);
         let is_copied = if is_only_refs {
             false
         } else {
@@ -150,7 +190,8 @@ impl PackageSemanticAnalyzer {
             Type::RefType(reference) => reference.is_mut,
             _ => false,
         });
-        let borrow = flow.borrow.scope();
+
+        let borrow = &mut flow.borrow.borrows;
         for origin in &expr_semantics.value_origin {
             match &origin.origin {
                 OriginType::Expression(expr) => {
@@ -208,14 +249,16 @@ impl PackageSemanticAnalyzer {
                     continue;
                 }
                 if origin.path.is_empty() {
-                    entries.push(Borrow {
+                    entries.push(Borrower {
                         borrower: var_declaration.node.id(),
+                        borrower_name: var_declaration.name.clone(),
                         is_mut,
                         r#type: BorrowType::Borrow,
                     });
                 } else {
-                    entries.push(Borrow {
+                    entries.push(Borrower {
                         borrower: var_declaration.node.id(),
+                        borrower_name: var_declaration.name.clone(),
                         is_mut,
                         r#type: BorrowType::PartialBorrow(origin.path.clone()),
                     });
@@ -273,14 +316,16 @@ impl PackageSemanticAnalyzer {
                     continue;
                 }
                 if origin.path.is_empty() {
-                    entries.push(Borrow {
+                    entries.push(Borrower {
                         borrower: var_declaration.node.id(),
+                        borrower_name: var_declaration.name.clone(),
                         is_mut: false,
                         r#type: BorrowType::Moved,
                     });
                 } else {
-                    entries.push(Borrow {
+                    entries.push(Borrower {
                         borrower: var_declaration.node.id(),
+                        borrower_name: var_declaration.name.clone(),
                         is_mut: false,
                         r#type: BorrowType::PartialMoved(origin.path.clone()),
                     });
@@ -289,11 +334,32 @@ impl PackageSemanticAnalyzer {
         }
     }
 
+    /// E.g. var test = expr
+    pub(crate) fn borrow_var_assignment(
+        &mut self,
+        flow: &mut AnalysisState,
+        var_declaration: &Ptr<VarDeclaration>,
+        expr_semantics: &ExpressionSemantics,
+    ) {
+        flow.borrow.add_value_to_scope(ScopeValue {
+            var_node: var_declaration.node.clone(),
+            var_name: var_declaration.name.clone(),
+            origins: expr_semantics
+                .value_origin
+                .iter()
+                .map(|v| v.origin.clone())
+                .collect(),
+        });
+
+        // add borrowers
+        self.add_borrowers(flow, var_declaration, expr_semantics);
+    }
+
     pub(crate) fn borrow_enter_block(&mut self, flow: &mut AnalysisState) {
         flow.borrow.new_scope();
     }
 
     pub(crate) fn borrow_leave_block(&mut self, flow: &mut AnalysisState) {
-        flow.borrow.merge_top()
+        flow.borrow.leave_scope(&mut self.errors)
     }
 }

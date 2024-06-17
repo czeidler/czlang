@@ -2,12 +2,12 @@ use std::collections::HashMap;
 
 use crate::types::Ptr;
 
-use super::{borrow::BorrowStack, SumType, Type, TypeNarrowing};
+use super::{borrow::BorrowChecker, SumType, Type, TypeNarrowing};
 
 /// Contains the state of fun analysis
 pub struct AnalysisState {
     pub flow: Ptr<FlowContainer>,
-    pub borrow: BorrowStack,
+    pub borrow: BorrowChecker,
 }
 
 #[derive(Debug, Clone)]

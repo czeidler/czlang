@@ -499,9 +499,9 @@ fun main() {
             fun main() {
                 var result i32 ? bool = 8
                 if result != ? {
-                    var value i32 = result
+                    var value &i32 = &result
                 } else {
-                    var err bool = result
+                    var err &bool = &result
                 }
 
                 if result == ? {

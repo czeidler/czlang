@@ -4,7 +4,7 @@ use crate::{
 };
 
 use super::{
-    borrow::BorrowStack,
+    borrow::BorrowChecker,
     flow_container::{AnalysisState, FlowContainer},
     PackageSemanticAnalyzer, StructImplementation, Type, TypeQueryContext,
 };
@@ -31,7 +31,7 @@ impl PackageSemanticAnalyzer {
 
         let mut flow_container = AnalysisState {
             flow: FlowContainer::start_flow(),
-            borrow: BorrowStack::new(),
+            borrow: BorrowChecker::new(),
         };
         self.validate_block(&mut flow_container, &fun.body(), false);
 
