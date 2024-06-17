@@ -700,6 +700,21 @@ pub fn intersection(left_types: &SumType, right_types: &SumType) -> Option<SumTy
             .types()
             .iter()
             .filter_map(|right| match (&left, &right) {
+                (Type::RefType(l), Type::RefType(r)) => {
+                    let is_mut = match (l.is_mut, r.is_mut) {
+                        (true, true) => true,
+                        (false, false) => false,
+                        (false, true) => false,
+                        (true, false) => false,
+                    };
+                    let Some(result) = intersection(&SumType::from_type(l.r#type.as_ref().clone()), &SumType::from_type(r.r#type.as_ref().clone())) else {
+                        return None;
+                    };
+                    let Some(t) = result.as_type() else {
+                        panic!("itersection of a single type can't produce multiple types");
+                    };
+                    Some(Type::RefType(SRefType{ is_mut, r#type: Ptr::new(t.clone()) }))
+                }
                 (Type::Either(left_value, left_err), Type::Either(right_value, right_err)) => {
                     let value_intersection = intersection(left_value, right_value);
                     let err_intersection = intersection(left_err, right_err);
@@ -741,7 +756,6 @@ pub fn intersection(left_types: &SumType, right_types: &SumType) -> Option<SumTy
                     let Some(value_intersection) = intersection(&SumType::from_type(left.clone()), right_value) else {
                         return None;
                     };
-
                     return Some(Type::Either(value_intersection, SumType::empty()));
                 }
                 (Type::Unresolved(l), Type::Unresolved(r)) => {
