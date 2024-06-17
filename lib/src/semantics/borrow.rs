@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    ast::{Expression, LangError, NodeData, NodeId, VarDeclaration},
+    ast::{Block, Expression, LangError, NodeData, NodeId, VarDeclaration},
     types::Ptr,
 };
 
@@ -14,6 +14,7 @@ use super::{
 pub struct ScopeValue {
     var_node: NodeData,
     /// Just for debugging:
+    #[allow(dead_code)]
     var_name: String,
     origins: Vec<OriginType>,
 }
@@ -126,6 +127,7 @@ impl PackageSemanticAnalyzer {
     /// E.g variable = expr
     pub(crate) fn borrow_assignment(
         &mut self,
+        block: &Block,
         flow: &mut AnalysisState,
         left: &Expression,
         left_sem: &ExpressionSemantics,
@@ -149,7 +151,14 @@ impl PackageSemanticAnalyzer {
             });
         }
 
-        let Some(IdentifierBinding::VarDeclaration(var_declaration)) = &left_sem.binding else {
+        let binding = left_sem.binding.clone().or_else(|| {
+            let crate::ast::ExpressionType::SelectorExpression(selector_expr)= &left.r#type else {
+                return None;
+            };
+            self.query_expression(block, selector_expr.root.as_ref())
+                .and_then(|sem| sem.binding)
+        });
+        let Some(IdentifierBinding::VarDeclaration(var_declaration)) = &binding else {
             self.errors.push(LangError
                 ::type_error(
                     &left.node,
