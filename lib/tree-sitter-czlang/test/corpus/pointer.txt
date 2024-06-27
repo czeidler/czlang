@@ -1,0 +1,47 @@
+==================
+Pointers
+==================
+
+fun x() i32 {
+  var test0 *i32 = new(5)
+  var test1 *mut i32 = newMut(5)
+  var test2 *lock i32 = newLock(5)
+}
+
+---
+(source_file
+      (function_definition
+        (identifier)
+        (parameter_list)
+        (primitive_type)
+        (block
+          (var_declaration
+            (identifier)
+            (pointer_type
+              (primitive_type))
+            (function_call
+              (identifier)
+              (argument_list
+                (int_literal)))
+          )
+          (var_declaration
+            (identifier)
+            (pointer_type
+              (primitive_type))
+            (function_call
+              (identifier)
+              (argument_list
+                (int_literal)))
+          )
+          (var_declaration
+            (identifier)
+            (pointer_type
+              (primitive_type))
+            (function_call
+              (identifier)
+              (argument_list
+                (int_literal)))
+          )
+        )
+      )
+)

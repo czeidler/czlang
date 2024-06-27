@@ -360,6 +360,44 @@
         ]
       }
     },
+    "pointer_type": {
+      "type": "PREC_LEFT",
+      "value": 0,
+      "content": {
+        "type": "SEQ",
+        "members": [
+          {
+            "type": "FIELD",
+            "name": "pointer",
+            "content": {
+              "type": "CHOICE",
+              "members": [
+                {
+                  "type": "STRING",
+                  "value": "*"
+                },
+                {
+                  "type": "STRING",
+                  "value": "*mut"
+                },
+                {
+                  "type": "STRING",
+                  "value": "*lock"
+                }
+              ]
+            }
+          },
+          {
+            "type": "FIELD",
+            "name": "type",
+            "content": {
+              "type": "SYMBOL",
+              "name": "_type"
+            }
+          }
+        ]
+      }
+    },
     "_base_type": {
       "type": "PREC_LEFT",
       "value": 0,
@@ -389,6 +427,10 @@
           {
             "type": "SYMBOL",
             "name": "reference_type"
+          },
+          {
+            "type": "SYMBOL",
+            "name": "pointer_type"
           },
           {
             "type": "SYMBOL",
