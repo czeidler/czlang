@@ -122,6 +122,11 @@ fn type_to_enum_variant(t: &Type) -> String {
             // TODO include type args
             interface.1.name.clone()
         }
+        Type::Pointer(pointer) => {
+            let mut name = "P".to_string();
+            name += &type_to_enum_variant(&pointer.r#type);
+            name
+        }
     }
 }
 
@@ -155,7 +160,7 @@ impl RustTranspiler {
     }
 
     fn transpile_type(&self, t: &Type, writer: &mut Writer) {
-        let text = match &t {
+        let text = match t {
             Type::Str => "str",
             Type::String => "String",
             Type::Bool => "bool",
@@ -221,6 +226,10 @@ impl RustTranspiler {
                 writer.write(&interface.1.name);
                 return;
             }
+            Type::Pointer(_) => {
+                writer.write(&RustTranspiler::rust_type(t));
+                return;
+            }
         };
         writer.write(text);
     }
@@ -251,6 +260,16 @@ impl RustTranspiler {
             Type::Closure(_) => todo!(),
             Type::Package(_) => todo!(),
             Type::Interface(interface) => return interface.1.name.clone(),
+            Type::Pointer(p) => {
+                let t = RustTranspiler::rust_type(&p.r#type);
+                return if p.is_mut {
+                    format!("Rc<RefCell<{}>>", t)
+                } else if p.is_locked {
+                    format!("Mutex<{}>", t)
+                } else {
+                    format!("Arc<{}>", t)
+                };
+            }
         };
         t.to_string()
     }
@@ -994,7 +1013,8 @@ impl RustTranspiler {
         };
         let Some((resolved_type, narrowed_type)) = analyzer
             .query_expression(block, expr)
-            .map(|s| (s.resolved_types.clone().unwrap(), s.types().unwrap())) else {
+            .map(|s| (s.resolved_types.clone().unwrap(), s.types().unwrap()))
+        else {
             // e.g. a block that returned doesn't has an expression type
             self.transpile_expression(analyzer, &expression, block, writer);
             return;
@@ -1243,9 +1263,9 @@ impl RustTranspiler {
                         writer.new_line();
                         continue;
                     }
-                    let Some(block_return) = analyzer
-                        .query_block(block)
-                        .and_then(|s| s.block_return) else {
+                    let Some(block_return) =
+                        analyzer.query_block(block).and_then(|s| s.block_return)
+                    else {
                         self.transpile_expression(analyzer, &statement.expression, block, writer);
                         writer.write(";");
                         writer.new_line();

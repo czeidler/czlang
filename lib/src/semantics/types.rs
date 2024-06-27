@@ -22,6 +22,13 @@ pub struct SRefType {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct SPointerType {
+    pub is_mut: bool,
+    pub is_locked: bool,
+    pub r#type: Box<Type>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct SInterface {
     pub name: String,
     // TODO add type params
@@ -41,6 +48,7 @@ pub enum Type {
     Slice(SSlice),
     Unresolved(Vec<Type>),
     RefType(SRefType),
+    Pointer(SPointerType),
     /// For example, for nullable or error types
     Either(SumType, SumType),
 
@@ -281,6 +289,11 @@ impl SumType {
                 }
                 Type::Package(_) => todo!(),
                 Type::Interface(_) => todo!(),
+                Type::Pointer(p) => {
+                    name += "P";
+                    name += &SumType::from_type(*p.r#type.clone()).sum_type_name();
+                    continue;
+                }
             };
             name += part;
         }
@@ -363,6 +376,7 @@ fn is_number(types: &Type) -> bool {
         Type::Closure(_) => false,
         Type::Package(_) => false,
         Type::Interface(_) => false,
+        Type::Pointer(p) => is_number(&p.r#type),
     }
 }
 
@@ -386,6 +400,7 @@ fn is_integer(types: &Type) -> bool {
         Type::Closure(_) => false,
         Type::Package(_) => false,
         Type::Interface(_) => false,
+        Type::Pointer(p) => is_integer(&p.r#type),
     }
 }
 
@@ -526,6 +541,16 @@ impl fmt::Display for Type {
             }
             Type::Package(path) => {
                 write!(f, "package<{:?}>", path)?;
+                return Ok(());
+            }
+            Type::Pointer(pointer) => {
+                write!(f, "*")?;
+                if pointer.is_mut {
+                    write!(f, "mut ")?;
+                } else if pointer.is_locked {
+                    write!(f, "lock ")?;
+                }
+                write!(f, "{}", pointer.r#type)?;
                 return Ok(());
             }
         }
@@ -707,13 +732,19 @@ pub fn intersection(left_types: &SumType, right_types: &SumType) -> Option<SumTy
                         (false, true) => false,
                         (true, false) => false,
                     };
-                    let Some(result) = intersection(&SumType::from_type(l.r#type.as_ref().clone()), &SumType::from_type(r.r#type.as_ref().clone())) else {
+                    let Some(result) = intersection(
+                        &SumType::from_type(l.r#type.as_ref().clone()),
+                        &SumType::from_type(r.r#type.as_ref().clone()),
+                    ) else {
                         return None;
                     };
                     let Some(t) = result.as_type() else {
                         panic!("itersection of a single type can't produce multiple types");
                     };
-                    Some(Type::RefType(SRefType{ is_mut, r#type: Ptr::new(t.clone()) }))
+                    Some(Type::RefType(SRefType {
+                        is_mut,
+                        r#type: Ptr::new(t.clone()),
+                    }))
                 }
                 (Type::Either(left_value, left_err), Type::Either(right_value, right_err)) => {
                     let value_intersection = intersection(left_value, right_value);
@@ -739,13 +770,13 @@ pub fn intersection(left_types: &SumType, right_types: &SumType) -> Option<SumTy
                 }
                 (Type::Either(left_value, left_err), _) => {
                     if left_value.is_empty() {
-                        let Some(inter)=  intersection(left_err, right_types) else {
+                        let Some(inter) = intersection(left_err, right_types) else {
                             return None;
                         };
                         return Some(Type::Either(SumType::empty(), inter));
                     }
                     if left_err.is_empty() {
-                        let Some(inter) =  intersection(left_value, right_types) else {
+                        let Some(inter) = intersection(left_value, right_types) else {
                             return None;
                         };
                         return Some(Type::Either(inter, SumType::empty()));
@@ -753,7 +784,9 @@ pub fn intersection(left_types: &SumType, right_types: &SumType) -> Option<SumTy
                     return None;
                 }
                 (_, Type::Either(right_value, _)) => {
-                    let Some(value_intersection) = intersection(&SumType::from_type(left.clone()), right_value) else {
+                    let Some(value_intersection) =
+                        intersection(&SumType::from_type(left.clone()), right_value)
+                    else {
                         return None;
                     };
                     return Some(Type::Either(value_intersection, SumType::empty()));

@@ -6,7 +6,7 @@ use std::{
 use super::{
     flow_container::AnalysisState,
     types::{intersection, SArray, SRefType, SSlice, SumType, Type},
-    types_to_string, ClosureContext, ClosureType, SInterface,
+    types_to_string, ClosureContext, ClosureType, SInterface, SPointerType,
 };
 use crate::{
     ast::{
@@ -588,6 +588,11 @@ impl PackageSemanticAnalyzer {
                     .as_ref()
                     .map(|t| self.query_types(context, &t.types)),
             })),
+            ast::Type::PointerType(pointer) => Type::Pointer(SPointerType {
+                is_mut: pointer.is_mut,
+                is_locked: pointer.is_locked,
+                r#type: Box::new(self.bind_type(context, &pointer.node, &pointer.r#type)?),
+            }),
         };
         Some(t)
     }
@@ -855,6 +860,7 @@ impl PackageSemanticAnalyzer {
             Type::Interface(_) => vec![],
             Type::Closure(_) => vec![],
             Type::Package(_) => vec![],
+            Type::Pointer(p) => self.query_type_interfaces(&p.r#type),
         }
     }
 
@@ -1005,7 +1011,14 @@ impl PackageSemanticAnalyzer {
     ) {
         match &expression.r#type {
             ExpressionType::Identifier(_) => {
-                let Some(id) = self.expressions.get(&expression.node.id()).map(|s|s.binding.clone()).flatten()  else {return};
+                let Some(id) = self
+                    .expressions
+                    .get(&expression.node.id())
+                    .map(|s| s.binding.clone())
+                    .flatten()
+                else {
+                    return;
+                };
                 match id {
                     IdentifierBinding::VarDeclaration(var_declaration) => {
                         // narrow the expression down
@@ -1258,7 +1271,7 @@ impl PackageSemanticAnalyzer {
             let Some(param_types) = self.query_parameter_type(signature, param) else {
                 continue;
             };
-            let Some(overlap) = intersection(&param_types, &arg_types ) else {
+            let Some(overlap) = intersection(&param_types, &arg_types) else {
                 self.errors.push(LangError::type_error(
                     &arg_expr.node,
                     format!(
@@ -1378,7 +1391,7 @@ impl PackageSemanticAnalyzer {
         receiver: &Ptr<Struct>,
         call: &FunctionCall,
     ) -> Option<Ptr<Function>> {
-        let Some(methods) = self.package_semantics.as_ref().map(|s|s.methods.clone()) else {
+        let Some(methods) = self.package_semantics.as_ref().map(|s| s.methods.clone()) else {
             return None;
         };
         for method in &methods {
@@ -1389,7 +1402,10 @@ impl PackageSemanticAnalyzer {
                 // should not happen!
                 continue;
             };
-            let Some(receiver_type) = self.bind_ref_type(&TypeQueryContext::StructMethodReceiver, &method_receiver.types[0]) else {
+            let Some(receiver_type) = self.bind_ref_type(
+                &TypeQueryContext::StructMethodReceiver,
+                &method_receiver.types[0],
+            ) else {
                 continue;
             };
 

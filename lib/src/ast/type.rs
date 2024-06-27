@@ -29,9 +29,18 @@ pub enum Type {
     Identifier(IdentifierType),
     Array(Array),
     Slice(Slice),
+    PointerType(Box<PointerType>),
     /// For example, for nullable or error types
     Either(Vec<RefType>, Vec<RefType>),
     Closure(ClosureType),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct PointerType {
+    pub node: NodeData,
+    pub is_mut: bool,
+    pub is_locked: bool,
+    pub r#type: Type,
 }
 
 #[derive(Debug, Clone, Eq, Hash)]
@@ -54,7 +63,7 @@ impl Ord for RefType {
             Ordering::Less => Ordering::Less,
             Ordering::Greater => Ordering::Greater,
             Ordering::Equal => {
-                if self.is_reference == other.is_reference {
+                if self.is_reference == other.is_reference && self.is_mut == other.is_mut {
                     Ordering::Equal
                 } else if self.node.id < other.node.id {
                     Ordering::Less
@@ -209,6 +218,17 @@ fn parse_type<'a>(context: &Ptr<FileContext>, node: &Node<'a>) -> Option<Type> {
         }
         "array_type" => Type::Array(parse_array(context, &node)?),
         "slice_type" => Type::Slice(parse_slice(context, &node)?),
+        "pointer_type" => {
+            let type_node = child_by_field(&node, "type")?;
+            let pointer_node = child_by_field(&node, "pointer")?;
+            let pointer_str = node_text(&pointer_node, context)?;
+            Type::PointerType(Box::new(PointerType {
+                node: context.node_data(&type_node),
+                is_mut: pointer_str == "*mut",
+                is_locked: pointer_str == "*lock",
+                r#type: parse_type(context, &type_node)?,
+            }))
+        }
         _ => {
             log::error!("Unsupported type: {}", node.kind());
             return None;
