@@ -651,57 +651,6 @@ fn overlap(left_types: &Vec<Type>, right_types: &Vec<Type>) -> Vec<Type> {
     output
 }
 
-fn type_intersection(left: &Type, right: &Type) -> Option<Type> {
-    match (&left, &right) {
-        (Type::RefType(l), Type::RefType(r)) => {
-            if !l.is_mut && r.is_mut {
-                return None;
-            }
-            type_intersection(&l.r#type, &r.r#type).map(|o| {
-                Type::RefType(SRefType {
-                    is_mut: l.is_mut,
-                    r#type: Ptr::new(o),
-                })
-            })
-        }
-        (Type::Array(l), Type::Array(r)) => {
-            if l.length != r.length {
-                return None;
-            } else {
-                let inter = intersection(
-                    &SumType::from_types(&l.types),
-                    &SumType::from_types(&r.types),
-                );
-                let Some(inter) = inter else {
-                    return None;
-                };
-                Some(Type::Array(SArray {
-                    types: Ptr::new(inter.types().clone()),
-                    length: l.length,
-                }))
-            }
-        }
-        (Type::Slice(l), Type::Slice(r)) => {
-            let inter = intersection(
-                &SumType::from_types(&l.types),
-                &SumType::from_types(&r.types),
-            );
-            let Some(inter) = inter else {
-                return None;
-            };
-            Some(Type::Slice(SSlice {
-                types: Ptr::new(inter.types().clone()),
-            }))
-        }
-        _ => {
-            if left == right {
-                return Some(left.clone());
-            }
-            None
-        }
-    }
-}
-
 /// Test if left is fully in right
 /// Usages:
 /// - return expr matches return type
@@ -739,7 +688,7 @@ pub fn intersection(left_types: &SumType, right_types: &SumType) -> Option<SumTy
                         return None;
                     };
                     let Some(t) = result.as_type() else {
-                        panic!("itersection of a single type can't produce multiple types");
+                        panic!("intersection of a single type can't produce multiple types");
                     };
                     Some(Type::RefType(SRefType {
                         is_mut,
@@ -821,7 +770,41 @@ pub fn intersection(left_types: &SumType, right_types: &SumType) -> Option<SumTy
                         Some(Type::Unresolved(over))
                     }
                 }
-                _ => type_intersection(left, right),
+                (Type::Array(l), Type::Array(r)) => {
+                    if l.length != r.length {
+                        return None;
+                    } else {
+                        let inter = intersection(
+                            &SumType::from_types(&l.types),
+                            &SumType::from_types(&r.types),
+                        );
+                        let Some(inter) = inter else {
+                            return None;
+                        };
+                        Some(Type::Array(SArray {
+                            types: Ptr::new(inter.types().clone()),
+                            length: l.length,
+                        }))
+                    }
+                }
+                (Type::Slice(l), Type::Slice(r)) => {
+                    let inter = intersection(
+                        &SumType::from_types(&l.types),
+                        &SumType::from_types(&r.types),
+                    );
+                    let Some(inter) = inter else {
+                        return None;
+                    };
+                    Some(Type::Slice(SSlice {
+                        types: Ptr::new(inter.types().clone()),
+                    }))
+                }
+                _ => {
+                    if left == right {
+                        return Some(left.clone());
+                    }
+                    None
+                }
             })
             .next();
         let Some(found) = found else {
